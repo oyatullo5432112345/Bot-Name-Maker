@@ -1,36 +1,587 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Talim Platform API
 servers:
   - url: /api
-    description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: auth
+  - name: students
+  - name: classes
+  - name: staff
+  - name: dashboard
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
-          description: Healthy
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+          description: OK
+
+  # ── AUTH ────────────────────────────────────────────────────────────────────
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with login/password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResult"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user info from session
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResult"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ── STUDENTS ─────────────────────────────────────────────────────────────────
+
+  /students:
+    get:
+      operationId: listStudents
+      tags: [students]
+      summary: List all students
+      parameters:
+        - name: class_name
+          in: query
+          schema:
+            type: string
+          description: Filter by class name
+      responses:
+        "200":
+          description: List of students
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Student"
+    post:
+      operationId: createStudent
+      tags: [students]
+      summary: Register a new student (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Student"
+
+  /students/{id}:
+    get:
+      operationId: getStudent
+      tags: [students]
+      summary: Get student by telegram_id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Student
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Student"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateStudent
+      tags: [students]
+      summary: Update student (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudentUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Student"
+    delete:
+      operationId: deleteStudent
+      tags: [students]
+      summary: Delete student (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── CLASSES ──────────────────────────────────────────────────────────────────
+
+  /classes:
+    get:
+      operationId: listClasses
+      tags: [classes]
+      summary: List all classes
+      responses:
+        "200":
+          description: List of classes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SchoolClass"
+    post:
+      operationId: createClass
+      tags: [classes]
+      summary: Create a new class (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClassInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchoolClass"
+
+  /classes/{id}:
+    delete:
+      operationId: deleteClass
+      tags: [classes]
+      summary: Delete a class (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /classes/{id}/assign-teacher:
+    patch:
+      operationId: assignTeacher
+      tags: [classes]
+      summary: Assign a teacher as class homeroom teacher (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignTeacherInput"
+      responses:
+        "200":
+          description: Updated class
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchoolClass"
+
+  # ── STAFF ─────────────────────────────────────────────────────────────────────
+
+  /staff:
+    get:
+      operationId: listStaff
+      tags: [staff]
+      summary: List all staff members
+      responses:
+        "200":
+          description: List of staff
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StaffMember"
+    post:
+      operationId: createStaff
+      tags: [staff]
+      summary: Add a new staff member (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffMember"
+
+  /staff/{id}:
+    patch:
+      operationId: updateStaff
+      tags: [staff]
+      summary: Update staff member (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffMember"
+    delete:
+      operationId: deleteStaff
+      tags: [staff]
+      summary: Delete staff member (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── DASHBOARD ─────────────────────────────────────────────────────────────────
+
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Summary statistics
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /dashboard/my-class:
+    get:
+      operationId: getMyClass
+      tags: [dashboard]
+      summary: Get teacher's own class and students
+      responses:
+        "200":
+          description: Class info with students
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyClassResult"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    SuccessResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+
+    # ── AUTH ──────────────────────────────────────────────────────────────────
+
+    LoginInput:
+      type: object
+      required: [login, password]
+      properties:
+        login:
+          type: string
+        password:
+          type: string
+
+    AuthResult:
+      type: object
+      required: [id, role, full_name, login]
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          enum: [admin, director, zam_direktor, zavuch, teacher, student]
+        full_name:
+          type: string
+        login:
+          type: string
+        class_name:
+          type: ["string", "null"]
+        class_id:
+          type: ["string", "null"]
+        telegram_id:
+          type: ["integer", "null"]
+        token:
+          type: ["string", "null"]
+
+    # ── STUDENTS ──────────────────────────────────────────────────────────────
+
+    Student:
+      type: object
+      required: [telegram_id, full_name, phone_number, class_name, login, password, registration_date]
+      properties:
+        telegram_id:
+          type: integer
+        full_name:
+          type: string
+        phone_number:
+          type: string
+        class_name:
+          type: string
+        login:
+          type: string
+        password:
+          type: string
+        registration_date:
+          type: string
+
+    StudentInput:
+      type: object
+      required: [full_name, phone_number, class_name]
+      properties:
+        full_name:
+          type: string
+        phone_number:
+          type: string
+        class_name:
+          type: string
+
+    StudentUpdate:
+      type: object
+      properties:
+        full_name:
+          type: string
+        phone_number:
+          type: string
+        class_name:
+          type: string
+        password:
+          type: string
+
+    # ── CLASSES ──────────────────────────────────────────────────────────────
+
+    SchoolClass:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        teacher_id:
+          type: ["string", "null"]
+        teacher_name:
+          type: ["string", "null"]
+        student_count:
+          type: integer
+        created_at:
+          type: string
+
+    ClassInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    AssignTeacherInput:
+      type: object
+      required: [staff_id]
+      properties:
+        staff_id:
+          type: string
+
+    # ── STAFF ─────────────────────────────────────────────────────────────────
+
+    StaffMember:
+      type: object
+      required: [id, full_name, role, login, password, created_at]
+      properties:
+        id:
+          type: string
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [director, zam_direktor, zavuch, teacher]
+        class_id:
+          type: ["string", "null"]
+        class_name:
+          type: ["string", "null"]
+        login:
+          type: string
+        password:
+          type: string
+        telegram_id:
+          type: ["integer", "null"]
+        created_at:
+          type: string
+
+    StaffInput:
+      type: object
+      required: [full_name, role]
+      properties:
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [director, zam_direktor, zavuch, teacher]
+        class_id:
+          type: ["string", "null"]
+
+    StaffUpdate:
+      type: object
+      properties:
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [director, zam_direktor, zavuch, teacher]
+        class_id:
+          type: ["string", "null"]
+        password:
+          type: string
+
+    # ── DASHBOARD ─────────────────────────────────────────────────────────────
+
+    DashboardStats:
+      type: object
+      required: [total_students, total_classes, total_staff, days_until_launch, students_by_class]
+      properties:
+        total_students:
+          type: integer
+        total_classes:
+          type: integer
+        total_staff:
+          type: integer
+        days_until_launch:
+          type: integer
+        students_by_class:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClassCount"
+
+    ClassCount:
+      type: object
+      required: [class_name, count]
+      properties:
+        class_name:
+          type: string
+        count:
+          type: integer
+
+    MyClassResult:
+      type: object
+      required: [class_name, students]
+      properties:
+        class_name:
+          type: string
+        class_id:
+          type: ["string", "null"]
+        students:
+          type: array
+          items:
+            $ref: "#/components/schemas/Student"
