@@ -1,0 +1,35 @@
+* Foydalanuvchi tepadagi platformaga kirganida login/parolni qayta kiritishi haqida eslatma qo'shish.
+        * Ma'lumotlar bazasini qanday boshqarish va unga yangi o'qituvchilar ma'lumotlarini qo'shish.
+
+11. Oddiy va tushunarli: Kod imkon qadar sodda, toza va tushunarli yozilgan bo'lishi kerak. Kommentariyalarda har bir qismning vazifasi batafsil tushuntirilsin. Kodni Replit-da ishga tushirish uchun kerak bo'lgan barcha fayllarni (masalan, package.json) taqdim et. Replit sirlari (secrets) orqali Telegram Token va Supabase kalitlarini qanday saqlash haqida ham eslatma qo'sh.
+Bunga qo'shimcha ravishda Admin funksiyasini qo'sh:
+
+1. Admin Paneli:
+    * Kodda ADMIN_ID degan o'zgaruvchi bo'lsin (bu yerga o'z Telegram ID raqamingni qo'yaman).
+    * Bot ADMIN_ID ga xabar kelganda /admin buyrug'i orqali maxsus menyu chiqarsin.
+    * Admin menyusida quyidagilar bo'lsin:
+        a) "Foydalanuvchilar soni" - ro'yxatdan o'tganlar sonini ko'rsatish.
+        b) "Barcha ma'lumotlar" - bazadagi barcha foydalanuvchilarning ism, telefon raqam va sinflarini yuklab olish (JSON yoki matn ko'rinishida).
+        c) "Foydalanuvchini tahrirlash" - biror foydalanuvchi ma'lumotini (ID bo'yicha) o'zgartirish yoki o'chirish.
+        d) "Xabar yuborish" - barcha foydalanuvchilarga yoki tanlangan sinfga bot orqali xabar (reklama yoki e'lon) yuborish funksiyasi.
+
+2. Ma'lumotlar bazasi (Supabase yoki JSON):
+    * Har bir foydalanuvchi ma'lumoti users jadvalida (yoki JSON faylda) quyidagi ustunlar bilan saqlansin:
+        - telegram_id (asosiy kalit)
+        - full_name
+        - phone_number
+        - class_name
+        - login
+        - password
+        - registration_date
+    * Bot ma'lumotlarni o'qiyotganda bazadan tezkorlik bilan topsin.
+
+3. Admin uchun nazorat:
+    * Admin boshqa foydalanuvchilarning Login va Parollarini ko'ra olsin va kerak bo'lsa, ularni yangilay olsin. 
+    * Bu funksiya maktabdagi o'quvchi ma'lumotlarini to'g'irlab borish uchun juda muhim.
+
+4. Xavfsizlik:
+    * Admin paneliga faqat men (ADMIN_ID) kira olishimni ta'minla. Boshqa foydalanuvchi /admin deb yozsa, "Siz admin emassiz" degan xabar chiqsin.
+
+5. Loyihani tashkil etish:
+    * Iltimos, bu kodni qismlarga bo'lib yoz (masalan: bot.js, database.js, admin.js), shunda keyinchalik boshqa funksiyalarni (direktor/zavuch chatlari kabi) qo'shish osonroq bo'ladi.

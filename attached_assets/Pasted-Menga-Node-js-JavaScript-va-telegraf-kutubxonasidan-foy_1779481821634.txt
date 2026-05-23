@@ -1,0 +1,50 @@
+Menga Node.js (JavaScript) va 'telegraf' kutubxonasidan foydalanib, Telegram bot uchun kod yozib ber. 
+Botning asosiy vazifasi — sentabr oyida ishga tushadigan asosiy platforma uchun foydalanuvchilarni yig'ish va ro'yxatdan o'tkazish.
+
+Bot quyidagicha ishlashi kerak:
+
+1.  START buyrug'i: Foydalanuvchi botga kirganda quyidagi xabar chiqsin:
+    "Xurmatli foydalanuvchi! Botdan to'liq foydalanish uchun rasmiy kanalimizga a'zo bo'ling: https://t.me/TalimPlatform"
+    Pastda "A'zo bo'ldim ✅" degan bitta Inline-tugma bo'lsin.
+
+2.  Kanalga a'zolikni tekshirish: * Foydalanuvchi "A'zo bo'ldim ✅" tugmasini bosganida, bot uning @TalimPlatform kanaliga a'zo ekanligini (ChatMember API orqali) tekshirsin.
+    * Agar a'zo bo'lmasa, qaytadan a'zo bo'lishni so'raydigan xabar chiqarsin.
+
+3.  Ro'yxatdan o'tish: * Agar foydalanuvchi a'zo bo'lsa, unga ro'yxatdan o'tish taklif qilinadi: "Xurmatli foydalanuvchi! Toshloq tuman 3-maktab platformasidan foydalanish uchun ro'yxatdan o'ting."
+    * Pastda "Ro'yxatdan o'tish havola" degan bitta Inline-tugma bo'lsin. Ushbu tugmaga men kelajakda (masalan, Google Forms yoki tashqi veb-sahifa havolasini) o'zim qo'yishim mumkin. Hozircha havola o'rniga # qo'yib tur.
+
+4.  Telefon raqamini kiritish:
+    * Bu bosqichni men sentabrgacha qo'shib boraman, lekin hozircha bot ro'yxatdan o'tgandan so'ng foydalanuvchidan telefon raqamini kiritishni so'rasin. "Telfon raqamni kiritishingizni so'raymiz (masalan, +998901234567)" degan xabar chiqarsin.
+    * Foydalanuvchi raqamni yozgandan so'ng, uni bot tasdiqlasin.
+
+5.  Shaxsiy ma'lumotlarni so'rash:
+    * Telefon raqamidan so'ng, foydalanuvchidan Ismi va Familiyasini kiritishni so'rasin.
+    * "Ism Familiyangizni kiriting (masalan, Ali Valiyev)" degan xabar chiqarsin.
+    * Foydalanuvchi yozgandan so'ng, keyingi bosqichga o'tsin.
+
+6.  Sinfni tanlash:
+    * Ism-familiyadan so'ng, foydalanuvchiga sinflar ro'yxatini chiqarsin.
+    * Bu ro'yxatni tugmalar orqali qil: "Sinfingizni tanlang:" (masalan, "1-A", "1-B", "2-A", ..., "11-A").
+    * Foydalanuvchi tugmani bosgandan so'ng, uning barcha ma'lumotlari saqlansin.
+
+7.  Ma'lumotlarni saqlash:
+    * Foydalanuvchi ma'lumotlarini (Ism, Familiya, Telefon raqami, Sinf) saqlash uchun oddiy ma'lumotlar bazasi (masalan, MongoDB yoki Supabase, yoki oddiy JSON fayl) ulanishi kerak. Replit-da Supabase qulayroq. Iltimos, Supabase bilan ulanish uchun tayyor kodni ham yoz.
+
+8.  Login va Parol berish:
+    * Ro'yxatdan o'tganidan so'ng, bot har bir foydalanuvchiga avtomatik ravishda Login va Parol yaratib bersin. Parol oddiy va oson bo'lishi kerak.
+    * "Siz muvaffaqiyatli ro'yxatdan o'tdingiz! Platformaga kirish uchun:
+        Login: [foydalanuvchi_id]
+        Parol: [oson_parol]"
+        Xabarni chiqarsin.
+
+9.  Asosiy menu va Ma'lumotlarni ko'rish:
+    * Ro'yxatdan o'tgandan so'ng, bot asosiy menuni chiqarsin. Menuda: "Platforma ma'lumotlari" tugmasi bo'lsin.
+    * "Platforma ma'lumotlari" tugmasini bosganda, foydalanuvchiga uning ma'lumotlari va sinf rahbari haqida ma'lumot chiqarsin (Sinf rahbarini men keyinroq baza orqali qo'shaman, hozircha o'rnini yozib tur).
+    * Toshloq tuman 3-maktabining tepadagi platformasining sentabrdagi ishga tushishi haqida xabar chiqarsin: 
+        "Toshloq tuman 3-maktab platformasi 5-sentabrdan ishga tushadi!
+        Hozircha: [qolgan_kunlar_soni] kun qoldi."
+        *Qolgan kunlarni hisoblash uchun JavaScript kodini yoz.* (Hozirgi sana va 2026-yil 5-sentabr orasidagi farqni hisobla).
+
+10. Tuzilma va Kelajak rejalari (Kommentariyalarda yoz):
+    * Kodga kelajakda (sentabrgacha) sekin-sekin qo'shib boradigan narsalar haqida kommentariyalar qo'shib ket. Ayniqsa, quyidagilar haqida:
+        * Maktab direktori, zam direktor va zavuchlar uchun foydalanuvchi rasmlari va ularning chatlari. (Bu xususiyatni qanday qilib bosqichma-bosqich qo'shish haqida maslahatlar bering).
