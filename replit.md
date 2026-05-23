@@ -1,45 +1,77 @@
-# [Project name]
+# Talim Platform Bot
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Toshloq tuman 3-maktab uchun Telegram boti — o'quvchilarni ro'yxatdan o'tkazadi, xodimlarni boshqaradi va rol asosida kirish nazoratini ta'minlaydi.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm --filter @workspace/api-server run dev` — API server + Telegram botni ishga tushirish (port 5000)
+- `pnpm run typecheck` — to'liq typecheck
+- Required env secrets: `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `ADMIN_ID`
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
+- Telegram bot: Grammy.js (polling mode)
+- DB: Supabase (PostgreSQL)
 - API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Build: esbuild (CJS/ESM bundle)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/api-server/src/bot/` — Barcha bot kodi
+  - `bot.ts` — Asosiy bot, /start, o'quvchi va staff oqimi
+  - `admin.ts` — Admin buyruqlari va sinflarni boshqarish
+  - `roles.ts` — Rollar va ruxsatlar (permissions)
+  - `staff-db.ts` — Staff va Classes Supabase operatsiyalari
+  - `menus.ts` — Rol bo'yicha menyular
+  - `database.ts` — O'quvchilar Supabase operatsiyalari
+  - `states.ts` — In-memory state machine
+  - `logo.png` — Talim Platform logotipi
+- `artifacts/api-server/supabase_setup.sql` — Barcha jadvallarni yaratish SQL skripti
 
-## Architecture decisions
+## Supabase jadvallari
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- `users` — O'quvchilar (telegram_id, full_name, phone, class_name, login, password)
+- `classes` — Sinflar (id, name, teacher_id)
+- `staff` — Xodimlar (id, telegram_id, full_name, role, class_id, login, password)
 
-## Product
+## Rollar
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+| Rol | Ko'rishi mumkin |
+|-----|----------------|
+| admin | Hamma narsani boshqaradi |
+| director | Barcha sinflar + o'quvchilar + xodimlar (faqat ko'rish) |
+| zam_direktor | Director bilan bir xil |
+| zavuch | Director bilan bir xil |
+| teacher | Faqat o'z sinfi |
 
-## User preferences
+## Bot oqimi
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+1. `/start` → Logotip ko'rsatiladi
+2. Admin → Admin paneli
+3. Xodim (telegram biriktrilgan) → Rol menyusi
+4. O'quvchi (ro'yxatdan o'tgan) → Asosiy menyu
+5. Yangi foydalanuvchi → Kanal a'zoligini tekshirish → Ro'yxat → Login/Parol
+6. Xodim kirishi → "Xodim sifatida kirish" → Login/Parol → Rol menyusi
+
+## Admin buyruqlari
+
+- `/admin` — Admin panelini ochish
+- `/broadcast <matn>` — Barcha o'quvchilarga xabar
+- `/broadcastclass <sinf> <matn>` — Sinfga xabar
+- `/broadcaststaff <matn>` — Barcha xodimlarga xabar
+- `/del <telegram_id>` — O'quvchini o'chirish
+- `/setclass <id> <sinf>` — Sinf o'zgartirish
+- `/setpass <id> <parol>` — Parol o'zgartirish
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Grammy external sifatida esbuild'dan chiqariladi (grammy, @grammyjs/*)
+- Bot polling modeda ishlaydi (webhook emas)
+- Staff telegram_id ni faqat login qilgandan so'ng bilinadi
+- `supabase_setup.sql` ni Supabase SQL Editor'da birinchi marta ishga tushiring
 
-## Pointers
+## User preferences
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Uzbek tilida javob berish
+- Telegraf o'rniga Grammy.js ishlatiladi (Node.js 24 bilan mos)
