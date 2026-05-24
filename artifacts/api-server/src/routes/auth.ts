@@ -199,6 +199,94 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   res.json(LoginResponse.parse({ ...payload, token }));
 });
 
+// POST /api/auth/register-staff
+router.post("/auth/register-staff", async (req, res): Promise<void> => {
+  const { full_name, role, class_id, phone_number } = req.body as {
+    full_name?: string;
+    role?: string;
+    class_id?: string | null;
+    phone_number?: string;
+  };
+
+  const allowedRoles = ["director", "zam_direktor", "zavuch", "sinf_rahbari", "teacher", "kutubxonachi"];
+  if (!role || !allowedRoles.includes(role)) {
+    res.status(400).json({ error: "Noto'g'ri rol tanlandi" });
+    return;
+  }
+  if (!full_name || full_name.trim().length < 2) {
+    res.status(400).json({ error: "Ism familiyani to'liq kiriting" });
+    return;
+  }
+
+  // Unikal login yaratish
+  const base = full_name.trim().toLowerCase().split(" ")[0]?.replace(/[^a-z]/g, "") ?? "staff";
+  let login = `${base}${Math.floor(100 + Math.random() * 900)}`;
+
+  const { data: existing } = await supabase
+    .from("staff")
+    .select("id")
+    .eq("login", login)
+    .maybeSingle();
+
+  if (existing) {
+    login = `${base}${Math.floor(1000 + Math.random() * 9000)}`;
+  }
+
+  const password = Math.floor(100000 + Math.random() * 900000).toString();
+
+  const insertData: Record<string, unknown> = {
+    full_name: full_name.trim(),
+    role,
+    class_id: class_id ?? null,
+    login,
+    password,
+    telegram_id: null,
+  };
+
+  const { data, error } = await supabase
+    .from("staff")
+    .insert([insertData])
+    .select()
+    .single();
+
+  if (error || !data) {
+    res.status(500).json({ error: error?.message ?? "Xatolik yuz berdi" });
+    return;
+  }
+
+  const staffData = data as {
+    id: string;
+    full_name: string;
+    role: string;
+    class_id: string | null;
+    login: string;
+    password: string;
+    telegram_id: number | null;
+  };
+
+  let class_name: string | null = null;
+  if (staffData.class_id) {
+    const { data: cls } = await supabase
+      .from("classes")
+      .select("name")
+      .eq("id", staffData.class_id)
+      .single();
+    class_name = cls?.name ?? null;
+  }
+
+  const payload = {
+    id: staffData.id,
+    role: staffData.role,
+    full_name: staffData.full_name,
+    login: staffData.login,
+    class_name,
+    class_id: staffData.class_id,
+    telegram_id: staffData.telegram_id,
+  };
+  const token = createToken(payload);
+  res.status(201).json({ ...payload, token, password: staffData.password });
+});
+
 // GET /api/auth/me
 router.get("/auth/me", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
