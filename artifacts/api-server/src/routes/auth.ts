@@ -123,13 +123,22 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       password: string;
     };
 
+    // Sinf ID sini class_name orqali topish
+    let student_class_id: string | null = null;
+    const { data: clsData } = await supabase
+      .from("classes")
+      .select("id")
+      .eq("name", student.class_name)
+      .single();
+    student_class_id = clsData?.id ?? null;
+
     const payload = {
       id: String(student.telegram_id),
       role: "student",
       full_name: student.full_name,
       login: student.login,
       class_name: student.class_name,
-      class_id: null,
+      class_id: student_class_id,
       telegram_id: student.telegram_id,
     };
     const token = createToken(payload);
