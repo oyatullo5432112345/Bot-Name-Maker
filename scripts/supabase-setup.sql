@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   registration_date  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. Foreign key: classes.teacher_id → staff.id
+-- 4. Foreign key (DROP IF EXISTS — xatosiz ishlaydi)
 ALTER TABLE public.classes
   DROP CONSTRAINT IF EXISTS classes_teacher_id_fkey;
 
@@ -42,12 +42,12 @@ ALTER TABLE public.classes
   ADD CONSTRAINT classes_teacher_id_fkey
   FOREIGN KEY (teacher_id) REFERENCES public.staff(id) ON DELETE SET NULL;
 
--- 5. Row Level Security — o'chirish (API server service key ishlatadi)
+-- 5. Row Level Security o'chirish
 ALTER TABLE public.classes DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.staff   DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users   DISABLE ROW LEVEL SECURITY;
 
--- Tekshirish
+-- Natija tekshirish
 SELECT 'classes' AS jadval, COUNT(*) FROM public.classes
 UNION ALL
 SELECT 'staff',   COUNT(*) FROM public.staff
