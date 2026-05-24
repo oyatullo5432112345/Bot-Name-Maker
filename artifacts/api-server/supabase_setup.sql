@@ -48,6 +48,7 @@ ALTER TABLE staff ADD CONSTRAINT staff_role_check
   CHECK (role IN ('admin','director','zam_direktor','zavuch','sinf_rahbari','teacher','kutubxonachi'));
 
 -- classes.teacher_id → staff.id munosabati
+ALTER TABLE classes DROP CONSTRAINT IF EXISTS fk_classes_teacher;
 ALTER TABLE classes
   ADD CONSTRAINT fk_classes_teacher
   FOREIGN KEY (teacher_id) REFERENCES staff(id) ON DELETE SET NULL;
