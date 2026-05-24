@@ -60,6 +60,29 @@ export const LogoutResponse = zod.object({
 
 
 /**
+ * @summary Register a new student account
+ */
+export const RegisterBody = zod.object({
+  "full_name": zod.string(),
+  "phone_number": zod.string(),
+  "class_name": zod.string(),
+  "login": zod.string(),
+  "password": zod.string()
+})
+
+export const RegisterResponse = zod.object({
+  "id": zod.string(),
+  "role": zod.enum(['admin', 'director', 'zam_direktor', 'zavuch', 'teacher', 'student']),
+  "full_name": zod.string(),
+  "login": zod.string(),
+  "class_name": zod.string().nullish(),
+  "class_id": zod.string().nullish(),
+  "telegram_id": zod.number().nullish(),
+  "token": zod.string().nullish()
+})
+
+
+/**
  * @summary List all students
  */
 export const ListStudentsQueryParams = zod.object({

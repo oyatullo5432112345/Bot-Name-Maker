@@ -9,6 +9,7 @@ import { AppLayout } from "@/components/layout";
 import NotFound from "@/pages/not-found";
 
 import Login from "@/pages/login";
+import Register from "@/pages/register";
 import Dashboard from "@/pages/dashboard";
 import StudentsList from "@/pages/students/index";
 import NewStudent from "@/pages/students/new";
@@ -35,6 +36,9 @@ function Router() {
     <Switch>
       <Route path="/login">
         {isLoading ? null : user ? <Redirect to="/dashboard" /> : <Login />}
+      </Route>
+      <Route path="/register">
+        {isLoading ? null : user ? <Redirect to="/dashboard" /> : <Register />}
       </Route>
       <Route path="/">
         <Redirect to="/dashboard" />

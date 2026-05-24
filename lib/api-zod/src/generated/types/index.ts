@@ -17,6 +17,7 @@ export * from './healthStatus';
 export * from './listStudentsParams';
 export * from './loginInput';
 export * from './myClassResult';
+export * from './registerInput';
 export * from './schoolClass';
 export * from './staffInput';
 export * from './staffInputRole';

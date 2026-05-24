@@ -5,6 +5,7 @@ import {
   LoginResponse,
   GetMeResponse,
   LogoutResponse,
+  RegisterBody,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
 
@@ -136,6 +137,54 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
   logger.warn({ login }, "Failed login attempt");
   res.status(401).json({ error: "Login yoki parol noto'g'ri" });
+});
+
+// POST /api/auth/register
+router.post("/auth/register", async (req, res): Promise<void> => {
+  const parsed = RegisterBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { full_name, phone_number, class_name, login, password } = parsed.data;
+
+  // Login band emasligini tekshirish
+  const [{ data: existStaff }, { data: existStudent }] = await Promise.all([
+    supabase.from("staff").select("login").eq("login", login).maybeSingle(),
+    supabase.from("users").select("login").eq("login", login).maybeSingle(),
+  ]);
+
+  if (existStaff || existStudent) {
+    res.status(400).json({ error: "Bu login band. Boshqa login tanlang." });
+    return;
+  }
+
+  const telegram_id = Date.now();
+  const registration_date = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("users")
+    .insert([{ telegram_id, full_name, phone_number, class_name, login, password, registration_date }])
+    .select()
+    .single();
+
+  if (error || !data) {
+    res.status(500).json({ error: error?.message ?? "Xatolik yuz berdi" });
+    return;
+  }
+
+  const payload = {
+    id: String(telegram_id),
+    role: "student",
+    full_name,
+    login,
+    class_name,
+    class_id: null,
+    telegram_id,
+  };
+  const token = createToken(payload);
+  res.json(LoginResponse.parse({ ...payload, token }));
 });
 
 // GET /api/auth/me
