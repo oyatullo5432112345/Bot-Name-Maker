@@ -25,10 +25,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
+    // Agar allaqachon initialized bo'lsa (masalan, login qilindi), hech narsa qilma
+    if (initialized) return;
+
     if (!hasToken) {
       setInitialized(true);
       return;
     }
+
+    // Faqat query tugagandan keyin ishlat
     if (!isMeLoading) {
       if (meData) {
         setLocalUser(meData);
@@ -38,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setInitialized(true);
     }
-  }, [meData, isMeLoading, hasToken]);
+  }, [meData, isMeLoading, hasToken, initialized]);
 
   const login = (result: import("@workspace/api-client-react").AuthResult) => {
     if (result.token) {
@@ -51,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
     setLocalUser(null);
+    setInitialized(false);
   };
 
   return (
