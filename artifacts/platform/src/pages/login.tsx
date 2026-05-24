@@ -76,9 +76,9 @@ export default function Login() {
           <p className="mt-1 text-sm text-muted-foreground text-center">
             O'z login va parolingiz bilan kiring
           </p>
-          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700 text-center">
-            <strong>Admin uchun:</strong> Login — <code className="bg-blue-100 px-1 rounded">admin</code>, Parol — Telegram ID raqamingiz
-          </div>
+          <p className="mt-2 text-sm font-medium text-primary text-center">
+            Farg'ona viloyati Toshloq tumani 3-maktab
+          </p>
 
           <div className="mt-8">
             <Form {...form}>

@@ -12,6 +12,7 @@ import { logger } from "../lib/logger.js";
 const router: IRouter = Router();
 
 const ADMIN_ID = process.env["ADMIN_ID"] ?? "";
+const ADMIN_PASSWORD = process.env["ADMIN_PASSWORD"] ?? ADMIN_ID;
 
 // Session: in-memory (xotira) - simple JWT alternative
 // Token: base64(JSON) — production'da JWT ishlatish kerak
@@ -46,7 +47,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   const trimmedPassword = password.trim();
 
   // Admin tekshiruvi (ADMIN_ID bo'yicha)
-  if (trimmedLogin === "admin" && trimmedPassword === ADMIN_ID.trim()) {
+  if (trimmedLogin === "admin" && trimmedPassword === ADMIN_PASSWORD.trim()) {
     const payload = {
       id: "admin",
       role: "admin",
