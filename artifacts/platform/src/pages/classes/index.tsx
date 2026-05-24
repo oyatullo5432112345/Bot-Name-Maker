@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/use-auth";
 import { 
   useListClasses, 
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Search, Trash2, UserPlus } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, UserPlus, BookOpen, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -38,7 +38,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter
 } from "@/components/ui/dialog";
 import {
@@ -49,6 +48,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
+
+interface TeacherSubject {
+  id: string;
+  teacher_id: string;
+  class_id: string;
+  subject: string;
+  teacher_name?: string | null;
+  teacher_role?: string | null;
+}
 
 export default function ClassesList() {
   const { user } = useAuth();
@@ -63,16 +73,22 @@ export default function ClassesList() {
   const [assignClassId, setAssignClassId] = useState("");
   const [assignTeacherId, setAssignTeacherId] = useState("");
 
+  // Fan biriktirish
+  const [subjectsOpen, setSubjectsOpen] = useState(false);
+  const [subjectsClassId, setSubjectsClassId] = useState("");
+  const [subjectsClassName, setSubjectsClassName] = useState("");
+  const [teacherSubjects, setTeacherSubjects] = useState<TeacherSubject[]>([]);
+  const [subjectsLoading, setSubjectsLoading] = useState(false);
+  const [newSubjectTeacherId, setNewSubjectTeacherId] = useState("");
+  const [newSubjectName, setNewSubjectName] = useState("");
+  const [addingSubject, setAddingSubject] = useState(false);
+
   const { data: classes, isLoading } = useListClasses({
-    query: {
-      queryKey: getListClassesQueryKey()
-    }
+    query: { queryKey: getListClassesQueryKey() }
   });
 
   const { data: staff } = useListStaff({
-    query: {
-      queryKey: getListStaffQueryKey()
-    }
+    query: { queryKey: getListStaffQueryKey() }
   });
 
   const createMutation = useCreateClass();
@@ -80,6 +96,11 @@ export default function ClassesList() {
   const assignMutation = useAssignTeacher();
 
   const isAdmin = user?.role === "admin";
+
+  // Sinf rahbarlari (sinf_rahbari rolidagilar)
+  const sinfRahbarlari = staff?.filter(s => s.role === "sinf_rahbari");
+  // O'qituvchilar (teacher va sinf_rahbari - ular ham dars bera oladi)
+  const oqituvchilar = staff?.filter(s => s.role === "teacher" || s.role === "sinf_rahbari");
 
   const handleCreate = () => {
     if (!newClassName.trim()) return;
@@ -92,8 +113,9 @@ export default function ClassesList() {
           setCreateOpen(false);
           setNewClassName("");
         },
-        onError: () => {
-          toast({ variant: "destructive", title: "Xatolik", description: "Xatolik yuz berdi" });
+        onError: (err: unknown) => {
+          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+          toast({ variant: "destructive", title: "Xatolik", description: msg || "Xatolik yuz berdi" });
         }
       }
     );
@@ -120,7 +142,7 @@ export default function ClassesList() {
       { id: assignClassId, data: { staff_id: assignTeacherId } },
       {
         onSuccess: () => {
-          toast({ title: "Muvaffaqiyatli", description: "O'qituvchi biriktirildi" });
+          toast({ title: "Muvaffaqiyatli", description: "Sinf rahbari biriktirildi" });
           queryClient.invalidateQueries({ queryKey: getListClassesQueryKey() });
           setAssignOpen(false);
           setAssignClassId("");
@@ -133,11 +155,83 @@ export default function ClassesList() {
     );
   };
 
+  // Fan biriktirish - load
+  const loadTeacherSubjects = async (classId: string) => {
+    setSubjectsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/teacher-subjects?class_id=${classId}`, {
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json() as TeacherSubject[];
+        setTeacherSubjects(data);
+      }
+    } catch {
+      // ignore
+    }
+    setSubjectsLoading(false);
+  };
+
+  useEffect(() => {
+    if (subjectsOpen && subjectsClassId) {
+      void loadTeacherSubjects(subjectsClassId);
+    }
+  }, [subjectsOpen, subjectsClassId]);
+
+  const handleAddSubject = async () => {
+    if (!newSubjectTeacherId || !newSubjectName.trim()) return;
+    setAddingSubject(true);
+    try {
+      const res = await fetch(`${API_BASE}/teacher-subjects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          teacher_id: newSubjectTeacherId,
+          class_id: subjectsClassId,
+          subject: newSubjectName.trim(),
+        }),
+      });
+      if (res.ok) {
+        toast({ title: "Muvaffaqiyatli", description: "Fan biriktirildi" });
+        setNewSubjectTeacherId("");
+        setNewSubjectName("");
+        await loadTeacherSubjects(subjectsClassId);
+      } else {
+        const d = await res.json() as { error?: string };
+        toast({ variant: "destructive", title: "Xatolik", description: d.error || "Xatolik yuz berdi" });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanib bo'lmadi" });
+    }
+    setAddingSubject(false);
+  };
+
+  const handleRemoveSubject = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/teacher-subjects/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) {
+        toast({ title: "O'chirildi", description: "Fan o'chirildi" });
+        await loadTeacherSubjects(subjectsClassId);
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik", description: "O'chirishda xatolik" });
+    }
+  };
+
   const filteredClasses = classes?.filter(c => 
     c.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const availableTeachers = staff?.filter(s => s.role === "teacher");
+  const COMMON_SUBJECTS = [
+    "Matematika", "Ona tili", "Adabiyot", "Ingliz tili", "Rus tili",
+    "Fizika", "Kimyo", "Biologiya", "Geografiya", "Tarix",
+    "Informatika", "Chizmachilik", "Jismoniy tarbiya", "Musiqa",
+    "Texnologiya", "Astronomiya"
+  ];
 
   return (
     <div className="space-y-6">
@@ -149,12 +243,10 @@ export default function ClassesList() {
         
         {isAdmin && (
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                Yangi sinf
-              </Button>
-            </DialogTrigger>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Yangi sinf
+            </Button>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Yangi sinf qo'shish</DialogTitle>
@@ -166,6 +258,7 @@ export default function ClassesList() {
                     placeholder="Masalan: 10-A" 
                     value={newClassName}
                     onChange={(e) => setNewClassName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
                   />
                 </div>
               </div>
@@ -200,7 +293,7 @@ export default function ClassesList() {
               <TableHead>Sinf nomi</TableHead>
               <TableHead>Sinf rahbari</TableHead>
               <TableHead>O'quvchilar soni</TableHead>
-              {isAdmin && <TableHead className="w-[120px]"></TableHead>}
+              {isAdmin && <TableHead className="w-[140px] text-right pr-4">Amallar</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -234,10 +327,24 @@ export default function ClassesList() {
                   <TableCell>{cls.student_count || 0}</TableCell>
                   {isAdmin && (
                     <TableCell>
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-1">
                         <Button 
                           variant="ghost" 
-                          size="icon" 
+                          size="icon"
+                          title="Fanlar va o'qituvchilar"
+                          onClick={() => {
+                            setSubjectsClassId(cls.id);
+                            setSubjectsClassName(cls.name);
+                            setSubjectsOpen(true);
+                          }}
+                          className="hover:bg-blue-50 hover:text-blue-600"
+                        >
+                          <BookOpen className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          title="Sinf rahbari biriktirish"
                           onClick={() => {
                             setAssignClassId(cls.id);
                             setAssignOpen(true);
@@ -280,6 +387,7 @@ export default function ClassesList() {
         </Table>
       </div>
 
+      {/* Sinf rahbari biriktirish */}
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
         <DialogContent>
           <DialogHeader>
@@ -287,15 +395,20 @@ export default function ClassesList() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>O'qituvchini tanlang</Label>
+              <Label>Sinf rahbarini tanlang</Label>
               <Select value={assignTeacherId} onValueChange={setAssignTeacherId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Tanlang..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableTeachers?.map(t => (
+                  {sinfRahbarlari?.map(t => (
                     <SelectItem key={t.id} value={t.id}>{t.full_name}</SelectItem>
                   ))}
+                  {(!sinfRahbarlari || sinfRahbarlari.length === 0) && (
+                    <div className="px-2 py-2 text-sm text-muted-foreground">
+                      Sinf rahbari topilmadi
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -306,6 +419,113 @@ export default function ClassesList() {
               {assignMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Saqlash
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Fanlar va o'qituvchilar dialogi */}
+      <Dialog open={subjectsOpen} onOpenChange={(open) => {
+        setSubjectsOpen(open);
+        if (!open) {
+          setNewSubjectTeacherId("");
+          setNewSubjectName("");
+          setTeacherSubjects([]);
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{subjectsClassName} — Fanlar va o'qituvchilar</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Yangi fan qo'shish */}
+            {isAdmin && (
+              <div className="border rounded-md p-4 bg-muted/30 space-y-3">
+                <p className="text-sm font-medium">Yangi fan biriktirish</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">O'qituvchi</Label>
+                    <Select value={newSubjectTeacherId} onValueChange={setNewSubjectTeacherId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="O'qituvchi tanlang..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {oqituvchilar?.map(t => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.full_name}
+                            {t.role === "sinf_rahbari" && " (Sinf rahbari)"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Fan nomi</Label>
+                    <Select value={newSubjectName} onValueChange={setNewSubjectName}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Fanni tanlang..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COMMON_SUBJECTS.map(s => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Yoki boshqa fan nomi kiriting..."
+                    value={newSubjectName}
+                    onChange={(e) => setNewSubjectName(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button 
+                    onClick={handleAddSubject}
+                    disabled={addingSubject || !newSubjectTeacherId || !newSubjectName.trim()}
+                  >
+                    {addingSubject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Fan ro'yxati */}
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {subjectsLoading ? (
+                <div className="text-center py-6">
+                  <Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" />
+                </div>
+              ) : teacherSubjects.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  Hali fanlar biriktirilmagan
+                </div>
+              ) : (
+                teacherSubjects.map(ts => (
+                  <div key={ts.id} className="flex items-center justify-between rounded-md border bg-card px-3 py-2">
+                    <div>
+                      <span className="font-medium text-sm">{ts.subject}</span>
+                      <span className="text-muted-foreground text-xs ml-2">— {ts.teacher_name}</span>
+                      {ts.teacher_role === "sinf_rahbari" && (
+                        <span className="ml-1 text-xs text-primary">(Sinf rahbari)</span>
+                      )}
+                    </div>
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => void handleRemoveSubject(ts.id)}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSubjectsOpen(false)}>Yopish</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

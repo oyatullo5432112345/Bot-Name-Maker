@@ -35,12 +35,16 @@ const staffSchema = z.object({
     StaffInputRole.director,
     StaffInputRole.zam_direktor,
     StaffInputRole.zavuch,
+    StaffInputRole.sinf_rahbari,
     StaffInputRole.teacher,
+    StaffInputRole.kutubxonachi,
   ], { required_error: "Lavozimni tanlang" }),
   class_id: z.string().nullable().optional(),
 });
 
 type StaffFormValues = z.infer<typeof staffSchema>;
+
+const rolesWithClass = [StaffInputRole.sinf_rahbari, StaffInputRole.teacher];
 
 export default function NewStaff() {
   const [, setLocation] = useLocation();
@@ -63,12 +67,12 @@ export default function NewStaff() {
   });
 
   const roleValue = form.watch("role");
+  const showClassField = rolesWithClass.includes(roleValue as typeof rolesWithClass[number]);
 
   const onSubmit = (data: StaffFormValues) => {
-    // Clean up class_id if role is not teacher
     const payload = {
       ...data,
-      class_id: data.role === StaffInputRole.teacher ? data.class_id : null
+      class_id: showClassField ? (data.class_id || null) : null
     };
 
     createMutation.mutate(
@@ -128,7 +132,10 @@ export default function NewStaff() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Lavozimi</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={(val) => {
+                      field.onChange(val);
+                      form.setValue("class_id", null);
+                    }} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Tanlang..." />
@@ -138,7 +145,9 @@ export default function NewStaff() {
                         <SelectItem value={StaffInputRole.director}>Direktor</SelectItem>
                         <SelectItem value={StaffInputRole.zam_direktor}>Direktor o'rinbosari</SelectItem>
                         <SelectItem value={StaffInputRole.zavuch}>Zavuch</SelectItem>
+                        <SelectItem value={StaffInputRole.sinf_rahbari}>Sinf rahbari</SelectItem>
                         <SelectItem value={StaffInputRole.teacher}>O'qituvchi</SelectItem>
+                        <SelectItem value={StaffInputRole.kutubxonachi}>Kutubxonachi</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -146,13 +155,17 @@ export default function NewStaff() {
                 )}
               />
 
-              {roleValue === StaffInputRole.teacher && (
+              {showClassField && (
                 <FormField
                   control={form.control}
                   name="class_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Sinf rahbari (ixtiyoriy)</FormLabel>
+                      <FormLabel>
+                        {roleValue === StaffInputRole.sinf_rahbari 
+                          ? "Rahbarlik sinfi" 
+                          : "Asosiy sinf (ixtiyoriy)"}
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value || ""}>
                         <FormControl>
                           <SelectTrigger>
@@ -171,6 +184,18 @@ export default function NewStaff() {
                 />
               )}
             </div>
+
+            {roleValue === StaffInputRole.sinf_rahbari && (
+              <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-sm text-muted-foreground">
+                💡 Sinf rahbari bitta sinfga mas'ul bo'ladi. U ham o'qituvchi sifatida fanlarga biriktirilishi mumkin.
+              </div>
+            )}
+
+            {roleValue === StaffInputRole.teacher && (
+              <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-muted-foreground">
+                💡 O'qituvchi turli sinflarga turli fanlardan dars beradi. Fanlarni "Sinflar" bo'limida biriktirish mumkin.
+              </div>
+            )}
 
             <div className="flex justify-end gap-3 pt-4 border-t">
               <Button 

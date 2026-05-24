@@ -36,7 +36,9 @@ const roleDisplay: Record<string, string> = {
   director: "Direktor",
   zam_direktor: "Direktor o'rinbosari",
   zavuch: "Zavuch",
-  teacher: "O'qituvchi"
+  sinf_rahbari: "Sinf rahbari",
+  teacher: "O'qituvchi",
+  kutubxonachi: "Kutubxonachi",
 };
 
 export default function StaffList() {

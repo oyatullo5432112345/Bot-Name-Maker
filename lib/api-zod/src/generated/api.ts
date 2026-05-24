@@ -26,7 +26,7 @@ export const LoginBody = zod.object({
 
 export const LoginResponse = zod.object({
   "id": zod.string(),
-  "role": zod.enum(['admin', 'director', 'zam_direktor', 'zavuch', 'teacher', 'student']),
+  "role": zod.enum(['admin', 'director', 'zam_direktor', 'zavuch', 'teacher', 'sinf_rahbari', 'kutubxonachi', 'student']),
   "full_name": zod.string(),
   "login": zod.string(),
   "class_name": zod.string().nullish(),
@@ -41,7 +41,7 @@ export const LoginResponse = zod.object({
  */
 export const GetMeResponse = zod.object({
   "id": zod.string(),
-  "role": zod.enum(['admin', 'director', 'zam_direktor', 'zavuch', 'teacher', 'student']),
+  "role": zod.enum(['admin', 'director', 'zam_direktor', 'zavuch', 'teacher', 'sinf_rahbari', 'kutubxonachi', 'student']),
   "full_name": zod.string(),
   "login": zod.string(),
   "class_name": zod.string().nullish(),
@@ -72,7 +72,7 @@ export const RegisterBody = zod.object({
 
 export const RegisterResponse = zod.object({
   "id": zod.string(),
-  "role": zod.enum(['admin', 'director', 'zam_direktor', 'zavuch', 'teacher', 'student']),
+  "role": zod.enum(['admin', 'director', 'zam_direktor', 'zavuch', 'teacher', 'sinf_rahbari', 'kutubxonachi', 'student']),
   "full_name": zod.string(),
   "login": zod.string(),
   "class_name": zod.string().nullish(),
@@ -219,7 +219,7 @@ export const AssignTeacherResponse = zod.object({
 export const ListStaffResponseItem = zod.object({
   "id": zod.string(),
   "full_name": zod.string(),
-  "role": zod.enum(['director', 'zam_direktor', 'zavuch', 'teacher']),
+  "role": zod.enum(['director', 'zam_direktor', 'zavuch', 'teacher', 'sinf_rahbari', 'kutubxonachi']),
   "class_id": zod.string().nullish(),
   "class_name": zod.string().nullish(),
   "login": zod.string(),
@@ -235,7 +235,7 @@ export const ListStaffResponse = zod.array(ListStaffResponseItem)
  */
 export const CreateStaffBody = zod.object({
   "full_name": zod.string(),
-  "role": zod.enum(['director', 'zam_direktor', 'zavuch', 'teacher']),
+  "role": zod.enum(['director', 'zam_direktor', 'zavuch', 'teacher', 'sinf_rahbari', 'kutubxonachi']),
   "class_id": zod.string().nullish()
 })
 
@@ -249,7 +249,7 @@ export const UpdateStaffParams = zod.object({
 
 export const UpdateStaffBody = zod.object({
   "full_name": zod.string().optional(),
-  "role": zod.enum(['director', 'zam_direktor', 'zavuch', 'teacher']).optional(),
+  "role": zod.enum(['director', 'zam_direktor', 'zavuch', 'teacher', 'sinf_rahbari', 'kutubxonachi']).optional(),
   "class_id": zod.string().nullish(),
   "password": zod.string().optional()
 })
@@ -257,7 +257,7 @@ export const UpdateStaffBody = zod.object({
 export const UpdateStaffResponse = zod.object({
   "id": zod.string(),
   "full_name": zod.string(),
-  "role": zod.enum(['director', 'zam_direktor', 'zavuch', 'teacher']),
+  "role": zod.enum(['director', 'zam_direktor', 'zavuch', 'teacher', 'sinf_rahbari', 'kutubxonachi']),
   "class_id": zod.string().nullish(),
   "class_name": zod.string().nullish(),
   "login": zod.string(),
