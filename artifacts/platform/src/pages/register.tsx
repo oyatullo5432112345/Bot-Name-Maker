@@ -3,11 +3,18 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
-import { useRegister } from "@workspace/api-client-react";
+import { useRegister, useListClasses } from "@workspace/api-client-react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Form,
   FormControl,
@@ -25,7 +32,7 @@ const registerSchema = z
       .string()
       .min(9, "Telefon raqamini kiriting")
       .regex(/^\+?[0-9\s\-()]+$/, "Noto'g'ri format"),
-    class_name: z.string().min(1, "Sinf nomini kiriting"),
+    class_name: z.string().min(1, "Sinfni tanlang"),
     login: z
       .string()
       .min(4, "Login kamida 4 ta belgi bo'lishi kerak")
@@ -46,6 +53,9 @@ export default function Register() {
   const { toast } = useToast();
 
   const registerMutation = useRegister();
+  const { data: classes, isLoading: classesLoading } = useListClasses({
+    query: { queryKey: ["classes", "list"] },
+  });
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -139,15 +149,39 @@ export default function Register() {
                   )}
                 />
 
+                {/* Sinf — faqat admin yaratgan sinflar */}
                 <FormField
                   control={form.control}
                   name="class_name"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Sinf</FormLabel>
-                      <FormControl>
-                        <Input placeholder="5-A, 10-B, ..." {...field} />
-                      </FormControl>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        disabled={classesLoading}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                classesLoading
+                                  ? "Sinflar yuklanmoqda..."
+                                  : classes && classes.length === 0
+                                    ? "Hozircha sinflar yo'q"
+                                    : "Sinfni tanlang"
+                              }
+                            />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {classes?.map((cls) => (
+                            <SelectItem key={cls.id} value={cls.name}>
+                              {cls.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -212,7 +246,7 @@ export default function Register() {
                 <Button
                   type="submit"
                   className="w-full mt-2"
-                  disabled={registerMutation.isPending}
+                  disabled={registerMutation.isPending || classesLoading}
                 >
                   {registerMutation.isPending && (
                     <Loader2 className="w-4 h-4 animate-spin mr-2" />
