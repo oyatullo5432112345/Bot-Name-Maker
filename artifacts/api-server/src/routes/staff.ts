@@ -77,7 +77,6 @@ router.post("/staff", async (req, res): Promise<void> => {
       login,
       password,
       telegram_id: null,
-      created_at: new Date().toISOString(),
     }])
     .select()
     .single();
