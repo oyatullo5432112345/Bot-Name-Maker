@@ -26,8 +26,37 @@ export function createBot(): Bot {
 
   const bot = new Bot(token);
 
-  // /start — foydalanuvchini kanal a'zoligiga yo'naltirish
+  // /start — avval a'zolikni tekshir, a'zo bo'lsa to'g'ridan-to'g'ri havola ber
   bot.command("start", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId) return;
+
+    const isMember = await checkChannelMembership(bot, userId);
+
+    if (isMember) {
+      // A'zo — to'g'ridan-to'g'ri veb-sayt havolasi
+      const kb = new InlineKeyboard()
+        .url("🌐 Platformaga kirish", WEBSITE_URL);
+
+      try {
+        await ctx.replyWithPhoto(new InputFile(LOGO_PATH), {
+          caption:
+            "✅ *Xush kelibsiz!*\n\n" +
+            "Toshloq tuman 3-maktab — *TALIM PLATFORM*\n\n" +
+            `🔗 ${WEBSITE_URL}`,
+          parse_mode: "Markdown",
+          reply_markup: kb,
+        });
+      } catch {
+        await ctx.reply(
+          `✅ *Xush kelibsiz!*\n\n🔗 ${WEBSITE_URL}`,
+          { parse_mode: "Markdown", reply_markup: kb }
+        );
+      }
+      return;
+    }
+
+    // A'zo emas — kanalga taklif
     const kb = new InlineKeyboard()
       .url("📢 Kanalga a'zo bo'lish", `https://t.me/${CHANNEL_ID.replace("@", "")}`).row()
       .text("A'zo bo'ldim ✅", "check_membership");
