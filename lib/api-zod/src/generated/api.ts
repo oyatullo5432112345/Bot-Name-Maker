@@ -219,13 +219,13 @@ export const AssignTeacherResponse = zod.object({
 export const ListStaffResponseItem = zod.object({
   "id": zod.string(),
   "full_name": zod.string(),
-  "role": zod.enum(['director', 'zam_direktor', 'zavuch', 'teacher', 'sinf_rahbari', 'kutubxonachi']),
+  "role": zod.enum(['admin', 'director', 'zam_direktor', 'zavuch', 'teacher', 'sinf_rahbari', 'kutubxonachi']),
   "class_id": zod.string().nullish(),
   "class_name": zod.string().nullish(),
-  "login": zod.string(),
-  "password": zod.string(),
+  "login": zod.string().nullish(),
+  "password": zod.string().nullish(),
   "telegram_id": zod.number().nullish(),
-  "created_at": zod.string()
+  "created_at": zod.string().nullish()
 })
 export const ListStaffResponse = zod.array(ListStaffResponseItem)
 
