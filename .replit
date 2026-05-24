@@ -39,3 +39,4 @@ externalPort = 3000
 [userenv.shared]
 ADMIN_PASSWORD = "oyatullo"
 SUPABASE_URL = "https://saodkjnjskghqqktcxkj.supabase.co"
+WEBSITE_URL = "https://7374e2ab-90a3-49ec-95ac-bdcf9f505b63-00-2wj28fh5yoe1q.pike.replit.dev"
