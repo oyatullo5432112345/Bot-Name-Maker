@@ -76,3 +76,4 @@ externalPort = 3000
 
 [userenv.shared]
 ADMIN_PASSWORD = "oyatullo"
+SUPABASE_URL = "https://saodkjnjskghqqktcxkj.supabase.co"
