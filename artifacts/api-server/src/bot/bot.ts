@@ -7,8 +7,9 @@ const CHANNEL_ID = "@TalimPlatform";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.resolve(__dirname, "logo.png");
 
-// Veb-sayt manzili — deployment da to'liq URL bo'ladi
-const WEBSITE_URL = process.env["WEBSITE_URL"] ?? "https://talim-platform.replit.app";
+// Veb-sayt manzili — REPLIT_DOMAINS dan avtomatik olinadi
+const replitDomain = process.env["REPLIT_DOMAINS"]?.split(",")[0]?.trim();
+const WEBSITE_URL = process.env["WEBSITE_URL"] ?? (replitDomain ? `https://${replitDomain}` : "https://talim-platform.replit.app");
 
 async function checkChannelMembership(bot: Bot, userId: number): Promise<boolean> {
   try {
