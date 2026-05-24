@@ -33,16 +33,31 @@ export default function Dashboard() {
 }
 
 function AdminDashboard() {
-  const { data: stats, isLoading } = useGetDashboardStats({
+  const { data: stats, isLoading, isError, refetch } = useGetDashboardStats({
     query: {
-      queryKey: getGetDashboardStatsQueryKey()
+      queryKey: getGetDashboardStatsQueryKey(),
+      retry: 2,
     }
   });
 
-  if (isLoading || !stats) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (isError || !stats) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-4 text-muted-foreground">
+        <p>Statistikani yuklashda xatolik yuz berdi.</p>
+        <button
+          onClick={() => refetch()}
+          className="text-primary underline text-sm"
+        >
+          Qayta urinish
+        </button>
       </div>
     );
   }

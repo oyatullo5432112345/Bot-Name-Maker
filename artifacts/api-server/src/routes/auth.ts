@@ -42,9 +42,11 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   const { login, password } = parsed.data;
+  const trimmedLogin = login.trim();
+  const trimmedPassword = password.trim();
 
   // Admin tekshiruvi (ADMIN_ID bo'yicha)
-  if (login === "admin" && password === ADMIN_ID) {
+  if (trimmedLogin === "admin" && trimmedPassword === ADMIN_ID.trim()) {
     const payload = {
       id: "admin",
       role: "admin",
@@ -64,8 +66,8 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   const { data: staffList, error: staffError } = await supabase
     .from("staff")
     .select("*")
-    .eq("login", login)
-    .eq("password", password);
+    .eq("login", trimmedLogin)
+    .eq("password", trimmedPassword);
 
   if (!staffError && staffList && staffList.length > 0) {
     const staff = staffList[0] as {
@@ -108,8 +110,8 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   const { data: studentList, error: studentError } = await supabase
     .from("users")
     .select("*")
-    .eq("login", login)
-    .eq("password", password);
+    .eq("login", trimmedLogin)
+    .eq("password", trimmedPassword);
 
   if (!studentError && studentList && studentList.length > 0) {
     const student = studentList[0] as {
