@@ -5,6 +5,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useLogin } from "@workspace/api-client-react";
 import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,7 @@ export default function Login() {
   const [, setLocation] = useLocation();
   const { login: authLogin } = useAuth();
   const { toast } = useToast();
+  const [botLoginLoading, setBotLoginLoading] = useState(false);
 
   const loginMutation = useLogin();
 
@@ -36,6 +38,38 @@ export default function Login() {
     resolver: zodResolver(loginSchema),
     defaultValues: { login: "", password: "" },
   });
+
+  // Telegram bot magic token orqali avtomatik kirish
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    if (!token) return;
+
+    setBotLoginLoading(true);
+    fetch(`/api/auth/bot-login?token=${encodeURIComponent(token)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && data.token) {
+          authLogin(data);
+          setLocation("/dashboard");
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Havola yaroqsiz",
+            description: "Telegram havolasi muddati o'tgan. Iltimos qayta urinib ko'ring.",
+          });
+          setBotLoginLoading(false);
+        }
+      })
+      .catch(() => {
+        toast({
+          variant: "destructive",
+          title: "Xatolik",
+          description: "Serverga ulanishda xatolik yuz berdi.",
+        });
+        setBotLoginLoading(false);
+      });
+  }, []);
 
   const onSubmit = (data: LoginFormValues) => {
     loginMutation.mutate(
@@ -55,6 +89,16 @@ export default function Login() {
       }
     );
   };
+
+  if (botLoginLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-secondary/30 gap-4">
+        <img src="/logo.png" alt="Talim Platform" className="h-20 w-auto object-contain" />
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Telegram orqali kirilmoqda...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex bg-secondary/30">

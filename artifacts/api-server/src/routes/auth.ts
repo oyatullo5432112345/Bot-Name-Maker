@@ -10,6 +10,31 @@ import {
 import { logger } from "../lib/logger.js";
 import { getChatIdByPhone, normalizePhone } from "../bot/settings.js";
 
+// Magic token store (in-memory, 10 daqiqa amal qiladi)
+interface MagicToken {
+  payload: Record<string, unknown>;
+  expiresAt: number;
+}
+const magicTokens = new Map<string, MagicToken>();
+
+function generateMagicToken(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+export function createMagicToken(payload: Record<string, unknown>): string {
+  const token = generateMagicToken();
+  magicTokens.set(token, { payload, expiresAt: Date.now() + 10 * 60 * 1000 });
+  return token;
+}
+
+// Eskirgan tokenlarni tozalash
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of magicTokens) {
+    if (val.expiresAt < now) magicTokens.delete(key);
+  }
+}, 60 * 1000);
+
 const router: IRouter = Router();
 
 const ADMIN_ID = process.env["ADMIN_ID"] ?? "";
@@ -352,6 +377,30 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
   };
   const token = createToken(payload);
   res.status(201).json({ ...payload, token, password: staffData.password });
+});
+
+// GET /api/auth/bot-login?token=xxx  — bot magic link orqali kirish
+router.get("/auth/bot-login", async (req, res): Promise<void> => {
+  const token = req.query["token"];
+  if (typeof token !== "string" || !token) {
+    res.status(400).json({ error: "Token kerak" });
+    return;
+  }
+
+  const entry = magicTokens.get(token);
+  if (!entry) {
+    res.status(401).json({ error: "Token yaroqsiz yoki muddati o'tgan" });
+    return;
+  }
+  if (entry.expiresAt < Date.now()) {
+    magicTokens.delete(token);
+    res.status(401).json({ error: "Token muddati o'tgan" });
+    return;
+  }
+
+  magicTokens.delete(token);
+  const authToken = createToken(entry.payload);
+  res.json(LoginResponse.parse({ ...entry.payload, token: authToken }));
 });
 
 // GET /api/auth/me

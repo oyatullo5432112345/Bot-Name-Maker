@@ -12,6 +12,7 @@ import {
   getPhoneByChatId,
   normalizePhone,
 } from "./settings.js";
+import { createMagicToken } from "../routes/auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.resolve(__dirname, "logo.png");
@@ -244,14 +245,37 @@ export function createBot(): Bot {
 
       linkPhoneToChatId(normalized, userId);
 
+      // Sinf ID sini topish
+      const { data: clsData } = await supabase
+        .from("classes")
+        .select("id")
+        .eq("name", student.class_name)
+        .single();
+
+      // Magic token yaratish — bir marta bosib kirish uchun
+      const payload = {
+        id: String(userId),
+        role: "student",
+        full_name: student.full_name,
+        login: student.login,
+        class_name: student.class_name,
+        class_id: clsData?.id ?? null,
+        telegram_id: userId,
+      };
+      const magicToken = createMagicToken(payload);
+      const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
+
+      const kb = new InlineKeyboard()
+        .url("🚀 Platformaga kirish", loginUrl);
+
       await ctx.reply(
         `✅ *Muvaffaqiyatli bog'landi!*\n\n` +
         `👤 *${student.full_name}*\n` +
         `🏫 Sinf: ${student.class_name}\n\n` +
-        `Endi platforma orqali Telegram'ga xabarlar kelishi mumkin. 🔔`,
+        `Quyidagi tugma orqali *avtomatik* platformaga kirishingiz mumkin 👇`,
         {
           parse_mode: "Markdown",
-          reply_markup: { remove_keyboard: true },
+          reply_markup: kb,
         }
       );
     } else {
