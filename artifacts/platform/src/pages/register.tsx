@@ -295,6 +295,7 @@ function StaffRegisterModal({
   const isTeacher = role === "teacher";
   const cfg = ROLE_CONFIG[role];
   const colors = cfg ? COLOR_CLASSES[cfg.color] : null;
+  const [customSubject, setCustomSubject] = useState("");
 
   const handlePhoneChange = (val: string) => {
     let digits = val.replace(/\D/g, "");
@@ -433,10 +434,60 @@ function StaffRegisterModal({
                     );
                   })}
                 </div>
+
+                {/* Qo'lda yozish */}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Ro'yxatda yo'q fan nomini yozing..."
+                    value={customSubject}
+                    onChange={e => setCustomSubject(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const val = customSubject.trim();
+                        if (val && !selectedSubjects.includes(val)) {
+                          setSelectedSubjects(prev => [...prev, val]);
+                        }
+                        setCustomSubject("");
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-blue-300 text-blue-700 hover:bg-blue-100 shrink-0"
+                    onClick={() => {
+                      const val = customSubject.trim();
+                      if (val && !selectedSubjects.includes(val)) {
+                        setSelectedSubjects(prev => [...prev, val]);
+                      }
+                      setCustomSubject("");
+                    }}
+                    disabled={!customSubject.trim()}
+                  >
+                    + Qo'shish
+                  </Button>
+                </div>
+
                 {selectedSubjects.length > 0 && (
-                  <p className="text-xs text-blue-600 font-medium">
-                    ✓ {selectedSubjects.length} ta fan tanlandi: {selectedSubjects.join(", ")}
-                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedSubjects.map(s => (
+                      <span
+                        key={s}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-600 text-white rounded text-xs font-medium"
+                      >
+                        {s}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSubjects(prev => prev.filter(x => x !== s))}
+                          className="hover:text-blue-200 ml-0.5"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
