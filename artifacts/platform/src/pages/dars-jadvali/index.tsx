@@ -141,7 +141,7 @@ export default function DarsJadvaliPage() {
           headers: authHeaders(),
           body: JSON.stringify({
             subject: formSubject.trim(),
-            teacher_id: formTeacherId || null,
+            teacher_id: (formTeacherId && formTeacherId !== "none") ? formTeacherId : null,
           }),
         });
         if (!res.ok) {
@@ -161,7 +161,7 @@ export default function DarsJadvaliPage() {
             day_of_week: selectedDay,
             period: Number(formPeriod),
             subject: formSubject.trim(),
-            teacher_id: formTeacherId || null,
+            teacher_id: (formTeacherId && formTeacherId !== "none") ? formTeacherId : null,
           }),
         });
         if (!res.ok) {
@@ -360,7 +360,7 @@ export default function DarsJadvaliPage() {
                   <SelectValue placeholder="O'qituvchi tanlang..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">— Belgilanmagan —</SelectItem>
+                  <SelectItem value="none">— Belgilanmagan —</SelectItem>
                   {staff.map(s => (
                     <SelectItem key={s.id} value={s.id}>{s.full_name}</SelectItem>
                   ))}
