@@ -16,9 +16,11 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.resolve(__dirname, "logo.png");
 
+const replitDevDomain = process.env["REPLIT_DEV_DOMAIN"]?.trim();
 const replitDomain = process.env["REPLIT_DOMAINS"]?.split(",")[0]?.trim();
 const WEBSITE_URL =
   process.env["WEBSITE_URL"] ??
+  (replitDevDomain ? `https://${replitDevDomain}` : null) ??
   (replitDomain ? `https://${replitDomain}` : "https://talim-platform.replit.app");
 
 const ADMIN_ID = Number(process.env["ADMIN_ID"] ?? "0");
