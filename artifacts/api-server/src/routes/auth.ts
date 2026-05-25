@@ -172,6 +172,17 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     return;
   }
 
+  // Bir telefon raqami bilan maksimal 2 ta ro'yxatdan o'tish mumkin
+  const { data: phoneUsers } = await supabase
+    .from("users")
+    .select("login")
+    .eq("phone_number", phone_number);
+
+  if ((phoneUsers?.length ?? 0) >= 2) {
+    res.status(400).json({ error: "Bu telefon raqami bilan maksimal 2 ta foydalanuvchi ro'yxatdan o'ta oladi" });
+    return;
+  }
+
   const telegram_id = Date.now();
   const registration_date = new Date().toISOString();
 

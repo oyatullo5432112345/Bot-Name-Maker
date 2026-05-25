@@ -1,12 +1,16 @@
-import { Bot, InlineKeyboard, InputFile } from "grammy";
+import { Bot, InlineKeyboard, InputFile, Keyboard } from "grammy";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "../lib/logger.js";
+import { supabase } from "../lib/supabase.js";
 import {
   loadSettings,
   addChannel,
   removeChannel,
   setWelcomeMessage,
+  linkPhoneToChatId,
+  getPhoneByChatId,
+  normalizePhone,
 } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +69,24 @@ function buildSubscribeKeyboard(missingChannels: string[]): InlineKeyboard {
 
 function buildWelcomeKeyboard(): InlineKeyboard {
   return new InlineKeyboard().url("🌐 Platformaga kirish", WEBSITE_URL);
+}
+
+function buildContactKeyboard(): Keyboard {
+  return new Keyboard()
+    .requestContact("📱 Telefon raqamini ulashish")
+    .resized()
+    .oneTime();
+}
+
+async function findStudentByPhone(phone: string) {
+  const normalized = normalizePhone(phone);
+  const { data } = await supabase
+    .from("users")
+    .select("full_name, class_name, login")
+    .eq("phone_number", normalized)
+    .limit(1)
+    .maybeSingle();
+  return data;
 }
 
 async function sendWelcome(ctx: { replyWithPhoto: Function; reply: Function }, adminExtra = false): Promise<void> {
@@ -151,6 +173,19 @@ export function createBot(): Bot {
     }
 
     await sendWelcome(ctx, isAdmin(userId));
+
+    // Telefon raqami bog'lanmagan bo'lsa — so'rash
+    const alreadyLinked = getPhoneByChatId(userId);
+    if (!alreadyLinked) {
+      await ctx.reply(
+        "📱 *Platformadagi akkauntingizni bog'lash uchun telefon raqamingizni ulashing.*\n\n" +
+        "_Shu orqali sizga xabarlar yuborilishi mumkin bo'ladi._",
+        {
+          parse_mode: "Markdown",
+          reply_markup: buildContactKeyboard(),
+        }
+      );
+    }
   });
 
   // ─── /admin ────────────────────────────────────────────────────────────────
@@ -165,6 +200,50 @@ export function createBot(): Bot {
       parse_mode: "Markdown",
       reply_markup: buildAdminMenu(),
     });
+  });
+
+  // ─── Contact handler ────────────────────────────────────────────────────────
+  bot.on("message:contact", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId) return;
+
+    const phone = ctx.message.contact.phone_number;
+    const normalized = normalizePhone(phone);
+
+    // Avval bog'langan bo'lsa
+    const alreadyLinked = getPhoneByChatId(userId);
+    if (alreadyLinked === normalized) {
+      await ctx.reply(
+        "✅ Telefon raqamingiz allaqachon bog'langan!",
+        { reply_markup: { remove_keyboard: true } }
+      );
+      return;
+    }
+
+    // Bazadan topish
+    const student = await findStudentByPhone(normalized);
+
+    if (student) {
+      linkPhoneToChatId(normalized, userId);
+      await ctx.reply(
+        `✅ *Muvaffaqiyatli bog'landi!*\n\n` +
+        `👤 ${student.full_name}\n` +
+        `🏫 Sinf: ${student.class_name}\n\n` +
+        `Endi sizga platforma orqali xabarlar kelishi mumkin.`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: { remove_keyboard: true },
+        }
+      );
+    } else {
+      // Topilmadi, lekin baribir saqlash
+      linkPhoneToChatId(normalized, userId);
+      await ctx.reply(
+        "📱 Telefon raqamingiz saqlandi.\n\n" +
+        "Agar veb saytda shu raqam bilan ro'yxatdan o'tsangiz, akkauntingiz avtomatik bog'lanadi.",
+        { reply_markup: { remove_keyboard: true } }
+      );
+    }
   });
 
   // ─── Callback: admin_panel ──────────────────────────────────────────────────

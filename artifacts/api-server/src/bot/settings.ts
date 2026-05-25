@@ -11,9 +11,15 @@ export interface Channel {
   name: string;
 }
 
+export interface PhoneMapping {
+  phone: string;
+  chatId: number;
+}
+
 export interface BotSettings {
   channels: Channel[];
   welcomeMessage: string;
+  phoneMappings: PhoneMapping[];
 }
 
 const DEFAULT_SETTINGS: BotSettings = {
@@ -22,6 +28,7 @@ const DEFAULT_SETTINGS: BotSettings = {
     "✅ *Xush kelibsiz!*\n\n" +
     "Toshloq tuman 3-maktab — *TALIM PLATFORM*\n\n" +
     "Platformaga kirish uchun quyidagi tugmani bosing 👇",
+  phoneMappings: [],
 };
 
 function ensureDir(): void {
@@ -33,16 +40,17 @@ export function loadSettings(): BotSettings {
     ensureDir();
     if (!fs.existsSync(SETTINGS_FILE)) {
       saveSettings(DEFAULT_SETTINGS);
-      return { ...DEFAULT_SETTINGS, channels: [] };
+      return { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
     }
     const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
     const parsed = JSON.parse(raw) as Partial<BotSettings>;
     return {
       channels: parsed.channels ?? [],
       welcomeMessage: parsed.welcomeMessage ?? DEFAULT_SETTINGS.welcomeMessage,
+      phoneMappings: parsed.phoneMappings ?? [],
     };
   } catch {
-    return { ...DEFAULT_SETTINGS, channels: [] };
+    return { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
   }
 }
 
@@ -69,4 +77,35 @@ export function setWelcomeMessage(message: string): void {
   const settings = loadSettings();
   settings.welcomeMessage = message;
   saveSettings(settings);
+}
+
+export function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("998") && digits.length === 12) return `+${digits}`;
+  if (digits.length === 9) return `+998${digits}`;
+  if (digits.startsWith("0") && digits.length === 10) return `+998${digits.slice(1)}`;
+  return `+${digits}`;
+}
+
+export function linkPhoneToChatId(phone: string, chatId: number): void {
+  const settings = loadSettings();
+  const normalized = normalizePhone(phone);
+  const existing = settings.phoneMappings.findIndex((m) => m.phone === normalized);
+  if (existing >= 0) {
+    settings.phoneMappings[existing]!.chatId = chatId;
+  } else {
+    settings.phoneMappings.push({ phone: normalized, chatId });
+  }
+  saveSettings(settings);
+}
+
+export function getChatIdByPhone(phone: string): number | null {
+  const normalized = normalizePhone(phone);
+  const settings = loadSettings();
+  return settings.phoneMappings.find((m) => m.phone === normalized)?.chatId ?? null;
+}
+
+export function getPhoneByChatId(chatId: number): string | null {
+  const settings = loadSettings();
+  return settings.phoneMappings.find((m) => m.chatId === chatId)?.phone ?? null;
 }

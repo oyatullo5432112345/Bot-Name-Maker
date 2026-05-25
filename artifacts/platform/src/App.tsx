@@ -82,9 +82,16 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
+          <div className="flex flex-col min-h-screen">
+            <div className="bg-red-500/10 border-b border-red-400/30 py-1 px-3 text-center shrink-0">
+              <span className="text-xs text-red-600 font-medium">⚠️ Bu platforma test rejimida ishlayapti</span>
+            </div>
+            <div className="flex-1 min-h-0">
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <Router />
+              </WouterRouter>
+            </div>
+          </div>
           <Toaster />
         </TooltipProvider>
       </AuthProvider>
