@@ -3,9 +3,10 @@ import { supabase } from "../lib/supabase.js";
 
 const router: IRouter = Router();
 
-// GET /api/teacher-subjects?class_id=xxx
+// GET /api/teacher-subjects?class_id=xxx  YOKI  ?teacher_id=xxx
 router.get("/teacher-subjects", async (req, res): Promise<void> => {
   const class_id = req.query["class_id"] as string | undefined;
+  const teacher_id = req.query["teacher_id"] as string | undefined;
 
   let query = supabase
     .from("teacher_subjects")
@@ -14,6 +15,9 @@ router.get("/teacher-subjects", async (req, res): Promise<void> => {
 
   if (class_id) {
     query = query.eq("class_id", class_id);
+  }
+  if (teacher_id) {
+    query = query.eq("teacher_id", teacher_id);
   }
 
   const { data, error } = await query;

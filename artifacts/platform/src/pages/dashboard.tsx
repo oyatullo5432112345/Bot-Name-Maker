@@ -1,63 +1,73 @@
 import { useAuth } from "@/lib/use-auth";
-import { useState, useEffect } from "react";
-import { 
-  useGetDashboardStats, 
+import { useState, useEffect, useCallback } from "react";
+import {
+  useGetDashboardStats,
   getGetDashboardStatsQueryKey,
-  useGetMyClass,
-  getGetMyClassQueryKey
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
-const TOKEN_KEY = "talim_auth_token";
-const getToken = () => localStorage.getItem(TOKEN_KEY);
+const getToken = () => localStorage.getItem("talim_auth_token");
+const authHeaders = (): HeadersInit => {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+};
 
 const SCHOOL_YEAR_START = new Date("2026-09-02T08:00:00");
 
-function useCountdown(target: Date) {
-  const [timeLeft, setTimeLeft] = useState(() => {
-    const diff = target.getTime() - Date.now();
-    return diff > 0 ? diff : 0;
-  });
+const DAY_NAMES: Record<number, string> = {
+  1: "Dushanba", 2: "Seshanba", 3: "Chorshanba",
+  4: "Payshanba", 5: "Juma", 6: "Shanba",
+};
+const PERIOD_TIMES: Record<number, string> = {
+  1: "08:00–08:45", 2: "08:55–09:40", 3: "09:50–10:35",
+  4: "10:55–11:40", 5: "11:50–12:35", 6: "12:45–13:30",
+  7: "13:40–14:25", 8: "14:35–15:20",
+};
 
+function useCountdown(target: Date) {
+  const [timeLeft, setTimeLeft] = useState(() => Math.max(0, target.getTime() - Date.now()));
   useEffect(() => {
     if (timeLeft <= 0) return;
     const interval = setInterval(() => {
-      const diff = target.getTime() - Date.now();
-      setTimeLeft(diff > 0 ? diff : 0);
+      setTimeLeft(Math.max(0, target.getTime() - Date.now()));
     }, 1000);
     return () => clearInterval(interval);
   }, [target, timeLeft]);
-
-  const days = Math.floor(timeLeft / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
-
-  return { days, hours, minutes, seconds, ended: timeLeft <= 0 };
+  return {
+    days: Math.floor(timeLeft / 86400000),
+    hours: Math.floor((timeLeft % 86400000) / 3600000),
+    minutes: Math.floor((timeLeft % 3600000) / 60000),
+    seconds: Math.floor((timeLeft % 60000) / 1000),
+    ended: timeLeft <= 0,
+  };
 }
 
-interface TeacherSubject {
+interface TimetableEntry {
+  id: string;
+  day_of_week: number;
+  period: number;
+  subject: string;
+  teacher_name: string | null;
+  class_name?: string | null;
+}
+
+interface TeacherSubjectEntry {
   id: string;
   subject: string;
-  teacher_name?: string | null;
-}
-
-interface SinfRahbari {
-  id: string;
-  full_name: string;
-  role: string;
+  class_id: string;
+  class_name?: string | null;
 }
 
 export default function Dashboard() {
   const { user } = useAuth();
-
   if (!user) return null;
 
   const isAdminOrDir = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
-  const isTeacher = user.role === "teacher" || user.role === "sinf_rahbari";
+  const isTeacher = ["teacher", "sinf_rahbari"].includes(user.role);
   const isStudent = user.role === "student";
 
   return (
@@ -66,7 +76,6 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold tracking-tight">Bosh sahifa</h1>
         <p className="text-muted-foreground mt-1">Xush kelibsiz, {user.full_name}</p>
       </div>
-
       {isAdminOrDir && <AdminDashboard />}
       {isTeacher && <TeacherDashboard />}
       {isStudent && <StudentDashboard />}
@@ -76,79 +85,39 @@ export default function Dashboard() {
 
 function AdminDashboard() {
   const { data: stats, isLoading, isError, refetch } = useGetDashboardStats({
-    query: {
-      queryKey: getGetDashboardStatsQueryKey(),
-      retry: 2,
-    }
+    query: { queryKey: getGetDashboardStatsQueryKey(), retry: 2 }
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (isError || !stats) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 gap-4 text-muted-foreground">
-        <p>Statistikani yuklashda xatolik yuz berdi.</p>
-        <button onClick={() => refetch()} className="text-primary underline text-sm">
-          Qayta urinish
-        </button>
-      </div>
-    );
-  }
+  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  if (isError || !stats) return (
+    <div className="flex flex-col items-center py-12 gap-4 text-muted-foreground">
+      <p>Statistikani yuklashda xatolik yuz berdi.</p>
+      <button onClick={() => refetch()} className="text-primary underline text-sm">Qayta urinish</button>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Jami O'quvchilar</CardTitle>
-            <GraduationCap className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total_students}</div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Jami Sinflar</CardTitle>
-            <School className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total_classes}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Xodimlar</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total_staff}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">O'quv yili boshlanishiga</CardTitle>
-            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.days_until_launch} kun</div>
-          </CardContent>
-        </Card>
+        {[
+          { title: "Jami O'quvchilar", value: stats.total_students, icon: GraduationCap },
+          { title: "Jami Sinflar", value: stats.total_classes, icon: School },
+          { title: "Xodimlar", value: stats.total_staff, icon: Users },
+          { title: "O'quv yiliga qoldi", value: `${stats.days_until_launch} kun`, icon: CalendarDays },
+        ].map(({ title, value, icon: Icon }) => (
+          <Card key={title}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">{title}</CardTitle>
+              <Icon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{value}</div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
-
       <Card>
-        <CardHeader>
-          <CardTitle>Sinflar bo'yicha statistika</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Sinflar bo'yicha statistika</CardTitle></CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -166,9 +135,7 @@ function AdminDashboard() {
               ))}
               {stats.students_by_class.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={2} className="text-center text-muted-foreground py-6">
-                    Ma'lumot topilmadi
-                  </TableCell>
+                  <TableCell colSpan={2} className="text-center text-muted-foreground py-6">Ma'lumot topilmadi</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -180,100 +147,183 @@ function AdminDashboard() {
 }
 
 function TeacherDashboard() {
-  const { data: myClass, isLoading } = useGetMyClass({
-    query: { queryKey: getGetMyClassQueryKey() }
-  });
+  const { user } = useAuth();
+  const [myClass, setMyClass] = useState<{ class_name: string; students: Array<{ full_name: string; phone_number?: string; login: string }> } | null>(null);
+  const [subjects, setSubjects] = useState<TeacherSubjectEntry[]>([]);
+  const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedDay, setSelectedDay] = useState(new Date().getDay() || 1);
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!user) return;
+    const teacherId = user.id;
 
-  if (!myClass) {
-    return (
-      <Card>
-        <CardContent className="py-10 text-center text-muted-foreground">
-          Sizga hozircha sinf biriktirilmagan.
-        </CardContent>
-      </Card>
-    );
-  }
+    void (async () => {
+      try {
+        const [subjectsRes, timetableRes, classesRes, myClassRes] = await Promise.all([
+          fetch(`${API_BASE}/teacher-subjects?teacher_id=${teacherId}`, { headers: authHeaders() }),
+          fetch(`${API_BASE}/timetable?teacher_id=${teacherId}`, { headers: authHeaders() }),
+          fetch(`${API_BASE}/classes`, { headers: authHeaders() }),
+          user.class_id
+            ? fetch(`${API_BASE}/dashboard/my-class`, { headers: authHeaders() })
+            : Promise.resolve(null),
+        ]);
+
+        const allClasses: Array<{ id: string; name: string }> = classesRes.ok
+          ? await classesRes.json() as Array<{ id: string; name: string }>
+          : [];
+
+        if (subjectsRes.ok) {
+          const data = await subjectsRes.json() as (TeacherSubjectEntry & { class_id: string })[];
+          const enriched: TeacherSubjectEntry[] = data.map(row => ({
+            ...row,
+            class_name: allClasses.find(c => c.id === row.class_id)?.name ?? null,
+          }));
+          setSubjects(enriched);
+        }
+
+        if (timetableRes.ok) {
+          const data = await timetableRes.json() as TimetableEntry[];
+          setTimetable(data);
+        }
+
+        if (myClassRes?.ok) {
+          const data = await myClassRes.json() as { class_name: string; students: Array<{ full_name: string; phone_number?: string; login: string }> };
+          if (data.class_name) setMyClass(data);
+        }
+      } catch { /* ignore */ }
+      setLoading(false);
+    })();
+  }, [user]);
+
+  if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+
+  const todayEntries = timetable.filter(e => e.day_of_week === selectedDay).sort((a, b) => a.period - b.period);
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2">
+      {myClass && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Rahbarlik sinfim</CardTitle>
+              <School className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{myClass.class_name}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">O'quvchilar soni</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{myClass.students.length}</div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {subjects.length > 0 && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Sinfingiz</CardTitle>
-            <School className="h-4 w-4 text-muted-foreground" />
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4" />
+              O'qitadigan fanlar
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{myClass.class_name}</div>
+            <div className="flex flex-wrap gap-2">
+              {subjects.map(s => (
+                <div key={s.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border bg-card text-sm">
+                  <span className="font-medium">{s.subject}</span>
+                  {s.class_name && <Badge variant="secondary" className="text-xs">{s.class_name}</Badge>}
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">O'quvchilar soni</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{myClass.students.length}</div>
-          </CardContent>
-        </Card>
-      </div>
+      )}
 
       <Card>
         <CardHeader>
-          <CardTitle>Sinf o'quvchilari ro'yxati</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarDays className="w-4 h-4" />
+            Mening dars jadvalim
+          </CardTitle>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {Object.entries(DAY_NAMES).map(([id, name]) => (
+              <button
+                key={id}
+                onClick={() => setSelectedDay(Number(id))}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${selectedDay === Number(id) ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>F.I.O</TableHead>
-                <TableHead>Telefon</TableHead>
-                <TableHead>Login</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {myClass.students.map((student) => (
-                <TableRow key={student.telegram_id}>
-                  <TableCell className="font-medium">{student.full_name}</TableCell>
-                  <TableCell>{student.phone_number}</TableCell>
-                  <TableCell>{student.login}</TableCell>
-                </TableRow>
+          {todayEntries.length === 0 ? (
+            <p className="text-center text-muted-foreground text-sm py-6">Bu kun dars yo'q</p>
+          ) : (
+            <div className="space-y-2">
+              {todayEntries.map(entry => (
+                <div key={entry.id} className="flex items-center gap-4 rounded-lg border px-4 py-3 bg-card">
+                  <div className="text-center min-w-[2rem]">
+                    <div className="text-lg font-bold text-primary">{entry.period}</div>
+                    <div className="text-xs text-muted-foreground">dars</div>
+                  </div>
+                  <div className="border-l pl-4">
+                    <div className="font-medium">{entry.subject}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {PERIOD_TIMES[entry.period]} {entry.class_name ? `· ${entry.class_name} sinf` : ""}
+                    </div>
+                  </div>
+                </div>
               ))}
-              {myClass.students.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={3} className="text-center text-muted-foreground py-6">
-                    O'quvchilar topilmadi
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {myClass && myClass.students.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Sinf o'quvchilari</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>F.I.O</TableHead>
+                  <TableHead>Login</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {myClass.students.map((s, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-medium">{s.full_name}</TableCell>
+                    <TableCell className="font-mono text-sm">{s.login}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
 function CountdownBanner() {
   const { days, hours, minutes, seconds, ended } = useCountdown(SCHOOL_YEAR_START);
-
-  if (ended) {
-    return (
-      <Card className="border-primary bg-primary/5">
-        <CardContent className="py-4 text-center">
-          <p className="text-lg font-bold text-primary">🎓 2026-2027 o'quv yili boshlandi!</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
+  if (ended) return (
+    <Card className="border-primary bg-primary/5">
+      <CardContent className="py-4 text-center">
+        <p className="text-lg font-bold text-primary">🎓 2026-2027 o'quv yili boshlandi!</p>
+      </CardContent>
+    </Card>
+  );
   return (
     <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
       <CardContent className="py-4">
@@ -282,23 +332,13 @@ function CountdownBanner() {
           <p className="text-sm font-medium text-primary">2026-2027 o'quv yili boshlanishiga qoldi</p>
         </div>
         <div className="grid grid-cols-4 gap-2 text-center">
-          {[
-            { value: days, label: "Kun" },
-            { value: hours, label: "Soat" },
-            { value: minutes, label: "Daqiqa" },
-            { value: seconds, label: "Soniya" },
-          ].map(({ value, label }) => (
+          {[{ value: days, label: "Kun" }, { value: hours, label: "Soat" }, { value: minutes, label: "Daqiqa" }, { value: seconds, label: "Soniya" }].map(({ value, label }) => (
             <div key={label} className="bg-background rounded-lg border border-primary/20 py-3">
-              <div className="text-2xl font-bold text-primary tabular-nums">
-                {String(value).padStart(2, "0")}
-              </div>
+              <div className="text-2xl font-bold text-primary tabular-nums">{String(value).padStart(2, "0")}</div>
               <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
             </div>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground text-center mt-2">
-          2 Sentabr 2026 — yangi o'quv yili boshlanadi
-        </p>
       </CardContent>
     </Card>
   );
@@ -306,55 +346,37 @@ function CountdownBanner() {
 
 function StudentDashboard() {
   const { user } = useAuth();
-  const [sinfRahbari, setSinfRahbari] = useState<SinfRahbari | null>(null);
-  const [darsJadvali, setDarsJadvali] = useState<TeacherSubject[]>([]);
+  const [sinfRahbari, setSinfRahbari] = useState<string | null>(null);
+  const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedDay, setSelectedDay] = useState(new Date().getDay() || 1);
 
-  useEffect(() => {
-    if (!user?.class_id) {
-      setLoading(false);
-      return;
-    }
-
+  const loadData = useCallback(async () => {
+    if (!user?.class_id) { setLoading(false); return; }
     const classId = user.class_id;
-    const token = getToken();
-    const headers: HeadersInit = token
-      ? { Authorization: `Bearer ${token}` }
-      : {};
+    try {
+      const [classesRes, timetableRes] = await Promise.all([
+        fetch(`${API_BASE}/classes`, { headers: authHeaders() }),
+        fetch(`${API_BASE}/timetable?class_id=${classId}`, { headers: authHeaders() }),
+      ]);
 
-    void (async () => {
-      try {
-        const [staffRes, subjectsRes] = await Promise.all([
-          fetch(`${API_BASE}/staff`, { headers }),
-          fetch(`${API_BASE}/teacher-subjects?class_id=${classId}`, { headers }),
-        ]);
-
-        if (staffRes.ok) {
-          const staffData = await staffRes.json() as Array<{
-            id: string;
-            full_name: string;
-            role: string;
-            class_id?: string | null;
-          }>;
-          // O'qituvchi yoki sinf_rahbari rolida bo'lib, shu sinfga biriktirilgan xodimni topish
-          const rahbar = staffData.find(
-            s => s.class_id === classId && ["sinf_rahbari", "teacher"].includes(s.role)
-          );
-          setSinfRahbari(rahbar ? { id: rahbar.id, full_name: rahbar.full_name, role: rahbar.role } : null);
-        }
-
-        if (subjectsRes.ok) {
-          const subjectsData = await subjectsRes.json() as TeacherSubject[];
-          setDarsJadvali(subjectsData);
-        }
-      } catch {
-        // ignore
+      if (classesRes.ok) {
+        const classesData = await classesRes.json() as Array<{ id: string; teacher_name: string | null }>;
+        const myClass = classesData.find(c => c.id === classId);
+        setSinfRahbari(myClass?.teacher_name ?? null);
       }
-      setLoading(false);
-    })();
+      if (timetableRes.ok) {
+        const data = await timetableRes.json() as TimetableEntry[];
+        setTimetable(data);
+      }
+    } catch { /* ignore */ }
+    setLoading(false);
   }, [user?.class_id]);
 
+  useEffect(() => { void loadData(); }, [loadData]);
   if (!user) return null;
+
+  const dayEntries = timetable.filter(e => e.day_of_week === selectedDay).sort((a, b) => a.period - b.period);
 
   return (
     <div className="space-y-4">
@@ -390,7 +412,7 @@ function StudentDashboard() {
               {loading ? (
                 <Loader2 className="w-4 h-4 animate-spin text-primary mt-1" />
               ) : sinfRahbari ? (
-                <p className="font-medium mt-1 text-primary">{sinfRahbari.full_name}</p>
+                <p className="font-medium mt-1 text-primary">{sinfRahbari}</p>
               ) : (
                 <p className="text-muted-foreground text-sm mt-1 italic">Biriktirilmagan</p>
               )}
@@ -402,38 +424,45 @@ function StudentDashboard() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4" />
+            <CalendarDays className="w-4 h-4" />
             Dars jadvali
           </CardTitle>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {Object.entries(DAY_NAMES).map(([id, name]) => (
+              <button
+                key={id}
+                onClick={() => setSelectedDay(Number(id))}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${selectedDay === Number(id) ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-6">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            </div>
-          ) : darsJadvali.length === 0 ? (
-            <p className="text-center text-muted-foreground py-6 text-sm">
-              Dars jadvali hali kiritilmagan
-            </p>
+            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+          ) : timetable.length === 0 ? (
+            <p className="text-center text-muted-foreground py-6 text-sm">Dars jadvali hali kiritilmagan</p>
+          ) : dayEntries.length === 0 ? (
+            <p className="text-center text-muted-foreground py-6 text-sm">Bu kun dars yo'q</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>#</TableHead>
-                  <TableHead>Fan</TableHead>
-                  <TableHead>O'qituvchi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {darsJadvali.map((item, i) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="text-muted-foreground text-sm">{i + 1}</TableCell>
-                    <TableCell className="font-medium">{item.subject}</TableCell>
-                    <TableCell>{item.teacher_name || "—"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="space-y-2">
+              {dayEntries.map(entry => (
+                <div key={entry.id} className="flex items-center gap-4 rounded-lg border px-4 py-3 bg-card">
+                  <div className="text-center min-w-[2rem]">
+                    <div className="text-lg font-bold text-primary">{entry.period}</div>
+                    <div className="text-xs text-muted-foreground">dars</div>
+                  </div>
+                  <div className="border-l pl-4">
+                    <div className="font-medium">{entry.subject}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {PERIOD_TIMES[entry.period]} · {entry.teacher_name ?? "O'qituvchi belgilanmagan"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

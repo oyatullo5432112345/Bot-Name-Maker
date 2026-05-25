@@ -103,10 +103,10 @@ export default function ClassesList() {
 
   const isAdmin = user?.role === "admin";
 
-  // Sinf rahbarlari: sinf_rahbari yoki teacher roli bo'lganlar ham tayinlanishi mumkin
-  const sinfRahbarlari = staff?.filter(s => s.role === "sinf_rahbari" || s.role === "teacher");
-  // O'qituvchilar (teacher va sinf_rahbari - ular ham dars bera oladi)
-  const oqituvchilar = staff?.filter(s => s.role === "teacher" || s.role === "sinf_rahbari");
+  // Sinf rahbarlari: barcha xodimlar sinf rahbari bo'la oladi
+  const sinfRahbarlari = staff;
+  // O'qituvchilar: barcha xodimlar dars bera oladi (masul shaxslar ham)
+  const oqituvchilar = staff;
 
   const handleCreate = () => {
     if (!newClassName.trim()) return;

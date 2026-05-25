@@ -27,6 +27,7 @@ import Reyting from "@/pages/games/reyting";
 import DarslikPage from "@/pages/darslik/index";
 import NewDarslikPage from "@/pages/darslik/new";
 import BaholashPage from "@/pages/baholash/index";
+import DarsJadvaliPage from "@/pages/dars-jadvali/index";
 
 const queryClient = new QueryClient();
 
@@ -95,6 +96,10 @@ function Router() {
 
       <Route path="/baholash">
         <ProtectedRoute component={BaholashPage} />
+      </Route>
+
+      <Route path="/dars-jadvali">
+        <ProtectedRoute component={DarsJadvaliPage} />
       </Route>
 
       <Route path="/games/sozoyini">

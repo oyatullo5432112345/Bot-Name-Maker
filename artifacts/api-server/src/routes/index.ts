@@ -9,6 +9,7 @@ import teacherSubjectsRouter from "./teacher-subjects.js";
 import gamesRouter from "./games.js";
 import lessonsRouter from "./lessons.js";
 import gradesRouter from "./grades.js";
+import timetableRouter from "./timetable.js";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(teacherSubjectsRouter);
 router.use(gamesRouter);
 router.use(lessonsRouter);
 router.use(gradesRouter);
+router.use(timetableRouter);
 
 export default router;
