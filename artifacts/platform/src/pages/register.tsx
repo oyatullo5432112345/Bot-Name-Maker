@@ -662,7 +662,7 @@ function SinfRahbariCard({
   rahbar: { full_name: string } | undefined;
   onRegister: () => void;
 }) {
-  const c = COLOR_CLASSES.rose;
+  const c = rahbar ? COLOR_CLASSES.emerald : COLOR_CLASSES.rose;
 
   return (
     <div
@@ -670,7 +670,7 @@ function SinfRahbariCard({
         rounded-xl border-2 p-3.5 flex items-center justify-between gap-3
         transition-all duration-200
         ${rahbar
-          ? `${c.bg} ${c.border} opacity-80`
+          ? `${c.bg} ${c.border}`
           : `${c.bg} ${c.border} ${c.hover} hover:shadow-sm cursor-pointer`
         }
       `}
