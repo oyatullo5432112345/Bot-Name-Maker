@@ -249,7 +249,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     }
   }
 
-  // Sinf rahbari: har bir sinf uchun faqat bitta
+  // Sinf rahbari: har bir sinf uchun faqat bitta (sinf_rahbari yoki teacher rolidan)
   if (role === "sinf_rahbari") {
     if (!class_id) {
       res.status(400).json({ error: "Sinf rahbari uchun sinf tanlanishi shart" });
@@ -258,7 +258,21 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     const { data: existingRahbar } = await supabase
       .from("staff")
       .select("id")
-      .eq("role", "sinf_rahbari")
+      .in("role", ["sinf_rahbari", "teacher"])
+      .eq("class_id", class_id)
+      .maybeSingle();
+    if (existingRahbar) {
+      res.status(400).json({ error: "Bu sinf uchun sinf rahbari allaqachon tayinlangan" });
+      return;
+    }
+  }
+
+  // O'qituvchi sinf_id bilan kelsa, sinf rahbari sifatida tayinlanadi — tekshirish
+  if (role === "teacher" && class_id) {
+    const { data: existingRahbar } = await supabase
+      .from("staff")
+      .select("id")
+      .in("role", ["sinf_rahbari", "teacher"])
       .eq("class_id", class_id)
       .maybeSingle();
     if (existingRahbar) {

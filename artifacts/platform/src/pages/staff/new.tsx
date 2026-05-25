@@ -162,9 +162,9 @@ export default function NewStaff() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        {roleValue === StaffInputRole.sinf_rahbari 
-                          ? "Rahbarlik sinfi" 
-                          : "Asosiy sinf (ixtiyoriy)"}
+                        {roleValue === StaffInputRole.sinf_rahbari
+                          ? "Rahbarlik sinfi"
+                          : "Sinf rahbari bo'ladigan sinf (ixtiyoriy)"}
                       </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value || ""}>
                         <FormControl>
@@ -193,7 +193,7 @@ export default function NewStaff() {
 
             {roleValue === StaffInputRole.teacher && (
               <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-muted-foreground">
-                💡 O'qituvchi turli sinflarga turli fanlardan dars beradi. Fanlarni "Sinflar" bo'limida biriktirish mumkin.
+                💡 O'qituvchi turli sinflarga turli fanlardan dars beradi. Agar u shu sinfning sinf rahbari ham bo'lsa — sinfni yuqorida tanlang. Fanlarni "Sinflar" bo'limida biriktirish mumkin.
               </div>
             )}
 

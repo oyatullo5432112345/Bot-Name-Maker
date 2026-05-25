@@ -11,8 +11,9 @@ import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, U
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
+const TOKEN_KEY = "talim_auth_token";
+const getToken = () => localStorage.getItem(TOKEN_KEY);
 
-// 2026-2027 o'quv yili boshlanishi: 2 Sentabr 2026
 const SCHOOL_YEAR_START = new Date("2026-09-02T08:00:00");
 
 function useCountdown(target: Date) {
@@ -47,6 +48,7 @@ interface TeacherSubject {
 interface SinfRahbari {
   id: string;
   full_name: string;
+  role: string;
 }
 
 export default function Dashboard() {
@@ -92,10 +94,7 @@ function AdminDashboard() {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-4 text-muted-foreground">
         <p>Statistikani yuklashda xatolik yuz berdi.</p>
-        <button
-          onClick={() => refetch()}
-          className="text-primary underline text-sm"
-        >
+        <button onClick={() => refetch()} className="text-primary underline text-sm">
           Qayta urinish
         </button>
       </div>
@@ -182,9 +181,7 @@ function AdminDashboard() {
 
 function TeacherDashboard() {
   const { data: myClass, isLoading } = useGetMyClass({
-    query: {
-      queryKey: getGetMyClassQueryKey()
-    }
+    query: { queryKey: getGetMyClassQueryKey() }
   });
 
   if (isLoading) {
@@ -320,12 +317,16 @@ function StudentDashboard() {
     }
 
     const classId = user.class_id;
+    const token = getToken();
+    const headers: HeadersInit = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
 
     void (async () => {
       try {
         const [staffRes, subjectsRes] = await Promise.all([
-          fetch(`${API_BASE}/staff`, { credentials: "include" }),
-          fetch(`${API_BASE}/teacher-subjects?class_id=${classId}`, { credentials: "include" }),
+          fetch(`${API_BASE}/staff`, { headers }),
+          fetch(`${API_BASE}/teacher-subjects?class_id=${classId}`, { headers }),
         ]);
 
         if (staffRes.ok) {
@@ -335,10 +336,11 @@ function StudentDashboard() {
             role: string;
             class_id?: string | null;
           }>;
+          // O'qituvchi yoki sinf_rahbari rolida bo'lib, shu sinfga biriktirilgan xodimni topish
           const rahbar = staffData.find(
-            s => s.role === "sinf_rahbari" && s.class_id === classId
+            s => s.class_id === classId && ["sinf_rahbari", "teacher"].includes(s.role)
           );
-          setSinfRahbari(rahbar ? { id: rahbar.id, full_name: rahbar.full_name } : null);
+          setSinfRahbari(rahbar ? { id: rahbar.id, full_name: rahbar.full_name, role: rahbar.role } : null);
         }
 
         if (subjectsRes.ok) {
@@ -356,10 +358,8 @@ function StudentDashboard() {
 
   return (
     <div className="space-y-4">
-      {/* Teskari sanoq */}
       <CountdownBanner />
 
-      {/* Shaxsiy ma'lumotlar */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -399,7 +399,6 @@ function StudentDashboard() {
         </CardContent>
       </Card>
 
-      {/* Dars jadvali */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

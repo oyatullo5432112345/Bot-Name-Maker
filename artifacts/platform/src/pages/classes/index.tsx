@@ -50,6 +50,12 @@ import {
 import { Label } from "@/components/ui/label";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
+const TOKEN_KEY = "talim_auth_token";
+const getToken = () => localStorage.getItem(TOKEN_KEY);
+const authHeaders = () => {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+};
 
 interface TeacherSubject {
   id: string;
@@ -97,8 +103,8 @@ export default function ClassesList() {
 
   const isAdmin = user?.role === "admin";
 
-  // Sinf rahbarlari (sinf_rahbari rolidagilar)
-  const sinfRahbarlari = staff?.filter(s => s.role === "sinf_rahbari");
+  // Sinf rahbarlari: sinf_rahbari yoki teacher roli bo'lganlar ham tayinlanishi mumkin
+  const sinfRahbarlari = staff?.filter(s => s.role === "sinf_rahbari" || s.role === "teacher");
   // O'qituvchilar (teacher va sinf_rahbari - ular ham dars bera oladi)
   const oqituvchilar = staff?.filter(s => s.role === "teacher" || s.role === "sinf_rahbari");
 
@@ -160,7 +166,7 @@ export default function ClassesList() {
     setSubjectsLoading(true);
     try {
       const res = await fetch(`${API_BASE}/teacher-subjects?class_id=${classId}`, {
-        credentials: "include",
+        headers: authHeaders(),
       });
       if (res.ok) {
         const data = await res.json() as TeacherSubject[];
@@ -184,8 +190,7 @@ export default function ClassesList() {
     try {
       const res = await fetch(`${API_BASE}/teacher-subjects`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: authHeaders(),
         body: JSON.stringify({
           teacher_id: newSubjectTeacherId,
           class_id: subjectsClassId,
@@ -211,7 +216,7 @@ export default function ClassesList() {
     try {
       const res = await fetch(`${API_BASE}/teacher-subjects/${id}`, {
         method: "DELETE",
-        credentials: "include",
+        headers: authHeaders(),
       });
       if (res.ok) {
         toast({ title: "O'chirildi", description: "Fan o'chirildi" });
@@ -402,11 +407,14 @@ export default function ClassesList() {
                 </SelectTrigger>
                 <SelectContent>
                   {sinfRahbarlari?.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.full_name}</SelectItem>
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.full_name}
+                      {t.role === "sinf_rahbari" ? " (Sinf rahbari)" : " (O'qituvchi)"}
+                    </SelectItem>
                   ))}
                   {(!sinfRahbarlari || sinfRahbarlari.length === 0) && (
                     <div className="px-2 py-2 text-sm text-muted-foreground">
-                      Sinf rahbari topilmadi
+                      Xodimlar topilmadi
                     </div>
                   )}
                 </SelectContent>
