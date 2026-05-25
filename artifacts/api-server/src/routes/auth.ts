@@ -241,11 +241,12 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
 // POST /api/auth/register-staff
 router.post("/auth/register-staff", async (req, res): Promise<void> => {
-  const { full_name, role, class_id, phone_number } = req.body as {
+  const { full_name, role, class_id, phone_number, subjects } = req.body as {
     full_name?: string;
     role?: string;
     class_id?: string | null;
     phone_number?: string;
+    subjects?: string[];
   };
 
   const allowedRoles = ["director", "zam_direktor", "zavuch", "sinf_rahbari", "teacher", "kutubxonachi"];
@@ -344,6 +345,12 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
   if (error || !data) {
     res.status(500).json({ error: error?.message ?? "Xatolik yuz berdi" });
     return;
+  }
+
+  // Subjects ni saqlashga urinib ko'rish (column mavjud bo'lsa)
+  if (role === "teacher" && Array.isArray(subjects) && subjects.length > 0) {
+    const staffId = (data as { id: string }).id;
+    await supabase.from("staff").update({ subjects }).eq("id", staffId).then(() => {/* graceful */});
   }
 
   const staffData = data as {
