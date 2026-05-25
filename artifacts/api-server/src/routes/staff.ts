@@ -24,11 +24,11 @@ async function enrichStaff(staff: {
   id: string;
   full_name: string;
   role: string;
-  class_id: string | null;
+  class_id?: string | null;
   login: string;
   password: string;
-  telegram_id: number | null;
-  created_at: string;
+  telegram_id?: number | null;
+  created_at?: string | null;
 }) {
   let class_name: string | null = null;
   if (staff.class_id) {

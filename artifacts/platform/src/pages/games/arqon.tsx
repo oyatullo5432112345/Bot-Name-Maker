@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "wouter";
-import { ARQON_QUESTIONS } from "@/data/game-data";
+import { ARQON_QUESTIONS, dailyShuffled } from "@/data/game-data";
 import { submitScore } from "@/lib/game-score";
 import { ChevronLeft, CheckCircle2, XCircle } from "lucide-react";
 
@@ -10,12 +10,8 @@ const TOTAL_QUESTIONS = 10;
 const ROPE_MAX = 5;
 const BOT_ACCURACY = 0.6;
 
-function getRandomQuestions() {
-  return [...ARQON_QUESTIONS].sort(() => Math.random() - 0.5).slice(0, TOTAL_QUESTIONS);
-}
-
 export default function Arqon() {
-  const [questions] = useState(() => getRandomQuestions());
+  const [questions] = useState(() => dailyShuffled(ARQON_QUESTIONS).slice(0, TOTAL_QUESTIONS));
   const [current, setCurrent] = useState(0);
   const [phase, setPhase] = useState<Phase>("countdown");
   const [countdown, setCountdown] = useState(3);

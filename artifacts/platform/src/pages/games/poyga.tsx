@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "wouter";
-import { FLAG_RACE_FLAGS } from "@/data/game-data";
+import { FLAG_RACE_FLAGS, dailyShuffled } from "@/data/game-data";
 import { submitScore } from "@/lib/game-score";
 import { ChevronLeft, CheckCircle2, XCircle } from "lucide-react";
 
@@ -15,12 +15,8 @@ const BOTS = [
 
 type Phase = "playing" | "answered" | "finished";
 
-function getRandomFlags() {
-  return [...FLAG_RACE_FLAGS].sort(() => Math.random() - 0.5).slice(0, TOTAL_FLAGS);
-}
-
 export default function Poyga() {
-  const [flags] = useState(() => getRandomFlags());
+  const [flags] = useState(() => dailyShuffled(FLAG_RACE_FLAGS).slice(0, TOTAL_FLAGS));
   const [current, setCurrent] = useState(0);
   const [phase, setPhase] = useState<Phase>("playing");
   const [selected, setSelected] = useState<number | null>(null);

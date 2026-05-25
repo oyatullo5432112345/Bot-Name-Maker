@@ -13,10 +13,17 @@ const router: IRouter = Router();
 
 // GET /api/classes
 router.get("/classes", async (_req, res): Promise<void> => {
-  const { data: classes, error } = await supabase
+  const { data: classesRaw, error } = await supabase
     .from("classes")
-    .select("*")
-    .order("name");
+    .select("*");
+
+  // Sinf raqami bo'yicha to'g'ri tartib: 1-A, 2-A, ..., 10-A, 11-A
+  const classes = (classesRaw ?? []).sort((a: { name: string }, b: { name: string }) => {
+    const numA = parseInt(a.name) || 0;
+    const numB = parseInt(b.name) || 0;
+    if (numA !== numB) return numA - numB;
+    return a.name.localeCompare(b.name);
+  });
 
   if (error) {
     res.status(500).json({ error: error.message });

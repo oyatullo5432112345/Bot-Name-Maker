@@ -28,6 +28,30 @@ export interface FlagItem {
   options: string[];
 }
 
+// Har kuni o'zgaradigan tartibsizlashtirish (kun sanasi — seed)
+function getDailySeed(): number {
+  const d = new Date();
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+}
+
+function seededRandom(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s * 1664525 + 1013904223) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+}
+
+export function dailyShuffled<T>(arr: T[]): T[] {
+  const rand = seededRandom(getDailySeed());
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
+
 export const SOZ_OYINI_LEVELS: SozOyiniLevel[] = [
   { level: 1,  word: "GUL",    hint: "Bahorda o'sadigan, xushbo'y narsa",       emoji: "🌸", category: "Tabiat" },
   { level: 2,  word: "ONA",    hint: "Eng aziz inson — oilaning asosi",          emoji: "👩", category: "Oila" },

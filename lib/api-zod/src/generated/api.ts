@@ -264,7 +264,7 @@ export const UpdateStaffResponse = zod.object({
   "login": zod.string(),
   "password": zod.string(),
   "telegram_id": zod.number().nullish(),
-  "created_at": zod.string()
+  "created_at": zod.string().nullish()
 })
 
 

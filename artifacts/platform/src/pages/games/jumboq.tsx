@@ -1,18 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "wouter";
-import { JUMBOQ_LIST } from "@/data/game-data";
+import { JUMBOQ_LIST, dailyShuffled } from "@/data/game-data";
 import { submitScore } from "@/lib/game-score";
 import { ChevronLeft, CheckCircle2, XCircle, Clock, Trophy } from "lucide-react";
 
 type Phase = "playing" | "answered" | "finished";
 
-function getRandomQuestions(count: number) {
-  const shuffled = [...JUMBOQ_LIST].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
-}
-
 export default function Jumboq() {
-  const [questions] = useState(() => getRandomQuestions(10));
+  const [questions] = useState(() => dailyShuffled(JUMBOQ_LIST).slice(0, 10));
   const [current, setCurrent] = useState(0);
   const [phase, setPhase] = useState<Phase>("playing");
   const [selected, setSelected] = useState<number | null>(null);
