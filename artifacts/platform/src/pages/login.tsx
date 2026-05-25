@@ -4,8 +4,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useLogin } from "@workspace/api-client-react";
-import { Loader2 } from "lucide-react";
+import { Loader2, MessageCircleQuestion } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +38,30 @@ export default function Login() {
   const { login: authLogin } = useAuth();
   const { toast } = useToast();
   const [botLoginLoading, setBotLoginLoading] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportMsg, setSupportMsg] = useState("");
+  const [supportName, setSupportName] = useState("");
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportDone, setSupportDone] = useState(false);
+
+  const handleSupportSubmit = async () => {
+    if (supportMsg.trim().length < 5) return;
+    setSupportLoading(true);
+    try {
+      await fetch("/api/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: supportMsg.trim(), name: supportName.trim() }),
+      });
+      setSupportDone(true);
+      setSupportMsg("");
+      setSupportName("");
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik", description: "Xabar yuborishda xatolik yuz berdi" });
+    } finally {
+      setSupportLoading(false);
+    }
+  };
 
   const loginMutation = useLogin();
 
@@ -179,16 +210,74 @@ export default function Login() {
 
             <p className="mt-6 text-center text-sm text-muted-foreground">
               Akkauntingiz yo'qmi?{" "}
-              <Link
-                href="/register"
-                className="font-medium text-primary hover:underline"
-              >
+              <Link href="/register" className="font-medium text-primary hover:underline">
                 Ro'yxatdan o'tish
               </Link>
             </p>
+
+            <div className="mt-4 pt-4 border-t border-border text-center">
+              <button
+                type="button"
+                onClick={() => { setSupportOpen(true); setSupportDone(false); }}
+                className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
+              >
+                <MessageCircleQuestion className="w-4 h-4" />
+                Qo'llab-quvvatlash — xabar yuboring
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Qo'llab-quvvatlash dialogi */}
+      <Dialog open={supportOpen} onOpenChange={(o) => { setSupportOpen(o); if (!o) setSupportDone(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircleQuestion className="w-5 h-5 text-primary" />
+              Qo'llab-quvvatlash
+            </DialogTitle>
+          </DialogHeader>
+          {supportDone ? (
+            <div className="text-center py-4 space-y-2">
+              <p className="text-2xl">✅</p>
+              <p className="font-semibold">Xabaringiz yuborildi!</p>
+              <p className="text-sm text-muted-foreground">Admin tez orada javob beradi.</p>
+              <Button className="w-full mt-2" onClick={() => { setSupportOpen(false); setSupportDone(false); }}>
+                Yopish
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Ismingiz (ixtiyoriy)</label>
+                <Input
+                  placeholder="Valiyev Valijon"
+                  value={supportName}
+                  onChange={e => setSupportName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Xabaringiz</label>
+                <Textarea
+                  placeholder="Savolingiz yoki muammongizni yozing..."
+                  rows={4}
+                  value={supportMsg}
+                  onChange={e => setSupportMsg(e.target.value)}
+                />
+              </div>
+              <Button
+                className="w-full"
+                disabled={supportMsg.trim().length < 5 || supportLoading}
+                onClick={handleSupportSubmit}
+              >
+                {supportLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Yuborish
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* O'ng panel — logo va tavsif */}
       <div className="hidden lg:flex relative w-0 flex-1 bg-primary flex-col items-center justify-center p-12">

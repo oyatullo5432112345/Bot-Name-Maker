@@ -29,9 +29,17 @@ const ADMIN_ID = Number(process.env["ADMIN_ID"] ?? "0");
 type UserState =
   | { type: "idle" }
   | { type: "awaiting_channel" }
-  | { type: "awaiting_message" };
+  | { type: "awaiting_message" }
+  | { type: "awaiting_support" }
+  | { type: "awaiting_support_reply"; ticketId: string };
 
 const userStates = new Map<number, UserState>();
+
+interface SupportTicket {
+  fromUserId: number;
+  fromName: string;
+}
+const supportTickets = new Map<string, SupportTicket>();
 
 function isAdmin(userId: number): boolean {
   return ADMIN_ID > 0 && userId === ADMIN_ID;
@@ -189,6 +197,41 @@ export function createBot(): Bot {
         }
       );
     }
+  });
+
+  // ─── /yordam ────────────────────────────────────────────────────────────────
+  bot.command("yordam", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId) return;
+    userStates.set(userId, { type: "awaiting_support" });
+    await ctx.reply(
+      "📩 *Qo'llab-quvvatlash*\n\nSavolingiz yoki muammongizni yozing — admin imkon qadar javob beradi.",
+      { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("❌ Bekor qilish", "support_cancel") }
+    );
+  });
+
+  // ─── Callback: support_cancel ────────────────────────────────────────────────
+  bot.callbackQuery("support_cancel", async (ctx) => {
+    const userId = ctx.from.id;
+    userStates.set(userId, { type: "idle" });
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText("❌ Bekor qilindi.");
+  });
+
+  // ─── Callback: reply_support:ticketId ────────────────────────────────────────
+  bot.callbackQuery(/^reply_support:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
+    const ticketId = ctx.match[1];
+    if (!ticketId || !supportTickets.has(ticketId)) {
+      await ctx.answerCallbackQuery("❌ Murojaat topilmadi");
+      return;
+    }
+    userStates.set(ctx.from.id, { type: "awaiting_support_reply", ticketId });
+    await ctx.answerCallbackQuery();
+    await ctx.reply(
+      "✏️ Javobingizni yozing:",
+      { reply_markup: new InlineKeyboard().text("❌ Bekor qilish", "support_cancel") }
+    );
   });
 
   // ─── /admin ────────────────────────────────────────────────────────────────
@@ -475,6 +518,47 @@ export function createBot(): Bot {
       await ctx.reply("Endi barcha foydalanuvchilarga shu matn ko'rsatiladi.", {
         reply_markup: new InlineKeyboard().text("⚙️ Admin panel", "admin_panel"),
       });
+      return;
+    }
+
+    // ── Qo'llab-quvvatlash xabari ─────────────────────────────────────────
+    if (state.type === "awaiting_support") {
+      const text = ctx.message.text.trim();
+      const fromName = ctx.from.first_name + (ctx.from.last_name ? " " + ctx.from.last_name : "");
+      const ticketId = `${userId}_${Date.now()}`;
+      supportTickets.set(ticketId, { fromUserId: userId, fromName });
+      userStates.set(userId, { type: "idle" });
+
+      await ctx.reply("✅ Xabaringiz adminga yuborildi. Tez orada javob beriladi!", { reply_markup: { remove_keyboard: true } });
+
+      if (ADMIN_ID > 0) {
+        const kb = new InlineKeyboard().text("💬 Javob berish", `reply_support:${ticketId}`);
+        await bot.api.sendMessage(
+          ADMIN_ID,
+          `📩 *Yangi murojaat (bot)*\n\n👤 *${fromName}* (ID: \`${userId}\`)\n\n💬 *Xabar:*\n${text}`,
+          { parse_mode: "Markdown", reply_markup: kb }
+        );
+      }
+      return;
+    }
+
+    // ── Admin: support javob yozish ───────────────────────────────────────
+    if (state.type === "awaiting_support_reply" && isAdmin(userId)) {
+      const reply = ctx.message.text.trim();
+      const ticket = supportTickets.get(state.ticketId);
+      userStates.set(userId, { type: "idle" });
+
+      if (ticket) {
+        supportTickets.delete(state.ticketId);
+        await bot.api.sendMessage(
+          ticket.fromUserId,
+          `📬 *Admin javobi:*\n\n${reply}`,
+          { parse_mode: "Markdown" }
+        );
+        await ctx.reply(`✅ Javob *${ticket.fromName}* ga yuborildi!`, { parse_mode: "Markdown" });
+      } else {
+        await ctx.reply("❌ Murojaat topilmadi yoki muddati o'tgan.");
+      }
       return;
     }
 
