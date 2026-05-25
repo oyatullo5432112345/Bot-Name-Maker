@@ -88,11 +88,27 @@ CREATE TABLE IF NOT EXISTS teacher_subjects (
 CREATE INDEX IF NOT EXISTS idx_ts_teacher ON teacher_subjects(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_ts_class   ON teacher_subjects(class_id);
 
--- ── 6. ROW LEVEL SECURITY — O'CHIRISH ───────────────────────────
+-- ── 6. O'YIN BALLARI JADVALI ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS game_scores (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_login  TEXT NOT NULL,
+  full_name   TEXT NOT NULL,
+  class_name  TEXT NOT NULL DEFAULT '',
+  game_id     TEXT NOT NULL CHECK (game_id IN ('sozoyini','jumboq','arqon','poyga')),
+  score_change INTEGER NOT NULL DEFAULT 0,
+  reason      TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_game_scores_user   ON game_scores(user_login);
+CREATE INDEX IF NOT EXISTS idx_game_scores_game   ON game_scores(game_id);
+
+-- ── 7. ROW LEVEL SECURITY — O'CHIRISH ───────────────────────────
 ALTER TABLE users            DISABLE ROW LEVEL SECURITY;
 ALTER TABLE classes          DISABLE ROW LEVEL SECURITY;
 ALTER TABLE staff            DISABLE ROW LEVEL SECURITY;
 ALTER TABLE teacher_subjects DISABLE ROW LEVEL SECURITY;
+ALTER TABLE game_scores      DISABLE ROW LEVEL SECURITY;
 
 -- ================================================================
 -- TAYYOR!
