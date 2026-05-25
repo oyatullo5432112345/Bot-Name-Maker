@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useListClasses, useListStaff } from "@workspace/api-client-react";
-import { Loader2, CheckCircle2, Copy, UserPlus, Users, Shield } from "lucide-react";
+import { Loader2, CheckCircle2, Copy, UserPlus, Users, Shield, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -466,6 +466,32 @@ export default function Register() {
           <p className="text-sm text-muted-foreground mb-5">Bo'sh lavozimga ro'yxatdan o'ting</p>
 
           <div className="space-y-2">
+            {/* Fan o'qituvchilar bo'limi */}
+            <div
+              className="rounded-lg border p-3 flex items-center justify-between gap-2 bg-blue-50 border-blue-200 cursor-pointer hover:bg-blue-100 transition-colors"
+              onClick={() => openModal("teacher")}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <GraduationCap className="w-3.5 h-3.5 text-blue-600" />
+                  <p className="text-xs font-semibold text-blue-700">Fan o'qituvchisi</p>
+                </div>
+                <p className="text-sm text-blue-800">
+                  {staffList?.filter(s => s.role === "teacher").length
+                    ? `${staffList.filter(s => s.role === "teacher").length} ta o'qituvchi ro'yxatdan o'tgan`
+                    : "Hali ro'yxatdan o'tgan yo'q"}
+                </p>
+              </div>
+              <Button size="sm" variant="outline" className="shrink-0 border-blue-300 text-blue-700 hover:bg-blue-200">
+                <UserPlus className="w-3 h-3 mr-1" />
+                Qo'shilish
+              </Button>
+            </div>
+
+            <div className="pt-1 pb-0.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Maktab rahbariyati</p>
+            </div>
+
             {SINGLE_SLOT_ROLES.map(role => {
               const person = getStaffForRole(role);
               return (
