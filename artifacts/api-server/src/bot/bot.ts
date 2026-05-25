@@ -209,8 +209,18 @@ export function createBot(): Bot {
     const userId = ctx.from?.id;
     if (!userId) return;
 
-    const phone = ctx.message.contact.phone_number;
+    const contact = ctx.message.contact;
+    const phone = contact.phone_number;
     const normalized = normalizePhone(phone);
+
+    // Faqat o'z telefon raqamini ulash mumkin
+    if (contact.user_id && contact.user_id !== userId) {
+      await ctx.reply(
+        "⛔ Faqat *o'z* telefon raqamingizni ulashingiz mumkin.",
+        { parse_mode: "Markdown", reply_markup: { remove_keyboard: true } }
+      );
+      return;
+    }
 
     // Avval bog'langan bo'lsa
     const alreadyLinked = getPhoneByChatId(userId);
@@ -222,28 +232,38 @@ export function createBot(): Bot {
       return;
     }
 
-    // Bazadan topish
+    // Bazadan topish (users jadvali)
     const student = await findStudentByPhone(normalized);
 
     if (student) {
+      // Supabase'da telegram_id ni haqiqiy Telegram ID ga yangilash
+      await supabase
+        .from("users")
+        .update({ telegram_id: userId })
+        .eq("phone_number", normalized);
+
       linkPhoneToChatId(normalized, userId);
+
       await ctx.reply(
         `✅ *Muvaffaqiyatli bog'landi!*\n\n` +
-        `👤 ${student.full_name}\n` +
+        `👤 *${student.full_name}*\n` +
         `🏫 Sinf: ${student.class_name}\n\n` +
-        `Endi sizga platforma orqali xabarlar kelishi mumkin.`,
+        `Endi platforma orqali Telegram'ga xabarlar kelishi mumkin. 🔔`,
         {
           parse_mode: "Markdown",
           reply_markup: { remove_keyboard: true },
         }
       );
     } else {
-      // Topilmadi, lekin baribir saqlash
+      // Saytda hali ro'yxatdan o'tmagan — faylga saqlab qo'yamiz
       linkPhoneToChatId(normalized, userId);
       await ctx.reply(
-        "📱 Telefon raqamingiz saqlandi.\n\n" +
-        "Agar veb saytda shu raqam bilan ro'yxatdan o'tsangiz, akkauntingiz avtomatik bog'lanadi.",
-        { reply_markup: { remove_keyboard: true } }
+        "📱 *Telefon raqamingiz saqlandi.*\n\n" +
+        "Agar veb saytda shu raqam bilan ro'yxatdan o'tsangiz, akkauntingiz avtomatik bog'lanadi. 🔗",
+        {
+          parse_mode: "Markdown",
+          reply_markup: { remove_keyboard: true },
+        }
       );
     }
   });

@@ -8,6 +8,7 @@ import {
   RegisterBody,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
+import { getChatIdByPhone, normalizePhone } from "../bot/settings.js";
 
 const router: IRouter = Router();
 
@@ -183,12 +184,15 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     return;
   }
 
-  const telegram_id = Date.now();
+  // Agar telefon Telegram'da allaqachon bog'langan bo'lsa — haqiqiy chat_id ishlatamiz
+  const normalizedPhone = normalizePhone(phone_number);
+  const linkedChatId = getChatIdByPhone(normalizedPhone);
+  const telegram_id = linkedChatId ?? Date.now();
   const registration_date = new Date().toISOString();
 
   const { data, error } = await supabase
     .from("users")
-    .insert([{ telegram_id, full_name, phone_number, class_name, login, password, registration_date }])
+    .insert([{ telegram_id, full_name, phone_number: normalizedPhone, class_name, login, password, registration_date }])
     .select()
     .single();
 
