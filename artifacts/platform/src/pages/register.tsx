@@ -7,15 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -38,8 +29,17 @@ function getGrade(className: string): number {
   return match ? parseInt(match[1], 10) : 99;
 }
 
-function isBoshlangich(className: string): boolean {
-  return getGrade(className) <= 4;
+function getSuffix(className: string): string {
+  return className.replace(/^\d+/, "").trim().toLowerCase();
+}
+
+function sortClasses<T extends { name: string }>(list: T[]): T[] {
+  return [...list].sort((a, b) => {
+    const ga = getGrade(a.name);
+    const gb = getGrade(b.name);
+    if (ga !== gb) return ga - gb;
+    return getSuffix(a.name).localeCompare(getSuffix(b.name));
+  });
 }
 
 function copyToClipboardFn(text: string, toast: ReturnType<typeof useToast>["toast"]) {
@@ -85,12 +85,71 @@ function CredentialsView({
         </div>
       </div>
       {onDashboard && (
-        <Button className="w-full" onClick={onDashboard}>
-          Boshqaruv paneliga o'tish
-        </Button>
+        <Button className="w-full" onClick={onDashboard}>Boshqaruv paneliga o'tish</Button>
       )}
       {onClose && (
         <Button className="w-full" onClick={onClose}>Yopish</Button>
+      )}
+    </div>
+  );
+}
+
+function ClassPicker({
+  classes,
+  selected,
+  onSelect,
+}: {
+  classes: { id: string; name: string }[];
+  selected: string;
+  onSelect: (id: string) => void;
+}) {
+  const sorted = sortClasses(classes);
+  const boshlangich = sorted.filter(c => getGrade(c.name) <= 4);
+  const yuqori = sorted.filter(c => getGrade(c.name) > 4);
+
+  return (
+    <div className="space-y-3">
+      {boshlangich.length > 0 && (
+        <div>
+          <p className="text-xs text-muted-foreground font-medium mb-2">Boshlang'ich (1–4 sinf)</p>
+          <div className="flex flex-wrap gap-2">
+            {boshlangich.map(c => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onSelect(c.id)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors
+                  ${selected === c.id
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-input hover:bg-secondary"
+                  }`}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {yuqori.length > 0 && (
+        <div>
+          <p className="text-xs text-muted-foreground font-medium mb-2">Yuqori (5–11 sinf)</p>
+          <div className="flex flex-wrap gap-2">
+            {yuqori.map(c => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onSelect(c.id)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors
+                  ${selected === c.id
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-input hover:bg-secondary"
+                  }`}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -208,7 +267,7 @@ function StaffRegisterModal({
               </div>
             </div>
             <Button className="w-full" disabled={!canSubmit || isLoading} onClick={handleSubmit}>
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
               Ro'yxatdan o'tish
             </Button>
           </div>
@@ -224,9 +283,6 @@ function StudentRegister() {
   const { toast } = useToast();
   const { data: classes } = useListClasses({ query: { queryKey: ["classes", "list"] } });
 
-  const boshlangichClasses = (classes ?? []).filter(c => isBoshlangich(c.name));
-  const yuqoriClasses = (classes ?? []).filter(c => !isBoshlangich(c.name));
-
   const [classId, setClassId] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -235,7 +291,7 @@ function StudentRegister() {
   const [isLoading, setIsLoading] = useState(false);
   const [credentials, setCredentials] = useState<{ login: string; password: string } | null>(null);
 
-  const selectedClass = classes?.find(c => c.id === classId);
+  const selectedClass = (classes ?? []).find(c => c.id === classId);
 
   const handlePhoneChange = (val: string) => {
     let digits = val.replace(/\D/g, "");
@@ -250,7 +306,13 @@ function StudentRegister() {
     return `+998 ${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5, 7)} ${d.slice(7, 9)}`.replace(/_+$/, "").trim();
   };
 
-  const canSubmit = !!(classId && fullName.trim().length >= 2 && phone.replace(/\D/g, "").length >= 9 && loginVal.trim().length >= 3 && passwordVal.length >= 4);
+  const canSubmit = !!(
+    classId &&
+    fullName.trim().length >= 2 &&
+    phone.replace(/\D/g, "").length >= 9 &&
+    loginVal.trim().length >= 3 &&
+    passwordVal.length >= 4
+  );
 
   const handleSubmit = async () => {
     if (!selectedClass) return;
@@ -288,30 +350,12 @@ function StudentRegister() {
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <Label>Sinf</Label>
-        <Select value={classId} onValueChange={v => { setClassId(v); }}>
-          <SelectTrigger>
-            <SelectValue placeholder="Sinfni tanlang..." />
-          </SelectTrigger>
-          <SelectContent>
-            {boshlangichClasses.length > 0 && (
-              <SelectGroup>
-                <SelectLabel>Boshlang'ich (1–4 sinf)</SelectLabel>
-                {boshlangichClasses
-                  .sort((a, b) => getGrade(a.name) - getGrade(b.name) || a.name.localeCompare(b.name))
-                  .map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectGroup>
-            )}
-            {yuqoriClasses.length > 0 && (
-              <SelectGroup>
-                <SelectLabel>Yuqori (5+ sinf)</SelectLabel>
-                {yuqoriClasses
-                  .sort((a, b) => getGrade(a.name) - getGrade(b.name) || a.name.localeCompare(b.name))
-                  .map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectGroup>
-            )}
-          </SelectContent>
-        </Select>
+        <Label>Sinf tanlang</Label>
+        {classes && classes.length > 0 ? (
+          <ClassPicker classes={classes} selected={classId} onSelect={id => { setClassId(id); }} />
+        ) : (
+          <div className="text-sm text-muted-foreground italic">Sinflar yuklanmoqda...</div>
+        )}
       </div>
 
       {classId && (
@@ -355,7 +399,7 @@ function StudentRegister() {
       )}
 
       <Button className="w-full" disabled={!canSubmit || isLoading} onClick={handleSubmit}>
-        {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
         Ro'yxatdan o'tish
       </Button>
     </div>
@@ -363,21 +407,13 @@ function StudentRegister() {
 }
 
 export default function Register() {
-  const { data: classes, refetch: refetchClasses } = useListClasses({ query: { queryKey: ["classes", "list"] } });
+  const { data: classes } = useListClasses({ query: { queryKey: ["classes", "list"] } });
   const { data: staffList, refetch: refetchStaff } = useListStaff({ query: { queryKey: ["staff", "list"] } });
 
   const [modalRole, setModalRole] = useState<string | null>(null);
   const [modalClassId, setModalClassId] = useState<string | undefined>(undefined);
 
-  const allClasses = (classes ?? []).sort((a, b) => getGrade(a.name) - getGrade(b.name) || a.name.localeCompare(b.name));
-
-  const takenSingleRoles = new Set(
-    (staffList ?? []).filter(s => SINGLE_SLOT_ROLES.includes(s.role)).map(s => s.role)
-  );
-
-  const takenClassIds = new Set(
-    (staffList ?? []).filter(s => s.role === "sinf_rahbari" && s.class_id).map(s => s.class_id!)
-  );
+  const allClasses = sortClasses(classes ?? []);
 
   const getStaffForRole = (role: string) => staffList?.find(s => s.role === role);
   const getSinfRahbariForClass = (cId: string) => staffList?.find(s => s.role === "sinf_rahbari" && s.class_id === cId);
@@ -393,12 +429,12 @@ export default function Register() {
     void refetchStaff();
   };
 
-  const activeClass = modalClassId ? classes?.find(c => c.id === modalClassId) : undefined;
+  const activeClass = modalClassId ? (classes ?? []).find(c => c.id === modalClassId) : undefined;
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
       {/* LEFT: O'quvchi ro'yxatdan o'tish */}
-      <div className="flex-1 flex flex-col justify-center py-10 px-6 sm:px-10 lg:px-14 xl:px-20 border-b lg:border-b-0 lg:border-r bg-secondary/20">
+      <div className="flex-1 flex flex-col justify-start py-10 px-6 sm:px-10 lg:px-14 xl:px-20 border-b lg:border-b-0 lg:border-r bg-secondary/20 overflow-y-auto">
         <div className="mx-auto w-full max-w-sm">
           <div className="flex justify-center mb-4">
             <img src="/logo.png" alt="Talim Platform" className="h-14 w-auto object-contain" />
@@ -421,7 +457,7 @@ export default function Register() {
       </div>
 
       {/* RIGHT: Mas'ul shaxslar ro'yxati */}
-      <div className="flex-1 flex flex-col py-10 px-6 sm:px-10 lg:px-14 xl:px-20 bg-card">
+      <div className="flex-1 flex flex-col py-10 px-6 sm:px-10 lg:px-14 xl:px-20 bg-card overflow-y-auto">
         <div className="mx-auto w-full max-w-sm">
           <div className="flex items-center gap-2 mb-1">
             <Shield className="w-5 h-5 text-primary" />
@@ -435,7 +471,7 @@ export default function Register() {
               return (
                 <div
                   key={role}
-                  className={`rounded-lg border p-3 flex items-center justify-between gap-2 ${person ? "bg-secondary/30 opacity-80" : "bg-background"}`}
+                  className={`rounded-lg border p-3 flex items-center justify-between gap-2 ${person ? "bg-secondary/30 opacity-75" : "bg-background"}`}
                 >
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">{ROLE_LABELS[role]}</p>
@@ -460,32 +496,30 @@ export default function Register() {
                 <div className="pt-3 pb-1">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sinf rahbarlari</p>
                 </div>
-                <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
-                  {allClasses.map(cls => {
-                    const rahbar = getSinfRahbariForClass(cls.id);
-                    return (
-                      <div
-                        key={cls.id}
-                        className={`rounded-lg border p-3 flex items-center justify-between gap-2 ${rahbar ? "bg-secondary/30 opacity-80" : "bg-background"}`}
-                      >
-                        <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">{cls.name} sinfi</p>
-                          <p className={`text-sm font-medium truncate ${!rahbar ? "text-muted-foreground italic" : ""}`}>
-                            {rahbar ? rahbar.full_name : "Bo'sh"}
-                          </p>
-                        </div>
-                        {!rahbar ? (
-                          <Button size="sm" variant="outline" className="shrink-0" onClick={() => openModal("sinf_rahbari", cls.id)}>
-                            <UserPlus className="w-3 h-3 mr-1" />
-                            O'tish
-                          </Button>
-                        ) : (
-                          <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
-                        )}
+                {allClasses.map(cls => {
+                  const rahbar = getSinfRahbariForClass(cls.id);
+                  return (
+                    <div
+                      key={cls.id}
+                      className={`rounded-lg border p-3 flex items-center justify-between gap-2 ${rahbar ? "bg-secondary/30 opacity-75" : "bg-background"}`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">{cls.name} sinfi</p>
+                        <p className={`text-sm font-medium truncate ${!rahbar ? "text-muted-foreground italic" : ""}`}>
+                          {rahbar ? rahbar.full_name : "Bo'sh"}
+                        </p>
                       </div>
-                    );
-                  })}
-                </div>
+                      {!rahbar ? (
+                        <Button size="sm" variant="outline" className="shrink-0" onClick={() => openModal("sinf_rahbari", cls.id)}>
+                          <UserPlus className="w-3 h-3 mr-1" />
+                          O'tish
+                        </Button>
+                      ) : (
+                        <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
+                      )}
+                    </div>
+                  );
+                })}
               </>
             )}
           </div>
