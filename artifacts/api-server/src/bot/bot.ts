@@ -68,7 +68,7 @@ function buildSubscribeKeyboard(missingChannels: string[]): InlineKeyboard {
 }
 
 function buildWelcomeKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().url("🌐 Platformaga kirish", WEBSITE_URL);
+  return new InlineKeyboard().url("🌐 Platformaga kirish", `${WEBSITE_URL}/login`);
 }
 
 function buildContactKeyboard(): Keyboard {

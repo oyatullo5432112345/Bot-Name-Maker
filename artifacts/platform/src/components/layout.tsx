@@ -9,7 +9,9 @@ import {
   LogOut, 
   ShieldAlert,
   Gamepad2,
-  Trophy
+  Trophy,
+  BookOpen,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,6 +58,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const canViewClasses = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
   const canViewStudents = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
   const isStudent = user.role === "student";
+  const canViewDarslik = true;
+  const canViewBaholash = true;
 
   return (
     <SidebarProvider>
@@ -116,13 +120,41 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </SidebarGroupContent>
             </SidebarGroup>
 
+            <SidebarGroup>
+              <SidebarGroupLabel>Ta'lim</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {canViewDarslik && (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location.startsWith("/darslik")}>
+                        <Link href="/darslik">
+                          <BookOpen className="w-4 h-4" />
+                          <span>Darslik</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )}
+                  {canViewBaholash && (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location.startsWith("/baholash")}>
+                        <Link href="/baholash">
+                          <ClipboardList className="w-4 h-4" />
+                          <span>Baholash</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
             {isStudent && (
               <SidebarGroup>
                 <SidebarGroupLabel>O'yinlar</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
                     <SidebarMenuItem>
-                      <SidebarMenuButton asChild isActive={location === "/games" || location.startsWith("/games/")}>
+                      <SidebarMenuButton asChild isActive={location === "/games" || (location.startsWith("/games/") && location !== "/games/reyting")}>
                         <Link href="/games">
                           <Gamepad2 className="w-4 h-4" />
                           <span>O'yinlar ro'yxati</span>
@@ -147,7 +179,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="flex flex-col">
                 <span className="text-sm font-medium text-sidebar-foreground">{user.full_name}</span>
                 <span className="text-xs text-sidebar-foreground/70">{roleDisplay[user.role] || user.role}</span>
-                {isStudent && user.class_name && (
+                {user.class_name && (
                   <span className="text-xs text-sidebar-foreground/50 mt-0.5">{user.class_name} sinf</span>
                 )}
               </div>

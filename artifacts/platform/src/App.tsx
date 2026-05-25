@@ -24,6 +24,10 @@ import Arqon from "@/pages/games/arqon";
 import Poyga from "@/pages/games/poyga";
 import Reyting from "@/pages/games/reyting";
 
+import DarslikPage from "@/pages/darslik/index";
+import NewDarslikPage from "@/pages/darslik/new";
+import BaholashPage from "@/pages/baholash/index";
+
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ component: Component, roles }: { component: any, roles?: string[] }) {
@@ -77,6 +81,20 @@ function Router() {
       </Route>
       <Route path="/staff/new">
         <ProtectedRoute component={NewStaff} roles={["admin"]} />
+      </Route>
+
+      <Route path="/darslik/new">
+        <ProtectedRoute
+          component={NewDarslikPage}
+          roles={["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"]}
+        />
+      </Route>
+      <Route path="/darslik">
+        <ProtectedRoute component={DarslikPage} />
+      </Route>
+
+      <Route path="/baholash">
+        <ProtectedRoute component={BaholashPage} />
       </Route>
 
       <Route path="/games/sozoyini">

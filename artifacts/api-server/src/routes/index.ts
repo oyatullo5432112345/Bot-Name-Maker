@@ -7,6 +7,8 @@ import staffRouter from "./staff.js";
 import dashboardRouter from "./dashboard.js";
 import teacherSubjectsRouter from "./teacher-subjects.js";
 import gamesRouter from "./games.js";
+import lessonsRouter from "./lessons.js";
+import gradesRouter from "./grades.js";
 
 const router: IRouter = Router();
 
@@ -18,5 +20,7 @@ router.use(staffRouter);
 router.use(dashboardRouter);
 router.use(teacherSubjectsRouter);
 router.use(gamesRouter);
+router.use(lessonsRouter);
+router.use(gradesRouter);
 
 export default router;
