@@ -153,6 +153,9 @@ router.delete("/staff/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  // Delete related teacher_subjects first (foreign key constraint)
+  await supabase.from("teacher_subjects").delete().eq("teacher_id", params.data.id);
+
   const { error } = await supabase
     .from("staff")
     .delete()
