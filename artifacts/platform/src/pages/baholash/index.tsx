@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getApiUrl } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +31,7 @@ import {
 import { Star, Plus, Trash2, Search, ClipboardList } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const TOKEN_KEY = "talim_auth_token";
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -94,7 +94,7 @@ function AddGradeDialog({ onAdded }: { onAdded: () => void }) {
   const { data: students = [] } = useQuery<Student[]>({
     queryKey: ["students-for-grade"],
     queryFn: async () => {
-      const res = await fetch(`${getApiUrl()}/students`, {
+      const res = await fetch(`${API_BASE}/students`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!res.ok) return [];
@@ -110,7 +110,7 @@ function AddGradeDialog({ onAdded }: { onAdded: () => void }) {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${getApiUrl()}/grades`, {
+      const res = await fetch(`${API_BASE}/grades`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -258,7 +258,7 @@ export default function BaholashPage() {
   const { data: grades = [], isLoading } = useQuery<Grade[]>({
     queryKey: ["grades"],
     queryFn: async () => {
-      const res = await fetch(`${getApiUrl()}/grades`, {
+      const res = await fetch(`${API_BASE}/grades`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!res.ok) throw new Error("Xatolik");
@@ -268,7 +268,7 @@ export default function BaholashPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`${getApiUrl()}/grades/${id}`, {
+      const res = await fetch(`${API_BASE}/grades/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${getToken()}` },
       });

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { getApiUrl } from "@workspace/api-client-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,8 @@ import {
 import { BookOpen, ArrowLeft } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Link } from "wouter";
+
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 
 const TOKEN_KEY = "talim_auth_token";
 function getToken() {
@@ -47,7 +49,7 @@ export default function NewDarslikPage() {
   const { data: classes = [] } = useQuery<ClassItem[]>({
     queryKey: ["classes-list"],
     queryFn: async () => {
-      const res = await fetch(`${getApiUrl()}/classes`, {
+      const res = await fetch(`${API_BASE}/classes`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!res.ok) return [];
@@ -57,7 +59,7 @@ export default function NewDarslikPage() {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${getApiUrl()}/lessons`, {
+      const res = await fetch(`${API_BASE}/lessons`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

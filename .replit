@@ -40,3 +40,4 @@ externalPort = 3000
 ADMIN_PASSWORD = "oyatullo"
 SUPABASE_URL = "https://saodkjnjskghqqktcxkj.supabase.co"
 WEBSITE_URL = "https://7374e2ab-90a3-49ec-95ac-bdcf9f505b63-00-2wj28fh5yoe1q.pike.replit.dev"
+SUPABASE_ANON_KEY = "sb_publishable_Py1MQeKrN2uyz8HUOUmS0Q__nrQQNbp"

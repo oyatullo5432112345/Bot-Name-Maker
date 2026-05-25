@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getApiUrl } from "@workspace/api-client-react";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -17,6 +17,8 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 
 const TOKEN_KEY = "talim_auth_token";
 
@@ -63,7 +65,7 @@ export default function DarslikPage() {
   const { data: lessons = [], isLoading } = useQuery<Lesson[]>({
     queryKey: ["lessons"],
     queryFn: async () => {
-      const res = await fetch(`${getApiUrl()}/lessons`, {
+      const res = await fetch(`${API_BASE}/lessons`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!res.ok) throw new Error("Xatolik");
@@ -73,7 +75,7 @@ export default function DarslikPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`${getApiUrl()}/lessons/${id}`, {
+      const res = await fetch(`${API_BASE}/lessons/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${getToken()}` },
       });
