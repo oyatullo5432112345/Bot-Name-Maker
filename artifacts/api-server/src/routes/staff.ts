@@ -153,9 +153,16 @@ router.delete("/staff/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Delete related teacher_subjects first (foreign key constraint)
+  // 1. teacher_subjects — CASCADE bo'lsa ham, aniq o'chiramiz
   await supabase.from("teacher_subjects").delete().eq("teacher_id", params.data.id);
 
+  // 2. timetable — teacher_id ni NULL ga o'rnatamiz
+  await supabase.from("timetable").update({ teacher_id: null }).eq("teacher_id", params.data.id);
+
+  // 3. classes — teacher_id ni NULL ga o'rnatamiz (sinf rahbari)
+  await supabase.from("classes").update({ teacher_id: null }).eq("teacher_id", params.data.id);
+
+  // 3. Asosiy yozuvni o'chiramiz
   const { error } = await supabase
     .from("staff")
     .delete()
