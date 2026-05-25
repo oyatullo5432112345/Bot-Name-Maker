@@ -218,6 +218,44 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     return;
   }
 
+  // Bir martalik rollar: direktor, zavuch, zam_direktor, kutubxonachi
+  const SINGLE_SLOT_ROLES = ["director", "zam_direktor", "zavuch", "kutubxonachi"];
+  if (SINGLE_SLOT_ROLES.includes(role)) {
+    const { data: existingRole } = await supabase
+      .from("staff")
+      .select("id")
+      .eq("role", role)
+      .maybeSingle();
+    if (existingRole) {
+      const roleNames: Record<string, string> = {
+        director: "Direktor",
+        zam_direktor: "Direktor o'rinbosari",
+        zavuch: "Zavuch",
+        kutubxonachi: "Kutubxonachi",
+      };
+      res.status(400).json({ error: `${roleNames[role] ?? role} allaqachon ro'yxatdan o'tgan` });
+      return;
+    }
+  }
+
+  // Sinf rahbari: har bir sinf uchun faqat bitta
+  if (role === "sinf_rahbari") {
+    if (!class_id) {
+      res.status(400).json({ error: "Sinf rahbari uchun sinf tanlanishi shart" });
+      return;
+    }
+    const { data: existingRahbar } = await supabase
+      .from("staff")
+      .select("id")
+      .eq("role", "sinf_rahbari")
+      .eq("class_id", class_id)
+      .maybeSingle();
+    if (existingRahbar) {
+      res.status(400).json({ error: "Bu sinf uchun sinf rahbari allaqachon tayinlangan" });
+      return;
+    }
+  }
+
   // Unikal login yaratish
   const base = full_name.trim().toLowerCase().split(" ")[0]?.replace(/[^a-z]/g, "") ?? "staff";
   let login = `${base}${Math.floor(100 + Math.random() * 900)}`;

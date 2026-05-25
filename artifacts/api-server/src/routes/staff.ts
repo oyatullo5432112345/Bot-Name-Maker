@@ -108,6 +108,7 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
   if (body.data.full_name != null) updates.full_name = body.data.full_name;
   if (body.data.role != null) updates.role = body.data.role;
   if (body.data.class_id !== undefined) updates.class_id = body.data.class_id;
+  if (body.data.login != null) updates.login = body.data.login;
   if (body.data.password != null) updates.password = body.data.password;
 
   const { data, error } = await supabase

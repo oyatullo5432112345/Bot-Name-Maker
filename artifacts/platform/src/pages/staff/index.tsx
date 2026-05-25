@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/use-auth";
-import { 
-  useListStaff, 
+import {
+  useListStaff,
   getListStaffQueryKey,
-  useDeleteStaff
+  useDeleteStaff,
+  useUpdateStaff,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -17,7 +18,8 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Loader2, Plus, Search, Trash2, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -30,6 +32,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 const roleDisplay: Record<string, string> = {
   admin: "Admin",
@@ -41,16 +50,103 @@ const roleDisplay: Record<string, string> = {
   kutubxonachi: "Kutubxonachi",
 };
 
+type StaffMember = {
+  id: string;
+  full_name: string;
+  role: string;
+  class_name?: string | null;
+  login: string;
+  password: string;
+};
+
+function EditStaffDialog({
+  member,
+  open,
+  onClose,
+  onSaved,
+}: {
+  member: StaffMember;
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const updateMutation = useUpdateStaff();
+  const [fullName, setFullName] = useState(member.full_name);
+  const [login, setLogin] = useState(member.login);
+  const [password, setPassword] = useState(member.password);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSave = () => {
+    if (!fullName.trim() || !login.trim() || !password.trim()) {
+      toast({ variant: "destructive", title: "Xatolik", description: "Barcha maydonlarni to'ldiring" });
+      return;
+    }
+    setIsLoading(true);
+    updateMutation.mutate(
+      {
+        id: member.id,
+        data: {
+          full_name: fullName.trim(),
+          login: login.trim(),
+          password: password.trim(),
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Saqlandi", description: `${fullName} ma'lumotlari yangilandi` });
+          onSaved();
+          onClose();
+        },
+        onError: () => {
+          toast({ variant: "destructive", title: "Xatolik", description: "Saqlashda xatolik yuz berdi" });
+        },
+        onSettled: () => setIsLoading(false),
+      }
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Xodim ma'lumotlarini tahrirlash</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-1.5">
+            <Label>Ism Familiya</Label>
+            <Input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Ism Familiya" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Login</Label>
+            <Input value={login} onChange={e => setLogin(e.target.value)} placeholder="login123" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Parol</Label>
+            <Input value={password} onChange={e => setPassword(e.target.value)} placeholder="Parol" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Bekor qilish</Button>
+          <Button onClick={handleSave} disabled={isLoading}>
+            {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+            Saqlash
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function StaffList() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  
+  const [editMember, setEditMember] = useState<StaffMember | null>(null);
+
   const { data: staff, isLoading } = useListStaff({
-    query: {
-      queryKey: getListStaffQueryKey()
-    }
+    query: { queryKey: getListStaffQueryKey() }
   });
 
   const deleteMutation = useDeleteStaff();
@@ -60,26 +156,19 @@ export default function StaffList() {
       { id },
       {
         onSuccess: () => {
-          toast({
-            title: "Muvaffaqiyatli",
-            description: "Xodim o'chirildi",
-          });
+          toast({ title: "Muvaffaqiyatli", description: "Xodim o'chirildi" });
           queryClient.invalidateQueries({ queryKey: getListStaffQueryKey() });
         },
         onError: () => {
-          toast({
-            variant: "destructive",
-            title: "Xatolik",
-            description: "O'chirishda xatolik yuz berdi",
-          });
-        }
+          toast({ variant: "destructive", title: "Xatolik", description: "O'chirishda xatolik yuz berdi" });
+        },
       }
     );
   };
 
   const isAdmin = user?.role === "admin";
 
-  const filteredStaff = staff?.filter(s => 
+  const filteredStaff = staff?.filter(s =>
     s.full_name.toLowerCase().includes(search.toLowerCase()) ||
     (roleDisplay[s.role] || "").toLowerCase().includes(search.toLowerCase())
   );
@@ -91,7 +180,6 @@ export default function StaffList() {
           <h1 className="text-2xl font-bold tracking-tight">Xodimlar</h1>
           <p className="text-muted-foreground mt-1">Maktab xodimlari ro'yxati</p>
         </div>
-        
         {isAdmin && (
           <Button asChild>
             <Link href="/staff/new">
@@ -123,7 +211,7 @@ export default function StaffList() {
               <TableHead>Biriktirilgan sinf</TableHead>
               <TableHead>Login</TableHead>
               <TableHead>Parol</TableHead>
-              {isAdmin && <TableHead className="w-[80px]"></TableHead>}
+              {isAdmin && <TableHead className="w-[100px]"></TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -162,30 +250,40 @@ export default function StaffList() {
                   {isAdmin && (
                     <TableCell>
                       {(member.role as string) !== "admin" && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Haqiqatan ham o'chirmoqchimisiz?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Bu amalni ortga qaytarib bo'lmaydi. {member.full_name} tizimdan o'chiriladi.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
-                              <AlertDialogAction 
-                                onClick={() => handleDelete(member.id)}
-                                className="bg-destructive hover:bg-destructive/90"
-                              >
-                                O'chirish
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={() => setEditMember(member as StaffMember)}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Haqiqatan ham o'chirmoqchimisiz?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Bu amalni ortga qaytarib bo'lmaydi. {member.full_name} tizimdan o'chiriladi.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDelete(member.id)}
+                                  className="bg-destructive hover:bg-destructive/90"
+                                >
+                                  O'chirish
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
                       )}
                     </TableCell>
                   )}
@@ -195,6 +293,15 @@ export default function StaffList() {
           </TableBody>
         </Table>
       </div>
+
+      {editMember && (
+        <EditStaffDialog
+          member={editMember}
+          open={!!editMember}
+          onClose={() => setEditMember(null)}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: getListStaffQueryKey() })}
+        />
+      )}
     </div>
   );
 }

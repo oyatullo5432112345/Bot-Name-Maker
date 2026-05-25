@@ -251,6 +251,7 @@ export const UpdateStaffBody = zod.object({
   "full_name": zod.string().optional(),
   "role": zod.enum(['director', 'zam_direktor', 'zavuch', 'teacher', 'sinf_rahbari', 'kutubxonachi']).optional(),
   "class_id": zod.string().nullish(),
+  "login": zod.string().optional(),
   "password": zod.string().optional()
 })
 
