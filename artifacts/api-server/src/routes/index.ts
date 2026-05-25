@@ -6,6 +6,7 @@ import classesRouter from "./classes.js";
 import staffRouter from "./staff.js";
 import dashboardRouter from "./dashboard.js";
 import teacherSubjectsRouter from "./teacher-subjects.js";
+import gamesRouter from "./games.js";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(classesRouter);
 router.use(staffRouter);
 router.use(dashboardRouter);
 router.use(teacherSubjectsRouter);
+router.use(gamesRouter);
 
 export default router;

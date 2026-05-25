@@ -17,6 +17,13 @@ import ClassesList from "@/pages/classes/index";
 import StaffList from "@/pages/staff/index";
 import NewStaff from "@/pages/staff/new";
 
+import GamesPage from "@/pages/games/index";
+import SozOyini from "@/pages/games/sozoyini";
+import Jumboq from "@/pages/games/jumboq";
+import Arqon from "@/pages/games/arqon";
+import Poyga from "@/pages/games/poyga";
+import Reyting from "@/pages/games/reyting";
+
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ component: Component, roles }: { component: any, roles?: string[] }) {
@@ -70,6 +77,25 @@ function Router() {
       </Route>
       <Route path="/staff/new">
         <ProtectedRoute component={NewStaff} roles={["admin"]} />
+      </Route>
+
+      <Route path="/games/sozoyini">
+        <ProtectedRoute component={SozOyini} roles={["student"]} />
+      </Route>
+      <Route path="/games/jumboq">
+        <ProtectedRoute component={Jumboq} roles={["student"]} />
+      </Route>
+      <Route path="/games/arqon">
+        <ProtectedRoute component={Arqon} roles={["student"]} />
+      </Route>
+      <Route path="/games/poyga">
+        <ProtectedRoute component={Poyga} roles={["student"]} />
+      </Route>
+      <Route path="/games/reyting">
+        <ProtectedRoute component={Reyting} roles={["student"]} />
+      </Route>
+      <Route path="/games">
+        <ProtectedRoute component={GamesPage} roles={["student"]} />
       </Route>
 
       <Route component={NotFound} />

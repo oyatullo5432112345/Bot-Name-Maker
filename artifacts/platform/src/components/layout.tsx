@@ -7,8 +7,9 @@ import {
   GraduationCap, 
   School, 
   LogOut, 
-  Menu,
-  ShieldAlert
+  ShieldAlert,
+  Gamepad2,
+  Trophy
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +18,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -31,6 +33,7 @@ const roleDisplay: Record<string, string> = {
   zam_direktor: "Direktor o'rinbosari",
   zavuch: "Zavuch",
   teacher: "O'qituvchi",
+  sinf_rahbari: "Sinf rahbari",
   student: "O'quvchi"
 };
 
@@ -52,6 +55,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const canViewStaff = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
   const canViewClasses = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
   const canViewStudents = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
+  const isStudent = user.role === "student";
 
   return (
     <SidebarProvider>
@@ -111,12 +115,41 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
+
+            {isStudent && (
+              <SidebarGroup>
+                <SidebarGroupLabel>O'yinlar</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/games" || location.startsWith("/games/")}>
+                        <Link href="/games">
+                          <Gamepad2 className="w-4 h-4" />
+                          <span>O'yinlar ro'yxati</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/games/reyting"}>
+                        <Link href="/games/reyting">
+                          <Trophy className="w-4 h-4" />
+                          <span>Reyting</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
           </SidebarContent>
           <SidebarFooter className="border-t border-sidebar-border/50 p-4">
             <div className="flex flex-col gap-3">
               <div className="flex flex-col">
                 <span className="text-sm font-medium text-sidebar-foreground">{user.full_name}</span>
                 <span className="text-xs text-sidebar-foreground/70">{roleDisplay[user.role] || user.role}</span>
+                {isStudent && user.class_name && (
+                  <span className="text-xs text-sidebar-foreground/50 mt-0.5">{user.class_name} sinf</span>
+                )}
               </div>
               <Button 
                 variant="ghost" 

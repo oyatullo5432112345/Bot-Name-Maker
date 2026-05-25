@@ -5,5 +5,11 @@
       "name": "Talim Platform"
     }
   ],
-  "welcomeMessage": "✅ *Xush kelibsiz!*\n\nToshloq tuman 3-maktab — *TALIM PLATFORM*\n\nPlatformaga kirish uchun quyidagi tugmani bosing 👇"
+  "welcomeMessage": "✅ *Xush kelibsiz!*\n\nToshloq tuman 3-maktab — *TALIM PLATFORM*\n\nPlatformaga kirish uchun quyidagi tugmani bosing 👇",
+  "phoneMappings": [
+    {
+      "phone": "+998904063433",
+      "chatId": 611665022
+    }
+  ]
 }
