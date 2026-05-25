@@ -42,6 +42,24 @@ async function enrichStaff(staff: {
   return { ...staff, class_name };
 }
 
+// GET /api/staff/:id
+router.get("/staff/:id", async (req, res): Promise<void> => {
+  const { id } = req.params;
+  const { data, error } = await supabase
+    .from("staff")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error || !data) {
+    res.status(404).json({ error: "Xodim topilmadi" });
+    return;
+  }
+
+  const enriched = await enrichStaff(data as Parameters<typeof enrichStaff>[0]);
+  res.json(enriched);
+});
+
 // GET /api/staff
 router.get("/staff", async (_req, res): Promise<void> => {
   const { data, error } = await supabase

@@ -27,18 +27,18 @@ router.get("/teacher-subjects", async (req, res): Promise<void> => {
     return;
   }
 
-  // Enrich with teacher names
+  // Enrich with teacher and class names
   const enriched = await Promise.all(
     (data ?? []).map(async (row: { id: string; teacher_id: string; class_id: string; subject: string; created_at: string }) => {
-      const { data: staff } = await supabase
-        .from("staff")
-        .select("full_name, role")
-        .eq("id", row.teacher_id)
-        .single();
+      const [{ data: staff }, { data: cls }] = await Promise.all([
+        supabase.from("staff").select("full_name, role").eq("id", row.teacher_id).single(),
+        supabase.from("classes").select("name").eq("id", row.class_id).single(),
+      ]);
       return {
         ...row,
         teacher_name: staff?.full_name ?? null,
         teacher_role: staff?.role ?? null,
+        class_name: cls?.name ?? null,
       };
     })
   );

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import {
   useListStaff,
@@ -19,7 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus, Search, Trash2, Pencil } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, Pencil, BookOpen } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -144,6 +144,7 @@ export default function StaffList() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [editMember, setEditMember] = useState<StaffMember | null>(null);
+  const [, setLocation] = useLocation();
 
   const { data: staff, isLoading } = useListStaff({
     query: { queryKey: getListStaffQueryKey() }
@@ -251,6 +252,17 @@ export default function StaffList() {
                     <TableCell>
                       {(member.role as string) !== "admin" && (
                         <div className="flex items-center gap-1">
+                          {member.role === "teacher" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              onClick={() => setLocation(`/staff/${member.id}/subjects`)}
+                              title="Fanlarni boshqarish"
+                            >
+                              <BookOpen className="w-4 h-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"

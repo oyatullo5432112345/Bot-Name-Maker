@@ -16,6 +16,7 @@ import NewStudent from "@/pages/students/new";
 import ClassesList from "@/pages/classes/index";
 import StaffList from "@/pages/staff/index";
 import NewStaff from "@/pages/staff/new";
+import StaffSubjectsPage from "@/pages/staff/subjects";
 
 import GamesPage from "@/pages/games/index";
 import SozOyini from "@/pages/games/sozoyini";
@@ -82,6 +83,9 @@ function Router() {
       </Route>
       <Route path="/staff/new">
         <ProtectedRoute component={NewStaff} roles={["admin"]} />
+      </Route>
+      <Route path="/staff/:id/subjects">
+        <ProtectedRoute component={StaffSubjectsPage} roles={["admin"]} />
       </Route>
 
       <Route path="/darslik/new">

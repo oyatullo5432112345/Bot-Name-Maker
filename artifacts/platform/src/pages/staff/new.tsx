@@ -1,17 +1,19 @@
+import { useState } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLocation } from "wouter";
-import { 
-  useCreateStaff, 
-  useListClasses, 
+import {
+  useCreateStaff,
+  useListClasses,
   getListClassesQueryKey,
-  StaffInputRole 
+  StaffInputRole
 } from "@workspace/api-client-react";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft, Loader2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Form,
   FormControl,
@@ -28,6 +30,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+
+const COMMON_SUBJECTS = [
+  "Matematika", "Ona tili", "Adabiyot", "Ingliz tili", "Rus tili",
+  "Fizika", "Kimyo", "Biologiya", "Geografiya", "Tarix",
+  "Informatika", "Chizmachilik", "Jismoniy tarbiya", "Musiqa",
+  "Texnologiya", "Astronomiya", "Mehnat", "Tarbiya soati",
+];
 
 const staffSchema = z.object({
   full_name: z.string().min(2, "F.I.O ni kiriting"),
@@ -49,25 +58,28 @@ const rolesWithClass = [StaffInputRole.sinf_rahbari, StaffInputRole.teacher];
 export default function NewStaff() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+
   const createMutation = useCreateStaff();
 
   const { data: classes } = useListClasses({
-    query: {
-      queryKey: getListClassesQueryKey()
-    }
+    query: { queryKey: getListClassesQueryKey() }
   });
 
   const form = useForm<StaffFormValues>({
     resolver: zodResolver(staffSchema),
-    defaultValues: {
-      full_name: "",
-      class_id: null,
-    },
+    defaultValues: { full_name: "", class_id: null },
   });
 
   const roleValue = form.watch("role");
   const showClassField = rolesWithClass.includes(roleValue as typeof rolesWithClass[number]);
+  const isTeacher = roleValue === StaffInputRole.teacher;
+
+  const toggleSubject = (subject: string) => {
+    setSelectedSubjects(prev =>
+      prev.includes(subject) ? prev.filter(s => s !== subject) : [...prev, subject]
+    );
+  };
 
   const onSubmit = (data: StaffFormValues) => {
     const payload = {
@@ -78,12 +90,21 @@ export default function NewStaff() {
     createMutation.mutate(
       { data: payload },
       {
-        onSuccess: () => {
-          toast({
-            title: "Muvaffaqiyatli",
-            description: "Yangi xodim qo'shildi",
-          });
-          setLocation("/staff");
+        onSuccess: (result: unknown) => {
+          const newId = (result as { id?: string }).id;
+          if (isTeacher && newId) {
+            toast({
+              title: "O'qituvchi qo'shildi",
+              description: "Endi fanlarni biriktiring",
+            });
+            setLocation(`/staff/${newId}/subjects`);
+          } else {
+            toast({
+              title: "Muvaffaqiyatli",
+              description: "Yangi xodim qo'shildi",
+            });
+            setLocation("/staff");
+          }
         },
         onError: () => {
           toast({
@@ -124,7 +145,7 @@ export default function NewStaff() {
                 </FormItem>
               )}
             />
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <FormField
                 control={form.control}
@@ -135,6 +156,7 @@ export default function NewStaff() {
                     <Select onValueChange={(val) => {
                       field.onChange(val);
                       form.setValue("class_id", null);
+                      setSelectedSubjects([]);
                     }} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -146,7 +168,7 @@ export default function NewStaff() {
                         <SelectItem value={StaffInputRole.zam_direktor}>Direktor o'rinbosari</SelectItem>
                         <SelectItem value={StaffInputRole.zavuch}>Zavuch</SelectItem>
                         <SelectItem value={StaffInputRole.sinf_rahbari}>Sinf rahbari</SelectItem>
-                        <SelectItem value={StaffInputRole.teacher}>O'qituvchi</SelectItem>
+                        <SelectItem value={StaffInputRole.teacher}>Fan o'qituvchisi</SelectItem>
                         <SelectItem value={StaffInputRole.kutubxonachi}>Kutubxonachi</SelectItem>
                       </SelectContent>
                     </Select>
@@ -185,35 +207,72 @@ export default function NewStaff() {
               )}
             </div>
 
+            {isTeacher && (
+              <div className="space-y-3">
+                <div>
+                  <FormLabel>O'qitiladigan fanlar (ixtiyoriy, keyinroq ham belgilash mumkin)</FormLabel>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Qo'shgandan so'ng har bir fanga sinflar biriktirasiz
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {COMMON_SUBJECTS.map(subject => {
+                    const selected = selectedSubjects.includes(subject);
+                    return (
+                      <button
+                        key={subject}
+                        type="button"
+                        onClick={() => toggleSubject(subject)}
+                        className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                          selected
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background hover:bg-secondary border-border text-foreground"
+                        }`}
+                      >
+                        {selected && <span className="mr-1">✓</span>}
+                        {subject}
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedSubjects.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {selectedSubjects.map(s => (
+                      <Badge key={s} variant="secondary" className="gap-1">
+                        {s}
+                        <button onClick={() => toggleSubject(s)} type="button">
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-muted-foreground">
+                  💡 O'qituvchi qo'shilgandan so'ng avtomatik ravishda <strong>fanlarni biriktirish sahifasiga</strong> o'tasiz.
+                </div>
+              </div>
+            )}
+
             {roleValue === StaffInputRole.sinf_rahbari && (
               <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-sm text-muted-foreground">
                 💡 Sinf rahbari bitta sinfga mas'ul bo'ladi. U ham o'qituvchi sifatida fanlarga biriktirilishi mumkin.
               </div>
             )}
 
-            {roleValue === StaffInputRole.teacher && (
-              <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-muted-foreground">
-                💡 O'qituvchi turli sinflarga turli fanlardan dars beradi. Agar u shu sinfning sinf rahbari ham bo'lsa — sinfni yuqorida tanlang. Fanlarni "Sinflar" bo'limida biriktirish mumkin.
-              </div>
-            )}
-
             <div className="flex justify-end gap-3 pt-4 border-t">
-              <Button 
-                type="button" 
-                variant="outline" 
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => setLocation("/staff")}
                 disabled={createMutation.isPending}
               >
                 Bekor qilish
               </Button>
-              <Button 
-                type="submit" 
-                disabled={createMutation.isPending}
-              >
+              <Button type="submit" disabled={createMutation.isPending}>
                 {createMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
                 ) : null}
-                Saqlash
+                {isTeacher ? "Qo'shish va fanlarni biriktirish →" : "Saqlash"}
               </Button>
             </div>
           </form>
