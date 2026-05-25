@@ -133,9 +133,9 @@ export default function NewDarslikPage() {
                 <Label>
                   Fan <span className="text-destructive">*</span>
                 </Label>
-                <Select value={subject} onValueChange={setSubject}>
+                <Select value={SUBJECTS.includes(subject) ? subject : ""} onValueChange={(val) => setSubject(val)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Fan tanlang" />
+                    <SelectValue placeholder="Tez tanlash..." />
                   </SelectTrigger>
                   <SelectContent>
                     {SUBJECTS.map((s) => (
@@ -143,6 +143,11 @@ export default function NewDarslikPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Input
+                  placeholder="Yoki fan nomini o'zingiz yozing..."
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                />
               </div>
 
               <div className="space-y-1.5">
