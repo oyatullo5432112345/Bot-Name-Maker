@@ -16,10 +16,11 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const isProduction = process.env["NODE_ENV"] === "production";
-const WEBSITE_URL =
-  process.env["WEBSITE_URL"] ??
-  process.env["REPLIT_DOMAINS"]?.split(",")[0]?.trim() ??
-  "";
+// Production da REPLIT_DOMAINS dan ol (to'g'ri production URL)
+// Development da WEBSITE_URL dan ol
+const WEBSITE_URL = isProduction
+  ? (process.env["REPLIT_DOMAINS"]?.split(",")[0]?.trim() ?? process.env["WEBSITE_URL"] ?? "")
+  : (process.env["WEBSITE_URL"] ?? process.env["REPLIT_DOMAINS"]?.split(",")[0]?.trim() ?? "");
 
 try {
   const bot = createBot();
