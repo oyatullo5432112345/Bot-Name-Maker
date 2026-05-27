@@ -57,21 +57,26 @@ try {
       logger.info({ port }, "Server listening");
     });
 
-    // Development: polling boshlash (production webhookni O'CHIRMASLIK kerak!)
-    bot.start().then(() => {
-      logger.info("Telegram bot to'xtatildi");
-    }).catch((err: unknown) => {
-      const isConflict = (err as { error_code?: number })?.error_code === 409;
-      if (isConflict) {
-        logger.warn("Bot polling o'tkazib yuborildi — production webhook faol. Bu normal holat.");
-      } else {
-        logger.error({ err }, "Bot xatoligi");
+    // Development: production webhook bo'lsa polling O'TKAZIB YUBORILADI
+    void (async () => {
+      try {
+        const info = await bot.api.getWebhookInfo();
+        if (info.url && info.url.length > 0) {
+          logger.warn(
+            `Dev: production webhook faol (${info.url}) — polling ishga tushmaydi. Bu normal holat.`
+          );
+          return;
+        }
+        bot.start().catch((err: unknown) => {
+          logger.error({ err }, "Bot polling xatoligi");
+        });
+        logger.info("Telegram bot ishga tushdi (polling) ✅");
+        process.once("SIGINT", () => bot.stop());
+        process.once("SIGTERM", () => bot.stop());
+      } catch (err) {
+        logger.error({ err }, "Webhook ma'lumotini olishda xatolik");
       }
-    });
-    logger.info("Telegram bot ishga tushdi (polling) ✅");
-
-    process.once("SIGINT", () => bot.stop());
-    process.once("SIGTERM", () => bot.stop());
+    })();
   }
 } catch (err) {
   logger.error({ err }, "Bot ishga tushmadi");
