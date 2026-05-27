@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useListClasses, useListStaff } from "@workspace/api-client-react";
@@ -143,6 +143,61 @@ function copyToClipboardFn(text: string, toast: ReturnType<typeof useToast>["toa
   toast({ title: "Nusxalandi!", description: text });
 }
 
+// ─── Konfetti animatsiyasi ─────────────────────────────────────────────────────
+const CONFETTI_COLORS = ["#6366f1","#f59e0b","#10b981","#ef4444","#3b82f6","#ec4899","#f97316","#8b5cf6"];
+
+function ConfettiPiece({ index }: { index: number }) {
+  const color = CONFETTI_COLORS[index % CONFETTI_COLORS.length];
+  const left = `${5 + (index * 9.3) % 90}%`;
+  const delay = `${(index * 0.13) % 1.5}s`;
+  const size = 6 + (index % 5) * 2;
+  const rotate = (index * 37) % 360;
+  const shape = index % 3 === 0 ? "50%" : index % 3 === 1 ? "2px" : "0%";
+  return (
+    <span
+      style={{
+        position: "absolute",
+        left,
+        top: "-16px",
+        width: size,
+        height: size,
+        background: color,
+        borderRadius: shape,
+        transform: `rotate(${rotate}deg)`,
+        animation: `confettiFall 1.8s ease-in ${delay} forwards`,
+        opacity: 0,
+      }}
+    />
+  );
+}
+
+function ConfettiOverlay() {
+  return (
+    <>
+      <style>{`
+        @keyframes confettiFall {
+          0%   { transform: translateY(0) rotate(0deg);   opacity: 1; }
+          80%  { opacity: 1; }
+          100% { transform: translateY(340px) rotate(720deg); opacity: 0; }
+        }
+        @keyframes popIn {
+          0%   { transform: scale(0.4) rotate(-10deg); opacity: 0; }
+          60%  { transform: scale(1.15) rotate(4deg); opacity: 1; }
+          80%  { transform: scale(0.95) rotate(-2deg); }
+          100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+        @keyframes shimmer {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0.6; }
+        }
+      `}</style>
+      <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 50 }}>
+        {Array.from({ length: 32 }, (_, i) => <ConfettiPiece key={i} index={i} />)}
+      </div>
+    </>
+  );
+}
+
 // ─── Credentials ko'rinish ────────────────────────────────────────────────────
 function CredentialsView({
   credentials,
@@ -156,12 +211,21 @@ function CredentialsView({
   onDashboard?: () => void;
 }) {
   const { toast } = useToast();
+  const [showConfetti, setShowConfetti] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setShowConfetti(false), 2200);
+    return () => clearTimeout(t);
+  }, []);
+
   return (
-    <div className="space-y-4">
-      <div className="text-center">
-        <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-2" />
-        <p className="text-lg font-semibold">Muvaffaqiyatli!</p>
-        <p className="text-sm text-muted-foreground">Akkauntingiz yaratildi. Ma'lumotlarni saqlang</p>
+    <div className="space-y-4" style={{ position: "relative" }}>
+      {showConfetti && <ConfettiOverlay />}
+      <div className="text-center" style={{ animation: "popIn 0.6s ease-out forwards" }}>
+        <div style={{ fontSize: 48, lineHeight: 1, marginBottom: 8, animation: "shimmer 1s ease-in-out 2" }}>🎉</div>
+        <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-2" />
+        <p className="text-xl font-bold text-green-700">Tabriklaymiz!</p>
+        <p className="text-sm text-muted-foreground mt-1">Akkauntingiz muvaffaqiyatli yaratildi 🥳</p>
+        <p className="text-xs text-muted-foreground">Quyidagi ma'lumotlarni saqlang</p>
       </div>
       <div className="space-y-2">
         <div className="rounded-lg border bg-secondary/50 p-3 flex items-center justify-between">
