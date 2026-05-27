@@ -357,7 +357,7 @@ function StaffRegisterModal({
   const [credentials, setCredentials] = useState<{ login: string; password: string } | null>(null);
   const [pendingAuthData, setPendingAuthData] = useState<Parameters<typeof authLogin>[0] | null>(null);
 
-  const isTeacher = role === "teacher";
+  const isTeacher = role === "teacher" || role === "sinf_rahbari";
   const cfg = ROLE_CONFIG[role];
   const colors = cfg ? COLOR_CLASSES[cfg.color] : null;
   const [customSubject, setCustomSubject] = useState("");

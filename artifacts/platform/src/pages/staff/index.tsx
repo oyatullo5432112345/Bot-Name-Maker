@@ -252,7 +252,7 @@ export default function StaffList() {
                     <TableCell>
                       {(member.role as string) !== "admin" && (
                         <div className="flex items-center gap-1">
-                          {member.role === "teacher" && (
+                          {(member.role === "teacher" || member.role === "sinf_rahbari") && (
                             <Button
                               variant="ghost"
                               size="icon"

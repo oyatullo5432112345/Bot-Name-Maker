@@ -348,7 +348,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
   }
 
   // Subjects ni saqlashga urinib ko'rish (column mavjud bo'lsa)
-  if (role === "teacher" && Array.isArray(subjects) && subjects.length > 0) {
+  if ((role === "teacher" || role === "sinf_rahbari") && Array.isArray(subjects) && subjects.length > 0) {
     const staffId = (data as { id: string }).id;
     await supabase.from("staff").update({ subjects }).eq("id", staffId).then(() => {/* graceful */});
   }
