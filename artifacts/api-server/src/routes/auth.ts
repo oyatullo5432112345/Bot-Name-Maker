@@ -177,32 +177,78 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   res.status(401).json({ error: "Login yoki parol noto'g'ri" });
 });
 
+// O'quvchi login generatsiyasi: ismi → kichik harf, maxsus belgilar → nuqta
+function generateStudentLogin(firstName: string): string {
+  return firstName
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ".")
+    .replace(/\.+/g, ".")
+    .replace(/^\.+|\.+$/g, "") || "student";
+}
+
+// O'quvchi paroli: 3maktab + sinf nomi (kichik harf, bo'shliqlarsiz)
+function generateStudentPassword(className: string): string {
+  return "3maktab" + className.toLowerCase().replace(/\s+/g, "");
+}
+
 // POST /api/auth/register
 router.post("/auth/register", async (req, res): Promise<void> => {
-  const parsed = RegisterBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+  const { last_name, first_name, phone_number, class_name } = req.body as {
+    last_name?: string;
+    first_name?: string;
+    phone_number?: string;
+    class_name?: string;
+  };
+
+  if (!first_name || first_name.trim().length < 2) {
+    res.status(400).json({ error: "Ismni kiriting (kamida 2 ta harf)" });
+    return;
+  }
+  if (!last_name || last_name.trim().length < 2) {
+    res.status(400).json({ error: "Familiyani kiriting (kamida 2 ta harf)" });
+    return;
+  }
+  if (!phone_number || phone_number.trim().length < 7) {
+    res.status(400).json({ error: "Telefon raqamni kiriting" });
+    return;
+  }
+  if (!class_name || class_name.trim().length < 1) {
+    res.status(400).json({ error: "Sinfni tanlang" });
     return;
   }
 
-  const { full_name, phone_number, class_name, login, password } = parsed.data;
+  const full_name = `${last_name.trim()} ${first_name.trim()}`;
 
-  // Login band emasligini tekshirish
-  const [{ data: existStaff }, { data: existStudent }] = await Promise.all([
+  // Login va parol avtomatik yaratish
+  let login = generateStudentLogin(first_name.trim());
+  const password = generateStudentPassword(class_name.trim());
+
+  // Login unikal bo'lishini ta'minlash
+  const [{ data: ex1 }, { data: ex2 }] = await Promise.all([
     supabase.from("staff").select("login").eq("login", login).maybeSingle(),
     supabase.from("users").select("login").eq("login", login).maybeSingle(),
   ]);
-
-  if (existStaff || existStudent) {
-    res.status(400).json({ error: "Bu login band. Boshqa login tanlang." });
-    return;
+  if (ex1 || ex2) {
+    // Raqam qo'sh
+    let suffix = 1;
+    let candidate = `${login}${suffix}`;
+    while (true) {
+      const [{ data: a }, { data: b }] = await Promise.all([
+        supabase.from("staff").select("login").eq("login", candidate).maybeSingle(),
+        supabase.from("users").select("login").eq("login", candidate).maybeSingle(),
+      ]);
+      if (!a && !b) { login = candidate; break; }
+      suffix++;
+      candidate = `${login}${suffix}`;
+    }
   }
 
   // Bir telefon raqami bilan maksimal 2 ta ro'yxatdan o'tish mumkin
+  const normalizedPhone = normalizePhone(phone_number);
   const { data: phoneUsers } = await supabase
     .from("users")
     .select("login")
-    .eq("phone_number", phone_number);
+    .eq("phone_number", normalizedPhone);
 
   if ((phoneUsers?.length ?? 0) >= 2) {
     res.status(400).json({ error: "Bu telefon raqami bilan maksimal 2 ta foydalanuvchi ro'yxatdan o'ta oladi" });
@@ -210,7 +256,6 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   }
 
   // Agar telefon Telegram'da allaqachon bog'langan bo'lsa — haqiqiy chat_id ishlatamiz
-  const normalizedPhone = normalizePhone(phone_number);
   const linkedChatId = getChatIdByPhone(normalizedPhone);
   const telegram_id = linkedChatId ?? Date.now();
   const registration_date = new Date().toISOString();
@@ -241,13 +286,22 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
 // POST /api/auth/register-staff
 router.post("/auth/register-staff", async (req, res): Promise<void> => {
-  const { full_name, role, class_id, phone_number, subjects } = req.body as {
+  const { last_name, first_name, full_name: rawFullName, role, class_id, phone_number, subjects, login: customLogin, password: customPassword } = req.body as {
+    last_name?: string;
+    first_name?: string;
     full_name?: string;
     role?: string;
     class_id?: string | null;
     phone_number?: string;
     subjects?: string[];
+    login?: string;
+    password?: string;
   };
+
+  // Ism: ikkita qatordan yoki to'liq ismdan olish
+  const full_name = (first_name && last_name)
+    ? `${last_name.trim()} ${first_name.trim()}`
+    : (rawFullName ?? "");
 
   const allowedRoles = ["director", "zam_direktor", "zavuch", "sinf_rahbari", "teacher", "kutubxonachi"];
   if (!role || !allowedRoles.includes(role)) {
@@ -311,21 +365,28 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     }
   }
 
-  // Unikal login yaratish
-  const base = full_name.trim().toLowerCase().split(" ")[0]?.replace(/[^a-z]/g, "") ?? "staff";
-  let login = `${base}${Math.floor(100 + Math.random() * 900)}`;
-
-  const { data: existing } = await supabase
-    .from("staff")
-    .select("id")
-    .eq("login", login)
-    .maybeSingle();
-
-  if (existing) {
-    login = `${base}${Math.floor(1000 + Math.random() * 9000)}`;
+  // Login va parol: xodim o'zi tanlagan bo'lishi shart
+  if (!customLogin || customLogin.trim().length < 3) {
+    res.status(400).json({ error: "Login kamida 3 ta belgidan iborat bo'lishi kerak" });
+    return;
+  }
+  if (!customPassword || customPassword.length < 4) {
+    res.status(400).json({ error: "Parol kamida 4 ta belgidan iborat bo'lishi kerak" });
+    return;
   }
 
-  const password = Math.floor(100000 + Math.random() * 900000).toString();
+  const login = customLogin.trim();
+  const password = customPassword.trim();
+
+  // Login band emasligini tekshirish
+  const [{ data: existLoginStaff }, { data: existLoginStudent }] = await Promise.all([
+    supabase.from("staff").select("id").eq("login", login).maybeSingle(),
+    supabase.from("users").select("login").eq("login", login).maybeSingle(),
+  ]);
+  if (existLoginStaff || existLoginStudent) {
+    res.status(400).json({ error: "Bu login band. Boshqa login tanlang." });
+    return;
+  }
 
   const insertData: Record<string, unknown> = {
     full_name: full_name.trim(),

@@ -350,8 +350,11 @@ function StaffRegisterModal({
 }) {
   const { toast } = useToast();
   const { login: authLogin } = useAuth();
-  const [fullName, setFullName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("");
   const [phone, setPhone] = useState("");
+  const [loginVal, setLoginVal] = useState("");
+  const [passwordVal, setPasswordVal] = useState("");
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [credentials, setCredentials] = useState<{ login: string; password: string } | null>(null);
@@ -388,10 +391,13 @@ function StaffRegisterModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          full_name: fullName.trim(),
+          last_name: lastName.trim(),
+          first_name: firstName.trim(),
           role,
           class_id: classId || null,
           phone_number: `+998${phone}`,
+          login: loginVal.trim(),
+          password: passwordVal,
           subjects: isTeacher ? selectedSubjects : undefined,
         }),
       });
@@ -410,15 +416,20 @@ function StaffRegisterModal({
     }
   };
 
-  const canSubmit = fullName.trim().length >= 2 && phone.replace(/\D/g, "").length >= 9
+  const canSubmit = lastName.trim().length >= 2 && firstName.trim().length >= 2
+    && phone.replace(/\D/g, "").length >= 9
+    && loginVal.trim().length >= 3 && passwordVal.length >= 4
     && (!isTeacher || selectedSubjects.length > 0);
 
   const handleClose = () => {
     if (pendingAuthData) {
       authLogin(pendingAuthData);
     }
-    setFullName("");
+    setLastName("");
+    setFirstName("");
     setPhone("");
+    setLoginVal("");
+    setPasswordVal("");
     setSelectedSubjects([]);
     setCredentials(null);
     setPendingAuthData(null);
@@ -450,11 +461,20 @@ function StaffRegisterModal({
         ) : (
           <div className="space-y-4 pt-1">
             <div className="space-y-1.5">
-              <Label>Ism Familiya</Label>
+              <Label>Familiya</Label>
               <Input
-                placeholder="Valiyev Valijon"
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
+                placeholder="Valiyev"
+                value={lastName}
+                onChange={e => setLastName(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Ismi</Label>
+              <Input
+                placeholder="Valijon"
+                value={firstName}
+                onChange={e => setFirstName(e.target.value)}
               />
             </div>
 
@@ -473,6 +493,27 @@ function StaffRegisterModal({
                   type="tel"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Login <span className="text-muted-foreground font-normal text-xs">(kamida 3 ta belgi)</span></Label>
+              <Input
+                placeholder="valiyev_v"
+                value={loginVal}
+                onChange={e => setLoginVal(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Parol <span className="text-muted-foreground font-normal text-xs">(kamida 4 ta belgi)</span></Label>
+              <Input
+                type="password"
+                placeholder="••••••••"
+                value={passwordVal}
+                onChange={e => setPasswordVal(e.target.value)}
+                autoComplete="new-password"
+              />
             </div>
 
             {isTeacher && (
@@ -580,6 +621,15 @@ function StaffRegisterModal({
   );
 }
 
+// Login preview generatsiyasi (frontendda ko'rsatish uchun)
+function previewStudentLogin(firstName: string): string {
+  return firstName
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ".")
+    .replace(/\.+/g, ".")
+    .replace(/^\.+|\.+$/g, "") || "student";
+}
+
 // ─── O'quvchi ro'yxatdan o'tish ───────────────────────────────────────────────
 function StudentRegister() {
   const { login: authLogin } = useAuth();
@@ -588,15 +638,18 @@ function StudentRegister() {
   const { data: classes } = useListClasses({ query: { queryKey: ["classes", "list"] } });
 
   const [classId, setClassId] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("");
   const [phone, setPhone] = useState("");
-  const [loginVal, setLoginVal] = useState("");
-  const [passwordVal, setPasswordVal] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [credentials, setCredentials] = useState<{ login: string; password: string } | null>(null);
   const [pendingAuthData, setPendingAuthData] = useState<Parameters<typeof authLogin>[0] | null>(null);
 
   const selectedClass = (classes ?? []).find((c: { id: string; name: string }) => c.id === classId);
+
+  // Avtomatik login va parol ko'rinishi
+  const previewLogin = firstName.trim().length >= 2 ? previewStudentLogin(firstName.trim()) : "";
+  const previewPassword = selectedClass ? `3maktab${selectedClass.name.toLowerCase().replace(/\s+/g, "")}` : "";
 
   const handlePhoneChange = (val: string) => {
     let digits = val.replace(/\D/g, "");
@@ -613,10 +666,9 @@ function StudentRegister() {
 
   const canSubmit = !!(
     classId &&
-    fullName.trim().length >= 2 &&
-    phone.replace(/\D/g, "").length >= 9 &&
-    loginVal.trim().length >= 3 &&
-    passwordVal.length >= 4
+    lastName.trim().length >= 2 &&
+    firstName.trim().length >= 2 &&
+    phone.replace(/\D/g, "").length >= 9
   );
 
   const handleSubmit = async () => {
@@ -627,11 +679,10 @@ function StudentRegister() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          full_name: fullName.trim(),
+          last_name: lastName.trim(),
+          first_name: firstName.trim(),
           phone_number: `+998${phone}`,
           class_name: selectedClass.name,
-          login: loginVal.trim(),
-          password: passwordVal,
         }),
       });
       const data = await res.json() as { error?: string; login?: string; password?: string };
@@ -674,11 +725,16 @@ function StudentRegister() {
       {classId && (
         <>
           <div className="space-y-1.5">
-            <Label>Ism Familiya</Label>
-            <Input placeholder="Valiyev Valijon" value={fullName} onChange={e => setFullName(e.target.value)} />
+            <Label>Familiya</Label>
+            <Input placeholder="Valiyev" value={lastName} onChange={e => setLastName(e.target.value)} />
           </div>
 
-          {fullName.trim().length >= 2 && (
+          <div className="space-y-1.5">
+            <Label>Ismi</Label>
+            <Input placeholder="Valijon" value={firstName} onChange={e => setFirstName(e.target.value)} />
+          </div>
+
+          {firstName.trim().length >= 2 && lastName.trim().length >= 2 && (
             <>
               <div className="space-y-1.5">
                 <Label>Telefon raqam</Label>
@@ -697,14 +753,18 @@ function StudentRegister() {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label>Login</Label>
-                <Input placeholder="login123" value={loginVal} onChange={e => setLoginVal(e.target.value)} />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Parol</Label>
-                <Input type="password" placeholder="••••••" value={passwordVal} onChange={e => setPasswordVal(e.target.value)} />
+              {/* Avtomatik login/parol ko'rinishi */}
+              <div className="rounded-lg border border-green-200 bg-green-50 p-3 space-y-1.5">
+                <p className="text-xs font-semibold text-green-700">🔑 Sizning login ma'lumotlaringiz (avtomatik)</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-green-600">Login:</span>
+                  <span className="font-mono text-sm font-semibold text-green-800">{previewLogin}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-green-600">Parol:</span>
+                  <span className="font-mono text-sm font-semibold text-green-800">{previewPassword}</span>
+                </div>
+                <p className="text-xs text-green-600 mt-1">Ro'yxatdan o'tgandan keyin bu ma'lumotlarni saqlang!</p>
               </div>
             </>
           )}
