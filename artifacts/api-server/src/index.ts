@@ -56,13 +56,17 @@ try {
       logger.info({ port }, "Server listening");
     });
 
-    bot.start().then(() => {
-      logger.info("Telegram bot to'xtatildi");
+    // Webhook qolgan bo'lsa o'chirib, keyin polling boshlash
+    bot.api.deleteWebhook({ drop_pending_updates: false }).then(() => {
+      bot.start().then(() => {
+        logger.info("Telegram bot to'xtatildi");
+      }).catch((err: unknown) => {
+        logger.error({ err }, "Bot xatoligi");
+      });
+      logger.info("Telegram bot ishga tushdi (polling) ✅");
     }).catch((err: unknown) => {
-      logger.error({ err }, "Bot xatoligi");
+      logger.error({ err }, "Webhook o'chirishda xatolik");
     });
-
-    logger.info("Telegram bot ishga tushdi (polling) ✅");
 
     process.once("SIGINT", () => bot.stop());
     process.once("SIGTERM", () => bot.stop());
