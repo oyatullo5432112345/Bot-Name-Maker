@@ -355,6 +355,7 @@ function StaffRegisterModal({
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [credentials, setCredentials] = useState<{ login: string; password: string } | null>(null);
+  const [pendingAuthData, setPendingAuthData] = useState<Parameters<typeof authLogin>[0] | null>(null);
 
   const isTeacher = role === "teacher";
   const cfg = ROLE_CONFIG[role];
@@ -400,7 +401,7 @@ function StaffRegisterModal({
         return;
       }
       setCredentials({ login: data.login ?? "", password: data.password ?? "" });
-      authLogin(data as Parameters<typeof authLogin>[0]);
+      setPendingAuthData(data as Parameters<typeof authLogin>[0]);
       onSuccess();
     } catch {
       toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanishda muammo" });
@@ -413,10 +414,14 @@ function StaffRegisterModal({
     && (!isTeacher || selectedSubjects.length > 0);
 
   const handleClose = () => {
+    if (pendingAuthData) {
+      authLogin(pendingAuthData);
+    }
     setFullName("");
     setPhone("");
     setSelectedSubjects([]);
     setCredentials(null);
+    setPendingAuthData(null);
     onClose();
   };
 
@@ -589,6 +594,7 @@ function StudentRegister() {
   const [passwordVal, setPasswordVal] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [credentials, setCredentials] = useState<{ login: string; password: string } | null>(null);
+  const [pendingAuthData, setPendingAuthData] = useState<Parameters<typeof authLogin>[0] | null>(null);
 
   const selectedClass = (classes ?? []).find((c: { id: string; name: string }) => c.id === classId);
 
@@ -634,7 +640,7 @@ function StudentRegister() {
         return;
       }
       setCredentials({ login: data.login ?? "", password: data.password ?? "" });
-      authLogin(data as Parameters<typeof authLogin>[0]);
+      setPendingAuthData(data as Parameters<typeof authLogin>[0]);
     } catch {
       toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanishda muammo" });
     } finally {
@@ -643,7 +649,15 @@ function StudentRegister() {
   };
 
   if (credentials) {
-    return <CredentialsView credentials={credentials} onDashboard={() => setLocation("/dashboard")} />;
+    return (
+      <CredentialsView
+        credentials={credentials}
+        onDashboard={() => {
+          if (pendingAuthData) authLogin(pendingAuthData);
+          setLocation("/dashboard");
+        }}
+      />
+    );
   }
 
   return (
