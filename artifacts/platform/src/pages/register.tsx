@@ -611,7 +611,7 @@ function StaffRegisterModal({
               Ro'yxatdan o'tish
             </Button>
 
-            {isTeacher && selectedSubjects.length === 0 && fullName.length >= 2 && (
+            {isTeacher && selectedSubjects.length === 0 && (lastName.length >= 2 || firstName.length >= 2) && (
               <p className="text-xs text-center text-amber-600">⚠️ Davom etish uchun kamida 1 ta fan tanlang</p>
             )}
           </div>
