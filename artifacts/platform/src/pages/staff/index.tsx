@@ -19,7 +19,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus, Search, Trash2, Pencil, BookOpen } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Plus, Search, Trash2, Pencil, BookOpen, Filter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -39,6 +40,20 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
+const getToken = () => localStorage.getItem("talim_auth_token");
+const authHeaders = (): HeadersInit => {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+};
 
 const roleDisplay: Record<string, string> = {
   admin: "Admin",
@@ -58,6 +73,7 @@ type StaffMember = {
   login: string;
   password: string;
   subjects?: string[] | null;
+  can_teach?: boolean;
 };
 
 function EditStaffDialog({
@@ -144,7 +160,9 @@ export default function StaffList() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [filterSubject, setFilterSubject] = useState<string>("all");
   const [editMember, setEditMember] = useState<StaffMember | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [, setLocation] = useLocation();
 
   const { data: staff, isLoading } = useListStaff({
@@ -168,12 +186,48 @@ export default function StaffList() {
     );
   };
 
+  const handleToggleCanTeach = async (member: StaffMember) => {
+    setTogglingId(member.id);
+    try {
+      const res = await fetch(`${API_BASE}/staff/${member.id}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ can_teach: !member.can_teach }),
+      });
+      if (res.ok) {
+        toast({
+          title: !member.can_teach ? "Dars o'tish faollashtirildi" : "Dars o'tish o'chirildi",
+          description: `${member.full_name} uchun dars jadvali ${!member.can_teach ? "yoqildi" : "o'chirildi"}`,
+        });
+        queryClient.invalidateQueries({ queryKey: getListStaffQueryKey() });
+      } else {
+        const d = await res.json() as { error?: string };
+        toast({ variant: "destructive", title: "Xatolik", description: d.error ?? "Yangilashda xatolik" });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanib bo'lmadi" });
+    }
+    setTogglingId(null);
+  };
+
   const isAdmin = user?.role === "admin";
 
-  const filteredStaff = staff?.filter(s =>
-    s.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    (roleDisplay[s.role] || "").toLowerCase().includes(search.toLowerCase())
-  );
+  // Barcha fanlar ro'yxatini yig'ish (o'qituvchilarning subjects dan)
+  const allSubjects = Array.from(new Set(
+    (staff ?? [])
+      .flatMap((s) => (s as StaffMember).subjects ?? [])
+      .filter(Boolean)
+  )).sort();
+
+  const filteredStaff = (staff ?? []).filter(s => {
+    const nameMatch = s.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      (roleDisplay[s.role] || "").toLowerCase().includes(search.toLowerCase());
+    if (!nameMatch) return false;
+    if (filterSubject === "all") return true;
+    return ((s as StaffMember).subjects ?? []).includes(filterSubject);
+  });
+
+  const managementRoles = ["director", "zam_direktor", "zavuch"];
 
   return (
     <div className="space-y-6">
@@ -192,8 +246,8 @@ export default function StaffList() {
         )}
       </div>
 
-      <div className="flex items-center gap-2 max-w-sm">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Izlash (ism, lavozim)..."
@@ -202,6 +256,22 @@ export default function StaffList() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        {allSubjects.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <Select value={filterSubject} onValueChange={setFilterSubject}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Fan bo'yicha filter..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha fanlar</SelectItem>
+                {allSubjects.map(s => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       <div className="border rounded-md bg-card">
@@ -214,7 +284,7 @@ export default function StaffList() {
               <TableHead>Biriktirilgan sinf</TableHead>
               <TableHead>Login</TableHead>
               <TableHead>Parol</TableHead>
-              {isAdmin && <TableHead className="w-[100px]"></TableHead>}
+              {isAdmin && <TableHead className="w-[130px]"></TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -231,18 +301,25 @@ export default function StaffList() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredStaff?.map((member) => (
+              (filteredStaff as StaffMember[])?.map((member) => (
                 <TableRow key={member.id}>
-                  <TableCell className="font-medium">{member.full_name}</TableCell>
+                  <TableCell className="font-medium">
+                    <div>{member.full_name}</div>
+                    {managementRoles.includes(member.role) && member.can_teach && (
+                      <Badge variant="outline" className="mt-0.5 text-xs border-green-400 text-green-700 bg-green-50">
+                        Dars o'tadi
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary text-secondary-foreground border">
                       {roleDisplay[member.role] || member.role}
                     </span>
                   </TableCell>
                   <TableCell>
-                    {(member.role === "teacher" || member.role === "sinf_rahbari") && (member as StaffMember).subjects?.length ? (
+                    {(member.role === "teacher" || member.role === "sinf_rahbari") && (member.subjects ?? []).length > 0 ? (
                       <div className="flex flex-wrap gap-1 max-w-[200px]">
-                        {((member as StaffMember).subjects ?? []).map(s => (
+                        {(member.subjects ?? []).map(s => (
                           <span key={s} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
                             {s}
                           </span>
@@ -266,12 +343,27 @@ export default function StaffList() {
                   {isAdmin && (
                     <TableCell>
                       {(member.role as string) !== "admin" && (
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {managementRoles.includes(member.role) && (
+                            <Button
+                              variant={member.can_teach ? "default" : "outline"}
+                              size="sm"
+                              className={`text-xs h-7 px-2 ${member.can_teach ? "bg-green-600 hover:bg-green-700 text-white" : "border-green-400 text-green-700 hover:bg-green-50"}`}
+                              disabled={togglingId === member.id}
+                              onClick={() => void handleToggleCanTeach(member)}
+                              title="Dars o'tish ruxsatini boshqarish"
+                            >
+                              {togglingId === member.id
+                                ? <Loader2 className="w-3 h-3 animate-spin" />
+                                : member.can_teach ? "✓ Dars o'tadi" : "Dars o'tish"
+                              }
+                            </Button>
+                          )}
                           {(member.role === "teacher" || member.role === "sinf_rahbari") && (
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-8 w-8"
                               onClick={() => setLocation(`/staff/${member.id}/subjects`)}
                               title="Fanlarni boshqarish"
                             >
@@ -281,14 +373,14 @@ export default function StaffList() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="text-muted-foreground hover:text-foreground"
-                            onClick={() => setEditMember(member as StaffMember)}
+                            className="text-muted-foreground hover:text-foreground h-8 w-8"
+                            onClick={() => setEditMember(member)}
                           >
                             <Pencil className="w-4 h-4" />
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8">
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </AlertDialogTrigger>

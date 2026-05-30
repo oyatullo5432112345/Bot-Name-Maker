@@ -29,6 +29,8 @@ async function enrichStaff(staff: {
   password: string;
   telegram_id?: number | null;
   created_at?: string | null;
+  subjects?: string[] | null;
+  can_teach?: boolean | null;
 }) {
   let class_name: string | null = null;
   if (staff.class_id) {
@@ -39,7 +41,7 @@ async function enrichStaff(staff: {
       .single();
     class_name = cls?.name ?? null;
   }
-  return { ...staff, class_name };
+  return { ...staff, class_name, subjects: staff.subjects ?? [], can_teach: staff.can_teach ?? false };
 }
 
 // GET /api/staff/:id
@@ -128,6 +130,13 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
   if (body.data.class_id !== undefined) updates.class_id = body.data.class_id;
   if (body.data.login != null) updates.login = body.data.login;
   if (body.data.password != null) updates.password = body.data.password;
+  // can_teach va subjects ni ham yangilash
+  if ((body.data as Record<string, unknown>)["can_teach"] !== undefined) {
+    updates.can_teach = (body.data as Record<string, unknown>)["can_teach"];
+  }
+  if ((body.data as Record<string, unknown>)["subjects"] !== undefined) {
+    updates.subjects = (body.data as Record<string, unknown>)["subjects"];
+  }
 
   const { data, error } = await supabase
     .from("staff")

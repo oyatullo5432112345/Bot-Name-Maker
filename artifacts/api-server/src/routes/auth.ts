@@ -105,6 +105,8 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       login: string;
       password: string;
       telegram_id: number | null;
+      subjects?: string[] | null;
+      can_teach?: boolean;
     };
 
     // class nomini olish
@@ -118,6 +120,10 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       class_name = cls?.name ?? null;
     }
 
+    // O'qituvchi/sinf rahbari uchun subjects ni tokenga qo'shish
+    const isTeachingRole = ["teacher", "sinf_rahbari"].includes(staff.role);
+    const subjects = isTeachingRole ? (staff.subjects ?? []) : undefined;
+
     const payload = {
       id: staff.id,
       role: staff.role,
@@ -126,6 +132,8 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       class_name,
       class_id: staff.class_id,
       telegram_id: staff.telegram_id,
+      subjects,
+      can_teach: staff.can_teach ?? false,
     };
     const token = createToken(payload);
     res.setHeader("X-Auth-Token", token);
@@ -408,10 +416,10 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     return;
   }
 
-  // Subjects ni saqlashga urinib ko'rish (column mavjud bo'lsa)
+  // Subjects ni saqlash (teacher va sinf_rahbari uchun)
   if ((role === "teacher" || role === "sinf_rahbari") && Array.isArray(subjects) && subjects.length > 0) {
     const staffId = (data as { id: string }).id;
-    await supabase.from("staff").update({ subjects }).eq("id", staffId).then(() => {/* graceful */});
+    await supabase.from("staff").update({ subjects }).eq("id", staffId);
   }
 
   const staffData = data as {

@@ -61,6 +61,7 @@ interface StaffItem {
   id: string;
   full_name: string;
   role: string;
+  can_teach?: boolean;
 }
 
 interface TeacherSubjectItem {
@@ -368,8 +369,11 @@ export default function DarsJadvaliPage() {
 
   const selectedClassName = classes?.find((c: { id: string; name: string }) => c.id === selectedClassId)?.name ?? "";
 
-  // Only teachers are shown for fan assignment selection
-  const teacherStaff = staff.filter(s => ["teacher", "sinf_rahbari"].includes(s.role));
+  // O'qituvchilar + can_teach=true bo'lgan rahbariyat xodimlari
+  const teacherStaff = staff.filter(s =>
+    ["teacher", "sinf_rahbari"].includes(s.role) ||
+    (["director", "zam_direktor", "zavuch"].includes(s.role) && s.can_teach === true)
+  );
 
   return (
     <div className="space-y-6">

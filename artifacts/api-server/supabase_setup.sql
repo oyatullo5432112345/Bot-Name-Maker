@@ -37,8 +37,14 @@ CREATE TABLE IF NOT EXISTS staff (
   class_id    UUID,
   login       TEXT NOT NULL UNIQUE,
   password    TEXT NOT NULL,
+  subjects    TEXT[] DEFAULT '{}',
+  can_teach   BOOLEAN NOT NULL DEFAULT FALSE,
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Mavjud jadvalga yangi ustunlarni qo'shish (agar yo'q bo'lsa)
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS subjects TEXT[] DEFAULT '{}';
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS can_teach BOOLEAN NOT NULL DEFAULT FALSE;
 
 ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check;
 ALTER TABLE staff ADD CONSTRAINT staff_role_check
