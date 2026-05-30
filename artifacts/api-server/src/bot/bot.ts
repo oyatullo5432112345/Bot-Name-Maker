@@ -144,6 +144,70 @@ function buildChannelsMenu(): InlineKeyboard {
   return kb;
 }
 
+// ─── Dars vaqtlari ──────────────────────────────────────────────────────────
+const PERIOD_TIMES: Record<number, string> = {
+  1: "08:00–08:45", 2: "08:55–09:40", 3: "09:50–10:35",
+  4: "10:55–11:40", 5: "11:50–12:35", 6: "12:45–13:30",
+  7: "13:40–14:25", 8: "14:35–15:20",
+};
+
+const DAY_NAMES_UZ: Record<number, string> = {
+  0: "Yakshanba", 1: "Dushanba", 2: "Seshanba", 3: "Chorshanba",
+  4: "Payshanba", 5: "Juma", 6: "Shanba",
+};
+
+// O'zbekiston vaqti bo'yicha bugungi kun (1=Dushanba..6=Shanba, 0=Yakshanba)
+function getTodayUzDay(): number {
+  const now = new Date();
+  // UTC+5 (O'zbekiston)
+  const uzTime = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+  return uzTime.getUTCDay(); // 0=Yakshanba, 1=Dushanba, ...
+}
+
+function getTodayUzHourMin(): { hour: number; min: number } {
+  const now = new Date();
+  const uzTime = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+  return { hour: uzTime.getUTCHours(), min: uzTime.getUTCMinutes() };
+}
+
+// Staff uchun bugungi dars jadvalini matn sifatida olish
+async function getTodayScheduleText(staffId: string, dayOverride?: number): Promise<string> {
+  const day = dayOverride ?? getTodayUzDay();
+
+  if (day === 0) return "🎉 Bugun *Yakshanba* — dam olish kuni!";
+
+  const { data: entries } = await supabase
+    .from("timetable")
+    .select("period, subject, class_id")
+    .eq("teacher_id", staffId)
+    .eq("day_of_week", day)
+    .order("period");
+
+  if (!entries || entries.length === 0) {
+    return `📭 *${DAY_NAMES_UZ[day]}* kuni sizga dars belgilanmagan.`;
+  }
+
+  // Sinf nomlarini olish
+  const classIds = [...new Set(entries.map((e: { class_id: string }) => e.class_id))];
+  const { data: classes } = await supabase
+    .from("classes")
+    .select("id, name")
+    .in("id", classIds);
+
+  const classMap: Record<string, string> = {};
+  for (const c of (classes ?? []) as { id: string; name: string }[]) {
+    classMap[c.id] = c.name;
+  }
+
+  const lines = (entries as { period: number; subject: string; class_id: string }[]).map(e => {
+    const time = PERIOD_TIMES[e.period] ?? "";
+    const cls = classMap[e.class_id] ?? "—";
+    return `${e.period}\\. *${e.subject}* — ${cls}\n    🕐 ${time}`;
+  });
+
+  return `📅 *${DAY_NAMES_UZ[day]} — Dars jadvalingiz:*\n\n${lines.join("\n\n")}`;
+}
+
 export function createBot(): Bot {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN kerak");
@@ -198,6 +262,51 @@ export function createBot(): Bot {
         }
       );
     }
+  });
+
+  // ─── /jadval ────────────────────────────────────────────────────────────────
+  bot.command("jadval", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId) return;
+
+    const { data: staff } = await supabase
+      .from("staff")
+      .select("id, full_name, role")
+      .eq("telegram_id", userId)
+      .in("role", ["teacher", "sinf_rahbari", "director", "zam_direktor", "zavuch"])
+      .maybeSingle();
+
+    if (!staff) {
+      await ctx.reply(
+        "❌ Siz o'qituvchi sifatida tizimda topilmadingiz.\n\n" +
+        "Telefon raqamingizni /start orqali bog'lang yoki admin bilan bog'laning.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    const s = staff as { id: string; full_name: string; role: string };
+    const text = await getTodayScheduleText(s.id);
+    const kb = new InlineKeyboard()
+      .text("📆 Ertangi jadval", `schedule_tomorrow:${s.id}`)
+      .row()
+      .url("🌐 To'liq jadval", `${WEBSITE_URL}/dars-jadvali`);
+
+    await ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb });
+  });
+
+  // ─── Callback: schedule_tomorrow:staffId ────────────────────────────────────
+  bot.callbackQuery(/^schedule_tomorrow:(.+)$/, async (ctx) => {
+    const staffId = ctx.match[1];
+    if (!staffId) { await ctx.answerCallbackQuery(); return; }
+
+    const today = getTodayUzDay();
+    let tomorrow = today + 1;
+    if (tomorrow > 6) tomorrow = 1; // Yakshanba o'tib ketsa — Dushanba
+
+    const text = await getTodayScheduleText(staffId, tomorrow);
+    await ctx.answerCallbackQuery();
+    await ctx.reply(text, { parse_mode: "Markdown" });
   });
 
   // ─── /yordam ────────────────────────────────────────────────────────────────
@@ -570,6 +679,49 @@ export function createBot(): Bot {
   bot.catch((err) => {
     logger.error({ err: err.error }, "Bot xatoligi");
   });
+
+  // ─── Kundalik ertalab 7:00 (O'zbekiston UTC+5) jadval xabari ────────────────
+  // Har daqiqa soat tekshiriladi — soat 7:00 da barcha o'qituvchilarga xabar yuboriladi
+  let lastMorningNotifDay = -1;
+  setInterval(async () => {
+    try {
+      const { hour, min } = getTodayUzHourMin();
+      const day = getTodayUzDay();
+      // Faqat soat 7:00 da, dam olish kuni emas, va bugun hali yuborilmagan bo'lsa
+      if (hour === 7 && min === 0 && day >= 1 && day <= 6 && lastMorningNotifDay !== day) {
+        lastMorningNotifDay = day;
+        logger.info({ day }, "Kundalik jadval xabarlari yuborilmoqda...");
+
+        // Telegram_id bog'langan barcha o'qituvchilarni olish
+        const { data: teachers } = await supabase
+          .from("staff")
+          .select("id, full_name, telegram_id, role")
+          .not("telegram_id", "is", null)
+          .in("role", ["teacher", "sinf_rahbari", "director", "zam_direktor", "zavuch"]);
+
+        for (const t of (teachers ?? []) as { id: string; full_name: string; telegram_id: number; role: string }[]) {
+          if (!t.telegram_id) continue;
+          try {
+            const text = await getTodayScheduleText(t.id);
+            const greeting = `☀️ *Xayrli tong, ${t.full_name.split(" ")[1] ?? t.full_name}!*\n\n`;
+            const kb = new InlineKeyboard()
+              .text("📆 Ertangi jadval", `schedule_tomorrow:${t.id}`)
+              .row()
+              .url("🌐 Platforma", `${WEBSITE_URL}/dars-jadvali`);
+            await bot.api.sendMessage(t.telegram_id, greeting + text, {
+              parse_mode: "Markdown",
+              reply_markup: kb,
+            });
+          } catch {
+            // Xabar yubormasa — davom etaveradi
+          }
+        }
+        logger.info("Kundalik jadval xabarlari yuborildi ✅");
+      }
+    } catch (err) {
+      logger.error({ err }, "Kundalik xabar yuborishda xatolik");
+    }
+  }, 60 * 1000); // har 1 daqiqada tekshiriladi
 
   return bot;
 }

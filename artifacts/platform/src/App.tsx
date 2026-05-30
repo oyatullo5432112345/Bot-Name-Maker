@@ -30,7 +30,15 @@ import NewDarslikPage from "@/pages/darslik/new";
 import BaholashPage from "@/pages/baholash/index";
 import DarsJadvaliPage from "@/pages/dars-jadvali/index";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 0,
+      refetchOnWindowFocus: true,
+      retry: 1,
+    },
+  },
+});
 
 function ProtectedRoute({ component: Component, roles }: { component: any, roles?: string[] }) {
   return (
