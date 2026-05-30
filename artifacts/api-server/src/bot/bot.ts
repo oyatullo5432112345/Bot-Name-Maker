@@ -23,7 +23,7 @@ const isProductionBot = process.env["NODE_ENV"] === "production";
 // Production da REPLIT_DOMAINS ishlatiladi (to'g'ri production URL)
 const WEBSITE_URL = isProductionBot
   ? (replitDomain ? `https://${replitDomain}` : process.env["WEBSITE_URL"] ?? "https://talim-platform.replit.app")
-  : (process.env["WEBSITE_URL"] ?? (replitDevDomain ? `https://${replitDevDomain}` : null) ?? (replitDomain ? `https://${replitDomain}` : "https://talim-platform.replit.app"));
+  : (replitDevDomain ? `https://${replitDevDomain}` : process.env["WEBSITE_URL"] ?? (replitDomain ? `https://${replitDomain}` : "https://talim-platform.replit.app"));
 
 const ADMIN_ID = Number(process.env["ADMIN_ID"] ?? "0");
 

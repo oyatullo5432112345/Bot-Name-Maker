@@ -16,6 +16,7 @@ import {
   CalendarDays,
   MessageCircleQuestion,
   Loader2,
+  Library,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,7 +53,8 @@ const roleDisplay: Record<string, string> = {
   zavuch: "Zavuch",
   teacher: "O'qituvchi",
   sinf_rahbari: "Sinf rahbari",
-  student: "O'quvchi"
+  student: "O'quvchi",
+  kutubxonachi: "Kutubxonachi",
 };
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -105,8 +107,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const canViewStaff = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
   const canViewClasses = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
-  const canViewStudents = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
+  const canViewStudents = ["admin", "director", "zam_direktor", "zavuch", "sinf_rahbari"].includes(user.role);
   const isStudent = user.role === "student";
+  const canManageLibrary = ["admin", "kutubxonachi"].includes(user.role);
 
   return (
     <SidebarProvider>
@@ -196,9 +199,43 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location.startsWith("/library")}>
+                      <Link href="/library">
+                        <Library className="w-4 h-4" />
+                        <span>Kutubxona</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
+
+            {canManageLibrary && (
+              <SidebarGroup>
+                <SidebarGroupLabel>Kutubxona boshqaruvi</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/library/loans"}>
+                        <Link href="/library/loans">
+                          <ClipboardList className="w-4 h-4" />
+                          <span>Ijara jurnali</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/library/new"}>
+                        <Link href="/library/new">
+                          <BookOpen className="w-4 h-4" />
+                          <span>Kitob qo'shish</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
 
             {isStudent && (
               <SidebarGroup>

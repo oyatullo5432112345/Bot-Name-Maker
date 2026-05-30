@@ -30,6 +30,9 @@ import DarslikPage from "@/pages/darslik/index";
 import NewDarslikPage from "@/pages/darslik/new";
 import BaholashPage from "@/pages/baholash/index";
 import DarsJadvaliPage from "@/pages/dars-jadvali/index";
+import LibraryPage from "@/pages/library/index";
+import NewBookPage from "@/pages/library/new";
+import LibraryLoansPage from "@/pages/library/loans";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -77,7 +80,7 @@ function Router() {
       <Route path="/students">
         <ProtectedRoute 
           component={StudentsList} 
-          roles={["admin", "director", "zam_direktor", "zavuch"]} 
+          roles={["admin", "director", "zam_direktor", "zavuch", "sinf_rahbari"]} 
         />
       </Route>
       <Route path="/students/new">
@@ -117,6 +120,16 @@ function Router() {
 
       <Route path="/dars-jadvali">
         <ProtectedRoute component={DarsJadvaliPage} />
+      </Route>
+
+      <Route path="/library/new">
+        <ProtectedRoute component={NewBookPage} roles={["admin", "kutubxonachi"]} />
+      </Route>
+      <Route path="/library/loans">
+        <ProtectedRoute component={LibraryLoansPage} roles={["admin", "kutubxonachi"]} />
+      </Route>
+      <Route path="/library">
+        <ProtectedRoute component={LibraryPage} />
       </Route>
 
       <Route path="/games/sozoyini">

@@ -37,9 +37,12 @@ export default function StudentsList() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   
-  const { data: students, isLoading } = useListStudents({}, {
+  const isSinfRahbari = user?.role === "sinf_rahbari";
+  const classFilter = isSinfRahbari && user?.class_name ? { class_name: user.class_name } : {};
+
+  const { data: students, isLoading } = useListStudents(classFilter, {
     query: {
-      queryKey: getListStudentsQueryKey({})
+      queryKey: getListStudentsQueryKey(classFilter)
     }
   });
 
@@ -74,12 +77,18 @@ export default function StudentsList() {
     s.class_name.toLowerCase().includes(search.toLowerCase())
   );
 
+  const pageTitle = isSinfRahbari && user?.class_name
+    ? `${user.class_name} sinfi o'quvchilari`
+    : "O'quvchilar";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">O'quvchilar</h1>
-          <p className="text-muted-foreground mt-1">Barcha o'quvchilar ro'yxati</p>
+          <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
+          <p className="text-muted-foreground mt-1">
+            {isSinfRahbari ? "Sinfingiz o'quvchilari ro'yxati" : "Barcha o'quvchilar ro'yxati"}
+          </p>
         </div>
         
         {isAdmin && (

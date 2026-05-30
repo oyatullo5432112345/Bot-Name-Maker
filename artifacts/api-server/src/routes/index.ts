@@ -11,12 +11,14 @@ import lessonsRouter from "./lessons.js";
 import gradesRouter from "./grades.js";
 import timetableRouter from "./timetable.js";
 import supportRouter from "./support.js";
+import libraryRouter from "./library.js";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
 router.use(supportRouter);
+router.use(libraryRouter);
 router.use(studentsRouter);
 router.use(classesRouter);
 router.use(staffRouter);
