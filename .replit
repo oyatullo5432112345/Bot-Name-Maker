@@ -9,6 +9,28 @@ args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
 
 [workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "API Server"
+
+[[workflows.workflow]]
+name = "API Server"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
+waitForPort = 8080
 
 [agent]
 stack = "PNPM_WORKSPACE"
@@ -42,3 +64,4 @@ SUPABASE_URL = "https://saodkjnjskghqqktcxkj.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_Py1MQeKrN2uyz8HUOUmS0Q__nrQQNbp"
 TELEGRAM_BOT_TOKEN = "8727402043:AAEE2UNCFUmdcJICSFS2ZLBk6FVZcEclbKs"
 WEBSITE_URL = "https://bot-name-maker--chnvuvnjj.replit.app"
+ADMIN_ID = "611665022"
