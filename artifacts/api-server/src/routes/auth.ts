@@ -10,30 +10,30 @@ import {
 import { logger } from "../lib/logger.js";
 import { getChatIdByPhone, normalizePhone } from "../bot/settings.js";
 
-// Magic token store (in-memory, 10 daqiqa amal qiladi)
-interface MagicToken {
+// Magic token — stateless (server xotirasiga bog'liq emas)
+// Har qanday server (dev yoki prod) ochib tekshira oladi
+interface MagicTokenData {
   payload: Record<string, unknown>;
   expiresAt: number;
 }
-const magicTokens = new Map<string, MagicToken>();
-
-function generateMagicToken(): string {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
 
 export function createMagicToken(payload: Record<string, unknown>): string {
-  const token = generateMagicToken();
-  magicTokens.set(token, { payload, expiresAt: Date.now() + 10 * 60 * 1000 });
-  return token;
+  const data: MagicTokenData = {
+    payload,
+    expiresAt: Date.now() + 15 * 60 * 1000, // 15 daqiqa
+  };
+  return Buffer.from(JSON.stringify(data)).toString("base64url");
 }
 
-// Eskirgan tokenlarni tozalash
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of magicTokens) {
-    if (val.expiresAt < now) magicTokens.delete(key);
+function parseMagicToken(token: string): MagicTokenData | null {
+  try {
+    const data = JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as MagicTokenData;
+    if (!data.payload || !data.expiresAt) return null;
+    return data;
+  } catch {
+    return null;
   }
-}, 60 * 1000);
+}
 
 const router: IRouter = Router();
 
@@ -463,18 +463,16 @@ router.get("/auth/bot-login", async (req, res): Promise<void> => {
     return;
   }
 
-  const entry = magicTokens.get(token);
+  const entry = parseMagicToken(token);
   if (!entry) {
-    res.status(401).json({ error: "Token yaroqsiz yoki muddati o'tgan" });
+    res.status(401).json({ error: "Token yaroqsiz" });
     return;
   }
   if (entry.expiresAt < Date.now()) {
-    magicTokens.delete(token);
-    res.status(401).json({ error: "Token muddati o'tgan" });
+    res.status(401).json({ error: "Token muddati o'tgan (15 daqiqa). Botdan qayta havolani oling." });
     return;
   }
 
-  magicTokens.delete(token);
   const authToken = createToken(entry.payload);
   res.json(LoginResponse.parse({ ...entry.payload, token: authToken }));
 });

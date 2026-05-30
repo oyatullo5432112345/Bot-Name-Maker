@@ -42,6 +42,6 @@ SUPABASE_URL = "https://saodkjnjskghqqktcxkj.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_Py1MQeKrN2uyz8HUOUmS0Q__nrQQNbp"
 TELEGRAM_BOT_TOKEN = "8727402043:AAEE2UNCFUmdcJICSFS2ZLBk6FVZcEclbKs"
 ADMIN_ID = "611665022"
+WEBSITE_URL = "https://bot-name-maker--chnvuvnjj.replit.app"
 
 [userenv.production]
-WEBSITE_URL = "https://bot-name-maker--chnvuvnjj.replit.app"
