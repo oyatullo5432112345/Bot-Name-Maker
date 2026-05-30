@@ -94,7 +94,7 @@ async function findStudentByPhone(phone: string) {
   const normalized = normalizePhone(phone);
   const { data } = await supabase
     .from("users")
-    .select("full_name, class_name, login")
+    .select("full_name, class_name, login, password")
     .eq("phone_number", normalized)
     .limit(1)
     .maybeSingle();
@@ -419,15 +419,23 @@ export function createBot(): Bot {
       const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
 
       const kb = new InlineKeyboard()
-        .url("🚀 Platformaga kirish", loginUrl);
+        .url("🚀 Platformaga kirish (bir bosish)", loginUrl)
+        .row()
+        .url("🌐 Oddiy kirish sahifasi", `${WEBSITE_URL}/login`);
 
       await ctx.reply(
-        `✅ *Muvaffaqiyatli bog'landi!*\n\n` +
+        `✅ *Muvaffaqiyatli bog'landi\\!*\n\n` +
         `👤 *${student.full_name}*\n` +
         `🏫 Sinf: ${student.class_name}\n\n` +
-        `Quyidagi tugma orqali *avtomatik* platformaga kirishingiz mumkin 👇`,
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `🔑 *Kirish ma'lumotlaringiz:*\n` +
+        `👤 Login: \`${student.login}\`\n` +
+        `🔒 Parol: \`${student.password}\`\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `📌 *"Bir bosish"* tugmasi 15 daqiqa amal qiladi\\.\n` +
+        `Muddati o'tsa — oddiy kirish sahifasidan login va parol bilan kiring\\.`,
         {
-          parse_mode: "Markdown",
+          parse_mode: "MarkdownV2",
           reply_markup: kb,
         }
       );

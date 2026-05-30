@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/use-auth";
 import { AuthGuard } from "@/components/auth-guard";
 import { AppLayout } from "@/components/layout";
 import NotFound from "@/pages/not-found";
+import { Loader2 } from "lucide-react";
 
 import Login from "@/pages/login";
 import Register from "@/pages/register";
@@ -56,10 +57,14 @@ function Router() {
   return (
     <Switch>
       <Route path="/login">
-        {isLoading ? null : user ? <Redirect to="/dashboard" /> : <Login />}
+        {isLoading
+          ? <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+          : user ? <Redirect to="/dashboard" /> : <Login />}
       </Route>
       <Route path="/register">
-        {isLoading ? null : user ? <Redirect to="/dashboard" /> : <Register />}
+        {isLoading
+          ? <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+          : user ? <Redirect to="/dashboard" /> : <Register />}
       </Route>
       <Route path="/">
         <Redirect to="/dashboard" />

@@ -3,11 +3,13 @@ import { useGetMe, setAuthTokenGetter } from "@workspace/api-client-react";
 import { AuthContext } from "./auth-context";
 
 const TOKEN_KEY = "talim_auth_token";
+const MAX_INIT_MS = 5000;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initialized, setInitialized] = useState(false);
   const [localUser, setLocalUser] = useState<import("@workspace/api-client-react").AuthResult | null>(null);
   const tokenSetup = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (!tokenSetup.current) {
     setAuthTokenGetter(() => localStorage.getItem(TOKEN_KEY));
@@ -25,7 +27,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    // Agar allaqachon initialized bo'lsa (masalan, login qilindi), hech narsa qilma
     if (initialized) return;
 
     if (!hasToken) {
@@ -33,7 +34,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Faqat query tugagandan keyin ishlat
     if (!isMeLoading) {
       if (meData) {
         setLocalUser(meData);
@@ -42,7 +42,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLocalUser(null);
       }
       setInitialized(true);
+      return;
     }
+
+    timerRef.current = setTimeout(() => {
+      localStorage.removeItem(TOKEN_KEY);
+      setLocalUser(null);
+      setInitialized(true);
+    }, MAX_INIT_MS);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [meData, isMeLoading, hasToken, initialized]);
 
   const login = (result: import("@workspace/api-client-react").AuthResult) => {
