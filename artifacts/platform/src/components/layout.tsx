@@ -1,18 +1,21 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useLogout } from "@workspace/api-client-react";
-import { 
-  LayoutDashboard, 
-  Users, 
-  GraduationCap, 
-  School, 
-  LogOut, 
+import {
+  LayoutDashboard,
+  Users,
+  GraduationCap,
+  School,
+  LogOut,
   ShieldAlert,
   Gamepad2,
   Trophy,
   BookOpen,
   ClipboardList,
   CalendarDays,
+  MessageCircleQuestion,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +32,18 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
+const getToken = () => localStorage.getItem("talim_auth_token");
 
 const roleDisplay: Record<string, string> = {
   admin: "Admin",
@@ -44,6 +59,39 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout: authLogout } = useAuth();
   const [location] = useLocation();
   const logoutMutation = useLogout();
+  const { toast } = useToast();
+
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportMsg, setSupportMsg] = useState("");
+  const [supportName, setSupportName] = useState("");
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportDone, setSupportDone] = useState(false);
+
+  const handleSupportSubmit = async () => {
+    if (supportMsg.trim().length < 5) return;
+    setSupportLoading(true);
+    try {
+      await fetch(`${API_BASE}/support`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+        },
+        body: JSON.stringify({
+          message: supportMsg.trim(),
+          name: supportName.trim() || user?.full_name,
+          contact: user?.login,
+        }),
+      });
+      setSupportDone(true);
+      setSupportMsg("");
+      setSupportName("");
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik", description: "Xabar yuborishda xatolik yuz berdi" });
+    } finally {
+      setSupportLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
@@ -59,8 +107,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const canViewClasses = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
   const canViewStudents = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
   const isStudent = user.role === "student";
-  const canViewDarslik = true;
-  const canViewBaholash = true;
 
   return (
     <SidebarProvider>
@@ -72,6 +118,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <span>TALIM PLATFORM</span>
             </div>
           </SidebarHeader>
+
           <SidebarContent>
             <SidebarGroup>
               <SidebarGroupContent>
@@ -125,26 +172,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <SidebarGroupLabel>Ta'lim</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {canViewDarslik && (
-                    <SidebarMenuItem>
-                      <SidebarMenuButton asChild isActive={location.startsWith("/darslik")}>
-                        <Link href="/darslik">
-                          <BookOpen className="w-4 h-4" />
-                          <span>Darslik</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )}
-                  {canViewBaholash && (
-                    <SidebarMenuItem>
-                      <SidebarMenuButton asChild isActive={location.startsWith("/baholash")}>
-                        <Link href="/baholash">
-                          <ClipboardList className="w-4 h-4" />
-                          <span>Baholash</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location.startsWith("/darslik")}>
+                      <Link href="/darslik">
+                        <BookOpen className="w-4 h-4" />
+                        <span>Darslik</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location.startsWith("/baholash")}>
+                      <Link href="/baholash">
+                        <ClipboardList className="w-4 h-4" />
+                        <span>Baholash</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={location.startsWith("/dars-jadvali")}>
                       <Link href="/dars-jadvali">
@@ -182,7 +225,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </SidebarGroupContent>
               </SidebarGroup>
             )}
+
+            {/* Qo'llab-quvvatlash tugmasi */}
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => { setSupportOpen(true); setSupportDone(false); }}
+                      className="text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      <MessageCircleQuestion className="w-4 h-4" />
+                      <span>Qo'llab-quvvatlash</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
           </SidebarContent>
+
           <SidebarFooter className="border-t border-sidebar-border/50 p-4">
             <div className="flex flex-col gap-3">
               <div className="flex flex-col">
@@ -192,9 +253,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   <span className="text-xs text-sidebar-foreground/50 mt-0.5">{user.class_name} sinf</span>
                 )}
               </div>
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" 
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 onClick={handleLogout}
                 disabled={logoutMutation.isPending}
               >
@@ -220,6 +281,56 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+
+      {/* Qo'llab-quvvatlash dialogi */}
+      <Dialog open={supportOpen} onOpenChange={(o) => { setSupportOpen(o); if (!o) setSupportDone(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircleQuestion className="w-5 h-5 text-primary" />
+              Qo'llab-quvvatlash
+            </DialogTitle>
+          </DialogHeader>
+          {supportDone ? (
+            <div className="text-center py-4 space-y-2">
+              <p className="text-2xl">✅</p>
+              <p className="font-semibold">Xabaringiz yuborildi!</p>
+              <p className="text-sm text-muted-foreground">Admin tez orada javob beradi.</p>
+              <Button className="w-full mt-2" onClick={() => { setSupportOpen(false); setSupportDone(false); }}>
+                Yopish
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Ismingiz</label>
+                <Input
+                  placeholder={user.full_name || "Valiyev Valijon"}
+                  value={supportName}
+                  onChange={e => setSupportName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Xabaringiz</label>
+                <Textarea
+                  placeholder="Savolingiz yoki muammongizni yozing..."
+                  rows={4}
+                  value={supportMsg}
+                  onChange={e => setSupportMsg(e.target.value)}
+                />
+              </div>
+              <Button
+                className="w-full"
+                disabled={supportMsg.trim().length < 5 || supportLoading}
+                onClick={handleSupportSubmit}
+              >
+                {supportLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Yuborish
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
   );
 }
