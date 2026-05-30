@@ -163,12 +163,12 @@ export default function NewBookPage() {
             <div className="grid grid-cols-2 gap-4 p-3 rounded-lg bg-blue-50 border border-blue-200">
               <div className="space-y-1.5">
                 <Label className="text-blue-800">Fan (ixtiyoriy)</Label>
-                <Select value={subject} onValueChange={setSubject}>
+                <Select value={subject || "__none__"} onValueChange={(v) => setSubject(v === "__none__" ? "" : v)}>
                   <SelectTrigger className="border-blue-300 focus:ring-blue-400">
                     <SelectValue placeholder="Fan tanlang..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— Belgilanmagan —</SelectItem>
+                    <SelectItem value="__none__">— Belgilanmagan —</SelectItem>
                     {COMMON_SUBJECTS.map(s => (
                       <SelectItem key={s} value={s}>{s}</SelectItem>
                     ))}
@@ -178,12 +178,12 @@ export default function NewBookPage() {
 
               <div className="space-y-1.5">
                 <Label className="text-blue-800">Sinf (ixtiyoriy)</Label>
-                <Select value={className} onValueChange={setClassName}>
+                <Select value={className || "__all__"} onValueChange={(v) => setClassName(v === "__all__" ? "" : v)}>
                   <SelectTrigger className="border-blue-300 focus:ring-blue-400">
                     <SelectValue placeholder="Sinf..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— Barcha sinflar —</SelectItem>
+                    <SelectItem value="__all__">— Barcha sinflar —</SelectItem>
                     {CLASS_NAMES.map(c => (
                       <SelectItem key={c} value={c}>{c}</SelectItem>
                     ))}

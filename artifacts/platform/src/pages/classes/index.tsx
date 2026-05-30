@@ -88,6 +88,8 @@ export default function ClassesList() {
   const [newSubjectTeacherId, setNewSubjectTeacherId] = useState("");
   const [newSubjectName, setNewSubjectName] = useState("");
   const [addingSubject, setAddingSubject] = useState(false);
+  const [customSubject, setCustomSubject] = useState("");
+  const [showCustomInput, setShowCustomInput] = useState(false);
 
   const { data: classes, isLoading } = useListClasses({
     query: { queryKey: getListClassesQueryKey() }
@@ -107,6 +109,10 @@ export default function ClassesList() {
   const sinfRahbarlari = staff;
   // O'qituvchilar: barcha xodimlar dars bera oladi (masul shaxslar ham)
   const oqituvchilar = staff;
+
+  // Tanlangan o'qituvchining o'z fanlari
+  const selectedTeacher = oqituvchilar?.find(t => t.id === newSubjectTeacherId);
+  const teacherOwnSubjects: string[] = (selectedTeacher as (typeof selectedTeacher & { subjects?: string[] | null }))?.subjects ?? [];
 
   const handleCreate = () => {
     if (!newClassName.trim()) return;
@@ -437,6 +443,8 @@ export default function ClassesList() {
         if (!open) {
           setNewSubjectTeacherId("");
           setNewSubjectName("");
+          setCustomSubject("");
+          setShowCustomInput(false);
           setTeacherSubjects([]);
         }
       }}>
@@ -452,7 +460,15 @@ export default function ClassesList() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">O'qituvchi</Label>
-                    <Select value={newSubjectTeacherId} onValueChange={setNewSubjectTeacherId}>
+                    <Select
+                      value={newSubjectTeacherId}
+                      onValueChange={(v) => {
+                        setNewSubjectTeacherId(v);
+                        setNewSubjectName("");
+                        setCustomSubject("");
+                        setShowCustomInput(false);
+                      }}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="O'qituvchi tanlang..." />
                       </SelectTrigger>
@@ -467,33 +483,72 @@ export default function ClassesList() {
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Fan nomi</Label>
-                    <Select value={newSubjectName} onValueChange={setNewSubjectName}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Fanni tanlang..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {COMMON_SUBJECTS.map(s => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label className="text-xs">
+                      Fan nomi
+                      {newSubjectTeacherId && teacherOwnSubjects.length > 0 && (
+                        <span className="ml-1 text-muted-foreground font-normal">(o'qituvchi fanlari)</span>
+                      )}
+                    </Label>
+                    {showCustomInput ? (
+                      <div className="flex gap-1">
+                        <Input
+                          placeholder="Fan nomini kiriting..."
+                          value={customSubject}
+                          onChange={(e) => { setCustomSubject(e.target.value); setNewSubjectName(e.target.value); }}
+                          className="flex-1"
+                          autoFocus
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0"
+                          onClick={() => { setShowCustomInput(false); setCustomSubject(""); setNewSubjectName(""); }}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <Select
+                        value={newSubjectName}
+                        onValueChange={(v) => {
+                          if (v === "__custom__") { setShowCustomInput(true); setNewSubjectName(""); }
+                          else setNewSubjectName(v);
+                        }}
+                        disabled={!newSubjectTeacherId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={newSubjectTeacherId ? "Fan tanlang..." : "Avval o'qituvchi tanlang"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* O'qituvchining o'z fanlari */}
+                          {teacherOwnSubjects.length > 0 ? (
+                            teacherOwnSubjects.map(s => (
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
+                            ))
+                          ) : newSubjectTeacherId ? (
+                            <div className="px-2 py-2 text-xs text-muted-foreground">
+                              Bu o'qituvchida fan belgilanmagan
+                            </div>
+                          ) : null}
+                          {/* Istisno: boshqa fan qo'shish */}
+                          <div className="border-t mt-1 pt-1">
+                            <SelectItem value="__custom__" className="text-primary font-medium">
+                              ＋ Boshqa fan (istisno)
+                            </SelectItem>
+                          </div>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Yoki boshqa fan nomi kiriting..."
-                    value={newSubjectName}
-                    onChange={(e) => setNewSubjectName(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button 
-                    onClick={handleAddSubject}
-                    disabled={addingSubject || !newSubjectTeacherId || !newSubjectName.trim()}
-                  >
-                    {addingSubject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  </Button>
-                </div>
+                <Button
+                  onClick={handleAddSubject}
+                  disabled={addingSubject || !newSubjectTeacherId || !newSubjectName.trim()}
+                  size="sm"
+                >
+                  {addingSubject ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                  Biriktirish
+                </Button>
               </div>
             )}
 
