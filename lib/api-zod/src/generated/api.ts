@@ -225,7 +225,8 @@ export const ListStaffResponseItem = zod.object({
   "login": zod.string().nullish(),
   "password": zod.string().nullish(),
   "telegram_id": zod.number().nullish(),
-  "created_at": zod.string().nullish()
+  "created_at": zod.string().nullish(),
+  "subjects": zod.array(zod.string()).nullish()
 })
 export const ListStaffResponse = zod.array(ListStaffResponseItem)
 

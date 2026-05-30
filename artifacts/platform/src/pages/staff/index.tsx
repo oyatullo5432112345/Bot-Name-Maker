@@ -57,6 +57,7 @@ type StaffMember = {
   class_name?: string | null;
   login: string;
   password: string;
+  subjects?: string[] | null;
 };
 
 function EditStaffDialog({
@@ -209,6 +210,7 @@ export default function StaffList() {
             <TableRow>
               <TableHead>F.I.O</TableHead>
               <TableHead>Lavozim</TableHead>
+              <TableHead>Fanlar</TableHead>
               <TableHead>Biriktirilgan sinf</TableHead>
               <TableHead>Login</TableHead>
               <TableHead>Parol</TableHead>
@@ -218,13 +220,13 @@ export default function StaffList() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 6 : 5} className="h-24 text-center">
+                <TableCell colSpan={isAdmin ? 7 : 6} className="h-24 text-center">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
                 </TableCell>
               </TableRow>
             ) : filteredStaff?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 6 : 5} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={isAdmin ? 7 : 6} className="h-24 text-center text-muted-foreground">
                   Ma'lumot topilmadi
                 </TableCell>
               </TableRow>
@@ -236,6 +238,19 @@ export default function StaffList() {
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary text-secondary-foreground border">
                       {roleDisplay[member.role] || member.role}
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    {(member.role === "teacher" || member.role === "sinf_rahbari") && (member as StaffMember).subjects?.length ? (
+                      <div className="flex flex-wrap gap-1 max-w-[200px]">
+                        {((member as StaffMember).subjects ?? []).map(s => (
+                          <span key={s} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-xs italic">-</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {member.class_name ? (

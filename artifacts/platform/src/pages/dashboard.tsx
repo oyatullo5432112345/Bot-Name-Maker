@@ -150,6 +150,7 @@ function TeacherDashboard() {
   const { user } = useAuth();
   const [myClass, setMyClass] = useState<{ class_name: string; students: Array<{ full_name: string; phone_number?: string; login: string }> } | null>(null);
   const [subjects, setSubjects] = useState<TeacherSubjectEntry[]>([]);
+  const [registeredSubjects, setRegisteredSubjects] = useState<string[]>([]);
   const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(new Date().getDay() || 1);
@@ -160,13 +161,14 @@ function TeacherDashboard() {
 
     void (async () => {
       try {
-        const [subjectsRes, timetableRes, classesRes, myClassRes] = await Promise.all([
+        const [subjectsRes, timetableRes, classesRes, myClassRes, profileRes] = await Promise.all([
           fetch(`${API_BASE}/teacher-subjects?teacher_id=${teacherId}`, { headers: authHeaders() }),
           fetch(`${API_BASE}/timetable?teacher_id=${teacherId}`, { headers: authHeaders() }),
           fetch(`${API_BASE}/classes`, { headers: authHeaders() }),
           user.class_id
             ? fetch(`${API_BASE}/dashboard/my-class`, { headers: authHeaders() })
             : Promise.resolve(null),
+          fetch(`${API_BASE}/staff/${teacherId}`, { headers: authHeaders() }),
         ]);
 
         const allClasses: Array<{ id: string; name: string }> = classesRes.ok
@@ -190,6 +192,13 @@ function TeacherDashboard() {
         if (myClassRes?.ok) {
           const data = await myClassRes.json() as { class_name: string; students: Array<{ full_name: string; phone_number?: string; login: string }> };
           if (data.class_name) setMyClass(data);
+        }
+
+        if (profileRes.ok) {
+          const profile = await profileRes.json() as { subjects?: string[] | null };
+          if (Array.isArray(profile.subjects) && profile.subjects.length > 0) {
+            setRegisteredSubjects(profile.subjects);
+          }
         }
       } catch { /* ignore */ }
       setLoading(false);
@@ -225,12 +234,32 @@ function TeacherDashboard() {
         </div>
       )}
 
+      {registeredSubjects.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4" />
+              Mening fanlarim
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {registeredSubjects.map(s => (
+                <span key={s} className="inline-flex items-center px-3 py-1.5 rounded-md border bg-blue-50 border-blue-200 text-blue-800 text-sm font-medium">
+                  📚 {s}
+                </span>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {subjects.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BookOpen className="w-4 h-4" />
-              O'qitadigan fanlar
+              Sinflarga biriktirilgan fanlar
             </CardTitle>
           </CardHeader>
           <CardContent>
