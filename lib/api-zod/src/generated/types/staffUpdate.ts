@@ -9,6 +9,7 @@ import type { StaffUpdateRole } from './staffUpdateRole';
 
 export interface StaffUpdate {
   full_name?: string;
+  login?: string;
   role?: StaffUpdateRole;
   /** @nullable */
   class_id?: string | null;

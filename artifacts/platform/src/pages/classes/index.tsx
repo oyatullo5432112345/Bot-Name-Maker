@@ -52,7 +52,7 @@ import { Label } from "@/components/ui/label";
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const TOKEN_KEY = "talim_auth_token";
 const getToken = () => localStorage.getItem(TOKEN_KEY);
-const authHeaders = () => {
+const authHeaders = (): Record<string, string> => {
   const t = getToken();
   return t ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
 };
