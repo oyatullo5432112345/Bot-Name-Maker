@@ -40,6 +40,11 @@ export default function NewDarslikPage() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
 
+  const isTeacherRole = user?.role === "teacher" || user?.role === "sinf_rahbari";
+  // O'qituvchi/sinf rahbari o'z fanlarini ko'radi, boshqalar umumiy ro'yxatni
+  const mySubjects: string[] = (user as { subjects?: string[] } | null)?.subjects ?? [];
+  const subjectList = isTeacherRole && mySubjects.length > 0 ? mySubjects : SUBJECTS;
+
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -133,21 +138,23 @@ export default function NewDarslikPage() {
                 <Label>
                   Fan <span className="text-destructive">*</span>
                 </Label>
-                <Select value={SUBJECTS.includes(subject) ? subject : ""} onValueChange={(val) => setSubject(val)}>
+                <Select value={subjectList.includes(subject) ? subject : ""} onValueChange={(val) => setSubject(val)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Tez tanlash..." />
+                    <SelectValue placeholder={isTeacherRole && mySubjects.length > 0 ? "Fanlaringizdan tanlang..." : "Tez tanlash..."} />
                   </SelectTrigger>
                   <SelectContent>
-                    {SUBJECTS.map((s) => (
+                    {subjectList.map((s) => (
                       <SelectItem key={s} value={s}>{s}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <Input
-                  placeholder="Yoki fan nomini o'zingiz yozing..."
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                />
+                {(!isTeacherRole || mySubjects.length === 0) && (
+                  <Input
+                    placeholder="Yoki fan nomini o'zingiz yozing..."
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                  />
+                )}
               </div>
 
               <div className="space-y-1.5">

@@ -61,6 +61,9 @@ export default function DarslikPage() {
 
   const isTeacherOrAdmin = user && ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"].includes(user.role);
   const isStudent = user?.role === "student";
+  const isTeacherRole = user?.role === "teacher" || user?.role === "sinf_rahbari";
+  // O'qituvchi/sinf rahbari uchun faqat o'z fanlari — token'dagi subjects massividan
+  const mySubjects: string[] = (user as { subjects?: string[] } | null)?.subjects ?? [];
 
   const { data: lessons = [], isLoading } = useQuery<Lesson[]>({
     queryKey: ["lessons"],
@@ -90,7 +93,12 @@ export default function DarslikPage() {
     },
   });
 
-  const filtered = lessons.filter((l) =>
+  // O'qituvchi/sinf rahbari: faqat o'z fanlariga tegishli darsliklar
+  const subjectFiltered = isTeacherRole && mySubjects.length > 0
+    ? lessons.filter(l => mySubjects.includes(l.subject))
+    : lessons;
+
+  const filtered = subjectFiltered.filter((l) =>
     l.title.toLowerCase().includes(search.toLowerCase()) ||
     l.subject.toLowerCase().includes(search.toLowerCase()) ||
     l.class_name.toLowerCase().includes(search.toLowerCase())
@@ -105,7 +113,11 @@ export default function DarslikPage() {
             Darslik
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {isStudent ? "O'z sinfingiz darsliklari" : "Barcha darsliklar ro'yxati"}
+            {isStudent
+              ? "O'z sinfingiz darsliklari"
+              : isTeacherRole && mySubjects.length > 0
+                ? `Sizning fanlaringiz: ${mySubjects.join(", ")}`
+                : "Barcha darsliklar ro'yxati"}
           </p>
         </div>
         {isTeacherOrAdmin && (
