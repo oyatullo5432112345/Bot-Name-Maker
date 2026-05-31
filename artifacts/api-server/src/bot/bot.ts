@@ -36,7 +36,7 @@ const WEBSITE_URL = isProductionBot
 
 const ADMIN_ID = Number(process.env["ADMIN_ID"] ?? "0");
 
-type ManagementRole = "director" | "zavuch" | "zam_direktor";
+type ManagementRole = "director" | "zavuch" | "zam_direktor" | "kutubxonachi";
 type RegRoleGroup = "student" | "teacher" | "sinf_rahbari" | "management";
 
 type UserState =
@@ -158,6 +158,7 @@ function buildRegCodesMenu(): InlineKeyboard {
     .text(`🏛 Direktor: ${fmt(codes.director)}`, "admin_set_code:director").row()
     .text(`📚 Zavuch: ${fmt(codes.zavuch)}`, "admin_set_code:zavuch").row()
     .text(`👔 Zam.direktor: ${fmt(codes.zamDirector)}`, "admin_set_code:zamDirector").row()
+    .text(`📖 Kutubxonachi: ${fmt(codes.kutubxonachi)}`, "admin_set_code:kutubxonachi").row()
     .text("🔙 Orqaga", "admin_panel");
 }
 
@@ -938,7 +939,7 @@ export function createBot(): Bot {
   });
 
   // ─── Callback: admin_set_code:role ──────────────────────────────────────────
-  bot.callbackQuery(/^admin_set_code:(teacher|sinfRahbari|director|zavuch|zamDirector)$/, async (ctx) => {
+  bot.callbackQuery(/^admin_set_code:(teacher|sinfRahbari|director|zavuch|zamDirector|kutubxonachi)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
     const role = ctx.match[1] as keyof RoleRegCodes;
     const roleNames: Record<string, string> = {
@@ -947,6 +948,7 @@ export function createBot(): Bot {
       director: "Direktor",
       zavuch: "Zavuch",
       zamDirector: "Zam.direktor",
+      kutubxonachi: "Kutubxonachi",
     };
     const codes = getRoleRegCodes();
     const current = codes[role];
@@ -1503,6 +1505,7 @@ export function createBot(): Bot {
         director: "Direktor",
         zavuch: "Zavuch",
         zamDirector: "Zam.direktor",
+        kutubxonachi: "Kutubxonachi",
       };
       if (newCode === "-") {
         setRoleRegCode(role, "");

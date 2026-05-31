@@ -34,6 +34,7 @@ export interface RoleRegCodes {
   director?: string;
   zavuch?: string;
   zamDirector?: string;
+  kutubxonachi?: string;
 }
 
 export interface BotSettings {
@@ -58,7 +59,12 @@ const DEFAULT_SETTINGS: BotSettings = {
   videoUrls: { student: "", teacher: "", staff: "" },
   roleVideoUrls: {},
   staffRegCode: undefined,
-  roleRegCodes: {},
+  roleRegCodes: {
+    director: "77d",
+    zavuch: "88Z",
+    zamDirector: "55B",
+    kutubxonachi: "99K",
+  },
 };
 
 function ensureDir(): void {
@@ -82,7 +88,13 @@ export function loadSettings(): BotSettings {
       videoUrls: parsed.videoUrls ?? { student: "", teacher: "", staff: "" },
       roleVideoUrls: parsed.roleVideoUrls ?? {},
       staffRegCode: parsed.staffRegCode,
-      roleRegCodes: parsed.roleRegCodes ?? {},
+      roleRegCodes: {
+      director: "77d",
+      zavuch: "88Z",
+      zamDirector: "55B",
+      kutubxonachi: "99K",
+      ...(parsed.roleRegCodes ?? {}),
+    },
     };
   } catch {
     return { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
@@ -196,7 +208,7 @@ export function setRoleRegCode(
 }
 
 export function findRoleByCode(code: string): {
-  role: "teacher" | "sinf_rahbari" | "director" | "zavuch" | "zam_direktor";
+  role: "teacher" | "sinf_rahbari" | "director" | "zavuch" | "zam_direktor" | "kutubxonachi";
   group: "teacher" | "sinf_rahbari" | "management";
 } | null {
   const codes = loadSettings().roleRegCodes;
@@ -212,6 +224,8 @@ export function findRoleByCode(code: string): {
     return { role: "zavuch", group: "management" };
   if (codes.zamDirector && trimmed === codes.zamDirector)
     return { role: "zam_direktor", group: "management" };
+  if (codes.kutubxonachi && trimmed === codes.kutubxonachi)
+    return { role: "kutubxonachi", group: "management" };
   const legacyCode = loadSettings().staffRegCode;
   if (legacyCode && trimmed === legacyCode)
     return { role: "teacher", group: "teacher" };
