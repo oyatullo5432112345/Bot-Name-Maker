@@ -28,6 +28,7 @@ export interface BotSettings {
   phoneMappings: PhoneMapping[];
   onboardingVideoFileId?: string;
   videoUrls: VideoUrls;
+  staffRegCode?: string;
 }
 
 const DEFAULT_SETTINGS: BotSettings = {
@@ -39,6 +40,7 @@ const DEFAULT_SETTINGS: BotSettings = {
   phoneMappings: [],
   onboardingVideoFileId: undefined,
   videoUrls: { student: "", teacher: "", staff: "" },
+  staffRegCode: undefined,
 };
 
 function ensureDir(): void {
@@ -60,6 +62,7 @@ export function loadSettings(): BotSettings {
       phoneMappings: parsed.phoneMappings ?? [],
       onboardingVideoFileId: parsed.onboardingVideoFileId,
       videoUrls: parsed.videoUrls ?? { student: "", teacher: "", staff: "" },
+      staffRegCode: parsed.staffRegCode,
     };
   } catch {
     return { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
@@ -126,6 +129,16 @@ export function setOnboardingVideo(fileId: string): void {
   const settings = loadSettings();
   settings.onboardingVideoFileId = fileId;
   saveSettings(settings);
+}
+
+export function setStaffRegCode(code: string): void {
+  const settings = loadSettings();
+  settings.staffRegCode = code.trim() || undefined;
+  saveSettings(settings);
+}
+
+export function getStaffRegCode(): string | undefined {
+  return loadSettings().staffRegCode;
 }
 
 export function setVideoUrls(urls: VideoUrls): void {

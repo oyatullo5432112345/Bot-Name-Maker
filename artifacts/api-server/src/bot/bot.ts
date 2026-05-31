@@ -12,6 +12,8 @@ import {
   linkPhoneToChatId,
   getPhoneByChatId,
   normalizePhone,
+  setStaffRegCode,
+  getStaffRegCode,
 } from "./settings.js";
 import { createMagicToken } from "../routes/auth.js";
 import { generateCertificatePNG, todayUzDate } from "../lib/certificate-generator.js";
@@ -35,7 +37,9 @@ type UserState =
   | { type: "awaiting_message" }
   | { type: "awaiting_support" }
   | { type: "awaiting_support_reply"; ticketId: string }
-  | { type: "awaiting_video_file" };
+  | { type: "awaiting_video_file" }
+  | { type: "awaiting_reg_code"; roleGroup: "teacher" | "staff" }
+  | { type: "awaiting_new_reg_code" };
 
 const userStates = new Map<number, UserState>();
 
@@ -421,6 +425,30 @@ export function createBot(): Bot {
     if (!userId) return;
     userStates.set(userId, { type: "idle" });
 
+    // ─── Admin uchun avto-login (kanal tekshiruvisiz) ─────────────────────────
+    if (isAdmin(userId)) {
+      const adminPayload = {
+        id: String(userId),
+        role: "admin",
+        full_name: "Admin",
+        login: "admin",
+        telegram_id: userId,
+      };
+      const magicToken = createMagicToken(adminPayload);
+      const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
+      const adminKb = new InlineKeyboard()
+        .url("🚀 Platformaga kirish (1 bosish)", loginUrl)
+        .row()
+        .url("🌐 Oddiy kirish", `${WEBSITE_URL}/login`);
+      await ctx.reply(
+        "👨‍💼 *Administrator paneli*\n\n" +
+        "Quyidagi tugma orqali avtomatik kiring.\n" +
+        "_(Havola 15 daqiqa amal qiladi)_",
+        { parse_mode: "Markdown", reply_markup: adminKb }
+      );
+      return;
+    }
+
     const { allJoined, missing } = await checkAllChannels(bot, userId);
 
     if (!allJoined) {
@@ -446,30 +474,6 @@ export function createBot(): Bot {
           { parse_mode: "Markdown", reply_markup: kb }
         );
       }
-      return;
-    }
-
-    // ─── Admin uchun avto-login ────────────────────────────────────────────────
-    if (isAdmin(userId)) {
-      const adminPayload = {
-        id: String(userId),
-        role: "admin",
-        full_name: "Admin",
-        login: "admin",
-        telegram_id: userId,
-      };
-      const magicToken = createMagicToken(adminPayload);
-      const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
-      const adminKb = new InlineKeyboard()
-        .url("🚀 Platformaga kirish (1 bosish)", loginUrl)
-        .row()
-        .url("🌐 Oddiy kirish", `${WEBSITE_URL}/login`);
-      await ctx.reply(
-        "👨‍💼 *Administrator paneli*\n\n" +
-        "Quyidagi tugma orqali avtomatik kiring.\n" +
-        "_(Havola 15 daqiqa amal qiladi)_",
-        { parse_mode: "Markdown", reply_markup: adminKb }
-      );
       return;
     }
 
@@ -883,7 +887,27 @@ export function createBot(): Bot {
   // ─── Onboarding: rol tanlash ─────────────────────────────────────────────────
   bot.callbackQuery(/^reg_role:(student|teacher|staff)$/, async (ctx) => {
     const roleGroup = ctx.match[1] as RegRoleGroup;
+    const userId = ctx.from.id;
     await ctx.answerCallbackQuery();
+
+    // O'qituvchi yoki xodim tanlasa — maxfiy kod so'raladi
+    if (roleGroup === "teacher" || roleGroup === "staff") {
+      const regCode = getStaffRegCode();
+      if (regCode) {
+        userStates.set(userId, { type: "awaiting_reg_code", roleGroup });
+        await ctx.editMessageText(
+          "🔐 *Maxfiy kod*\n\n" +
+          "O'qituvchi va xodimlar uchun ro'yxatdan o'tish kodlangan.\n\n" +
+          "Iltimos, admin tomonidan berilgan *maxfiy kodni* kiriting:",
+          {
+            parse_mode: "Markdown",
+            reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back"),
+          }
+        );
+        return;
+      }
+    }
+
     const { rows, table, hasMore } = await getOnboardUserList(roleGroup, 0);
     const labels: Record<RegRoleGroup, string> = {
       student: "O'quvchilar",
@@ -1098,6 +1122,66 @@ export function createBot(): Bot {
       return;
     }
 
+    // ── Maxfiy kod tekshirish (o'qituvchi/xodim ro'yxatdan o'tish) ──────────
+    if (state.type === "awaiting_reg_code") {
+      const entered = ctx.message.text.trim();
+      const regCode = getStaffRegCode();
+      if (!regCode || entered !== regCode) {
+        await ctx.reply(
+          "❌ *Noto'g'ri kod!*\n\nAdmin bilan bog'laning va to'g'ri kodni oling.",
+          {
+            parse_mode: "Markdown",
+            reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back"),
+          }
+        );
+        return;
+      }
+      // Kod to'g'ri — ro'yxatni ko'rsatish
+      userStates.set(userId, { type: "idle" });
+      const roleGroup = state.roleGroup;
+      const { rows, table, hasMore } = await getOnboardUserList(roleGroup, 0);
+      const labels: Record<RegRoleGroup, string> = {
+        student: "O'quvchilar",
+        teacher: "O'qituvchi / Sinf rahbarlari",
+        staff: "Xodimlar",
+      };
+      if (rows.length === 0) {
+        await ctx.reply(
+          `ℹ️ ${labels[roleGroup]} ro'yxati hozircha bo'sh.\n\nAdmin bilan bog'laning.`
+        );
+        return;
+      }
+      const kb = buildOnboardUserKb(rows, table, roleGroup, 0, hasMore);
+      await ctx.reply(
+        `✅ *Kod to'g'ri!*\n\n👤 *${labels[roleGroup]} ro'yxati*\n\nO'z ismingizni toping va tanlang:`,
+        { parse_mode: "Markdown", reply_markup: kb }
+      );
+      return;
+    }
+
+    // ── Admin: yangi maxfiy kod o'rnatish ─────────────────────────────────
+    if (state.type === "awaiting_new_reg_code" && isAdmin(userId)) {
+      const newCode = ctx.message.text.trim();
+      userStates.set(userId, { type: "idle" });
+      if (newCode === "-") {
+        setStaffRegCode("");
+        await ctx.reply(
+          "✅ Maxfiy kod o'chirildi. Endi o'qituvchi/xodimlar kodsiz ro'yxatdan o'ta oladi.",
+          { reply_markup: new InlineKeyboard().text("⚙️ Admin panel", "admin_panel") }
+        );
+      } else {
+        setStaffRegCode(newCode);
+        await ctx.reply(
+          `✅ *Yangi maxfiy kod o'rnatildi:* \`${newCode}\`\n\nO'qituvchi va xodimlar ro'yxatdan o'tishda shu kodni kiritadi.`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: new InlineKeyboard().text("⚙️ Admin panel", "admin_panel"),
+          }
+        );
+      }
+      return;
+    }
+
     // ── Admin: xabar tahrirlash ────────────────────────────────────────────
     if (state.type === "awaiting_message" && isAdmin(userId)) {
       const newMessage = ctx.message.text.trim();
@@ -1161,6 +1245,29 @@ export function createBot(): Bot {
 
     // ── Oddiy foydalanuvchi ───────────────────────────────────────────────
     await ctx.reply("Boshlash uchun /start yuboring.");
+  });
+
+  // ─── /mahfiykod — admin ro'yxat kodini o'rnatadi ───────────────────────────
+  bot.command("mahfiykod", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId || !isAdmin(userId)) {
+      await ctx.reply("⛔ Bu buyruq faqat admin uchun.");
+      return;
+    }
+    const current = getStaffRegCode();
+    userStates.set(userId, { type: "awaiting_new_reg_code" });
+    await ctx.reply(
+      "🔐 *Maxfiy kodni o'rnatish*\n\n" +
+      (current
+        ? `Hozirgi kod: \`${current}\`\n\n`
+        : "Hozirda kod o'rnatilmagan (hamma ro'yxatdan o'ta oladi).\n\n") +
+      "Yangi kodni yuboring.\n" +
+      "Kodni o'chirish uchun: `-` yuboring.",
+      {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard().text("❌ Bekor qilish", "admin_panel"),
+      }
+    );
   });
 
   bot.catch((err) => {
