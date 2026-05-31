@@ -18,6 +18,7 @@ import {
   Loader2,
   Library,
   Award,
+  Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -219,6 +220,24 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
+
+            {["admin", "director"].includes(user.role) && (
+              <SidebarGroup>
+                <SidebarGroupLabel>Sozlamalar</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/admin/videos"}>
+                        <Link href="/admin/videos">
+                          <Video className="w-4 h-4" />
+                          <span>Onboarding videolari</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
 
             {canManageLibrary && (
               <SidebarGroup>

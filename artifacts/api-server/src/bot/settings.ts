@@ -16,11 +16,18 @@ export interface PhoneMapping {
   chatId: number;
 }
 
+export interface VideoUrls {
+  student: string;
+  teacher: string;
+  staff: string;
+}
+
 export interface BotSettings {
   channels: Channel[];
   welcomeMessage: string;
   phoneMappings: PhoneMapping[];
   onboardingVideoFileId?: string;
+  videoUrls: VideoUrls;
 }
 
 const DEFAULT_SETTINGS: BotSettings = {
@@ -31,6 +38,7 @@ const DEFAULT_SETTINGS: BotSettings = {
     "Platformaga kirish uchun quyidagi tugmani bosing 👇",
   phoneMappings: [],
   onboardingVideoFileId: undefined,
+  videoUrls: { student: "", teacher: "", staff: "" },
 };
 
 function ensureDir(): void {
@@ -51,6 +59,7 @@ export function loadSettings(): BotSettings {
       welcomeMessage: parsed.welcomeMessage ?? DEFAULT_SETTINGS.welcomeMessage,
       phoneMappings: parsed.phoneMappings ?? [],
       onboardingVideoFileId: parsed.onboardingVideoFileId,
+      videoUrls: parsed.videoUrls ?? { student: "", teacher: "", staff: "" },
     };
   } catch {
     return { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
@@ -116,5 +125,11 @@ export function getPhoneByChatId(chatId: number): string | null {
 export function setOnboardingVideo(fileId: string): void {
   const settings = loadSettings();
   settings.onboardingVideoFileId = fileId;
+  saveSettings(settings);
+}
+
+export function setVideoUrls(urls: VideoUrls): void {
+  const settings = loadSettings();
+  settings.videoUrls = urls;
   saveSettings(settings);
 }

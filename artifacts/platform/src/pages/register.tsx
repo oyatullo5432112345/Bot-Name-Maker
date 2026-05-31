@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/use-auth";
 import { useListClasses, useListStaff } from "@workspace/api-client-react";
 import {
   Loader2, CheckCircle2, Copy, UserPlus, Users, Shield,
-  GraduationCap, Crown, Briefcase, Award, BookMarked, Users2,
+  GraduationCap, Crown, Briefcase, Award, BookMarked, Users2, Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -894,6 +894,61 @@ function SinfRahbariCard({
   );
 }
 
+// ─── Video yoriqnoma yordamchilari ────────────────────────────────────────────
+function toEmbedUrl(url: string): string {
+  if (!url) return "";
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+  if (m) return `https://www.youtube.com/embed/${m[1]}?rel=0&autoplay=1`;
+  return url;
+}
+function isYouTube(url: string) {
+  return url.includes("youtube.com") || url.includes("youtu.be");
+}
+
+function VideoModal({
+  open,
+  onClose,
+  onContinue,
+  url,
+  title,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onContinue: () => void;
+  url: string;
+  title: string;
+}) {
+  if (!url) return null;
+  const embed = toEmbedUrl(url);
+  const yt = isYouTube(url);
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Video className="w-5 h-5 text-primary" />
+            {title}
+          </DialogTitle>
+          <DialogDescription>
+            Ro'yxatdan o'tishdan oldin qisqa yoriqnomani tomosha qiling
+          </DialogDescription>
+        </DialogHeader>
+        <div className="aspect-video bg-black rounded-lg overflow-hidden">
+          {yt ? (
+            <iframe src={embed} className="w-full h-full" allow="autoplay; fullscreen" allowFullScreen />
+          ) : (
+            <video src={url} controls autoPlay className="w-full h-full" />
+          )}
+        </div>
+        <div className="flex gap-2 justify-end pt-1">
+          <Button variant="outline" size="sm" onClick={onClose}>Keyinroq</Button>
+          <Button onClick={onContinue}>Ko'rdim, davom etish →</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Asosiy sahifa ────────────────────────────────────────────────────────────
 export default function Register() {
   const { data: classes } = useListClasses({ query: { queryKey: ["classes", "list"] } });
@@ -901,6 +956,20 @@ export default function Register() {
 
   const [modalRole, setModalRole] = useState<string | null>(null);
   const [modalClassId, setModalClassId] = useState<string | undefined>(undefined);
+  const [videoUrls, setVideoUrls] = useState({ student: "", teacher: "", staff: "" });
+  const [videoModal, setVideoModal] = useState<{
+    group: "student" | "teacher" | "staff";
+    pendingRole?: string;
+    pendingClassId?: string;
+  } | null>(null);
+  const [studentVideoSeen, setStudentVideoSeen] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/videos")
+      .then(r => r.json())
+      .then((d: { student: string; teacher: string; staff: string }) => setVideoUrls(d))
+      .catch(() => {});
+  }, []);
 
   const allClasses = sortClasses(classes ?? []);
 
@@ -909,9 +978,31 @@ export default function Register() {
     (staffList ?? []).find((s: { role: string; class_id?: string | null }) => s.role === "sinf_rahbari" && s.class_id === cId);
   const teacherCount = (staffList ?? []).filter((s: { role: string }) => s.role === "teacher").length;
 
+  function getVideoGroup(role: string): "student" | "teacher" | "staff" {
+    if (role === "teacher" || role === "sinf_rahbari") return "teacher";
+    return "staff";
+  }
+
   const openModal = (role: string, cId?: string) => {
-    setModalRole(role);
-    setModalClassId(cId);
+    const group = getVideoGroup(role);
+    const url = videoUrls[group];
+    if (url) {
+      setVideoModal({ group, pendingRole: role, pendingClassId: cId });
+    } else {
+      setModalRole(role);
+      setModalClassId(cId);
+    }
+  };
+
+  const handleVideoContinue = () => {
+    if (!videoModal) return;
+    if (videoModal.group === "student") {
+      setStudentVideoSeen(true);
+    } else if (videoModal.pendingRole) {
+      setModalRole(videoModal.pendingRole);
+      setModalClassId(videoModal.pendingClassId);
+    }
+    setVideoModal(null);
   };
 
   const closeModal = () => {
@@ -938,6 +1029,27 @@ export default function Register() {
           </div>
           <p className="text-sm text-muted-foreground text-center mb-6">Toshloq tumani 3-maktab</p>
 
+          {videoUrls.student && !studentVideoSeen && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 mb-5 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Video className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm text-foreground">📹 Yoriqnoma video</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Ro'yxatdan o'tishdan oldin qisqa yo'riqnomani ko'ring
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 border-primary/40 text-primary hover:bg-primary/10"
+                  onClick={() => setVideoModal({ group: "student" })}
+                >
+                  Videoni ko'rish →
+                </Button>
+              </div>
+            </div>
+          )}
           <StudentRegister />
 
           <p className="text-center text-sm text-muted-foreground mt-5">
@@ -1025,6 +1137,23 @@ export default function Register() {
           onSuccess={() => void refetchStaff()}
         />
       )}
+
+      {videoModal && (() => {
+        const titles: Record<string, string> = {
+          student: "O'quvchilar uchun yoriqnoma",
+          teacher: "O'qituvchilar uchun yoriqnoma",
+          staff: "Xodimlar uchun yoriqnoma",
+        };
+        return (
+          <VideoModal
+            open={!!videoModal}
+            onClose={() => setVideoModal(null)}
+            onContinue={handleVideoContinue}
+            url={videoUrls[videoModal.group]}
+            title={titles[videoModal.group] ?? "Yoriqnoma"}
+          />
+        );
+      })()}
     </div>
   );
 }

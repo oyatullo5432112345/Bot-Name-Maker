@@ -34,6 +34,7 @@ import LibraryPage from "@/pages/library/index";
 import NewBookPage from "@/pages/library/new";
 import LibraryLoansPage from "@/pages/library/loans";
 import CertificatePage from "@/pages/certificate";
+import AdminVideosPage from "@/pages/admin/videos";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -135,6 +136,10 @@ function Router() {
 
       <Route path="/certificate">
         <ProtectedRoute component={CertificatePage} />
+      </Route>
+
+      <Route path="/admin/videos">
+        <ProtectedRoute component={AdminVideosPage} roles={["admin", "director"]} />
       </Route>
 
       <Route path="/games/sozoyini">

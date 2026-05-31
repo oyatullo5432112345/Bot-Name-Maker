@@ -13,6 +13,7 @@ import timetableRouter from "./timetable.js";
 import supportRouter from "./support.js";
 import libraryRouter from "./library.js";
 import certificateRouter from "./certificate.js";
+import settingsRouter from "./settings.js";
 
 const router: IRouter = Router();
 
@@ -21,6 +22,7 @@ router.use(authRouter);
 router.use(supportRouter);
 router.use(libraryRouter);
 router.use(certificateRouter);
+router.use(settingsRouter);
 router.use(studentsRouter);
 router.use(classesRouter);
 router.use(staffRouter);

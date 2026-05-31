@@ -312,7 +312,7 @@ async function sendAccountInfo(
   tgId: number
 ): Promise<void> {
   // Akkauntni bog'lash
-  await supabase.from(table).update({ telegram_id: tgId }).eq("id", dbId);
+  await supabase.from(table).update({ telegram_id: String(tgId) }).eq("id", dbId);
 
   // Ma'lumotlarni olish
   if (table === "users") {
@@ -449,11 +449,11 @@ export function createBot(): Bot {
       return;
     }
 
-    // DB da bog'langanligini tekshirish
+    // DB da bog'langanligini tekshirish (String konversiyasi - type xatosidan saqlanish uchun)
     const { data: staffLinked } = await supabase
-      .from("staff").select("id").eq("telegram_id", userId).maybeSingle();
+      .from("staff").select("id").eq("telegram_id", String(userId)).maybeSingle();
     const { data: userLinked } = await supabase
-      .from("users").select("id").eq("telegram_id", userId).maybeSingle();
+      .from("users").select("id").eq("telegram_id", String(userId)).maybeSingle();
 
     if (staffLinked || userLinked) {
       await sendWelcome(ctx, isAdmin(userId));
@@ -833,9 +833,9 @@ export function createBot(): Bot {
 
     // DB da bog'langanligini tekshirish
     const { data: slk } = await supabase
-      .from("staff").select("id").eq("telegram_id", userId).maybeSingle();
+      .from("staff").select("id").eq("telegram_id", String(userId)).maybeSingle();
     const { data: ulk } = await supabase
-      .from("users").select("id").eq("telegram_id", userId).maybeSingle();
+      .from("users").select("id").eq("telegram_id", String(userId)).maybeSingle();
 
     if (slk || ulk) {
       await ctx.reply(loadSettings().welcomeMessage, {
