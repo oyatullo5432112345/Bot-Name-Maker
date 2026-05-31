@@ -8,6 +8,7 @@ import {
   addChannel,
   removeChannel,
   setWelcomeMessage,
+  setOnboardingVideo,
   linkPhoneToChatId,
   getPhoneByChatId,
   normalizePhone,
@@ -33,7 +34,8 @@ type UserState =
   | { type: "awaiting_channel" }
   | { type: "awaiting_message" }
   | { type: "awaiting_support" }
-  | { type: "awaiting_support_reply"; ticketId: string };
+  | { type: "awaiting_support_reply"; ticketId: string }
+  | { type: "awaiting_video_file" };
 
 const userStates = new Map<number, UserState>();
 
@@ -209,6 +211,204 @@ async function getTodayScheduleText(staffId: string, dayOverride?: number): Prom
   return `📅 *${DAY_NAMES_UZ[day]} — Dars jadvalingiz:*\n\n${lines.join("\n\n")}`;
 }
 
+// ─── Onboarding helpers ───────────────────────────────────────────────────────
+const OB_PAGE_SIZE = 8;
+
+type RegRoleGroup = "student" | "teacher" | "staff";
+
+const STAFF_ROLE_LABELS: Record<string, string> = {
+  teacher: "O'qituvchi",
+  sinf_rahbari: "Sinf rahbari",
+  director: "Direktor",
+  zam_direktor: "Direktor o'rinbosari",
+  zavuch: "Zavuch",
+  kutubxonachi: "Kutubxonachi",
+  admin: "Administrator",
+};
+
+async function getOnboardUserList(
+  roleGroup: RegRoleGroup,
+  page: number
+): Promise<{
+  rows: { id: string; full_name: string; extra: string }[];
+  table: "users" | "staff";
+  hasMore: boolean;
+}> {
+  const offset = page * OB_PAGE_SIZE;
+  const limit = OB_PAGE_SIZE;
+
+  if (roleGroup === "student") {
+    const { data } = await supabase
+      .from("users")
+      .select("id, full_name, class_name")
+      .eq("role", "student")
+      .order("full_name")
+      .range(offset, offset + limit - 1);
+    const rows = ((data ?? []) as { id: string; full_name: string; class_name?: string }[]).map(
+      (r) => ({ id: r.id, full_name: r.full_name, extra: r.class_name ?? "" })
+    );
+    return { rows, table: "users", hasMore: rows.length === limit };
+  }
+
+  if (roleGroup === "teacher") {
+    const { data } = await supabase
+      .from("staff")
+      .select("id, full_name, role")
+      .in("role", ["teacher", "sinf_rahbari"])
+      .order("full_name")
+      .range(offset, offset + limit - 1);
+    const rows = ((data ?? []) as { id: string; full_name: string; role: string }[]).map((r) => ({
+      id: r.id,
+      full_name: r.full_name,
+      extra: STAFF_ROLE_LABELS[r.role] ?? r.role,
+    }));
+    return { rows, table: "staff", hasMore: rows.length === limit };
+  }
+
+  // staff (admin/director/zavuch/kutubxonachi/zam_direktor)
+  const { data } = await supabase
+    .from("staff")
+    .select("id, full_name, role")
+    .in("role", ["director", "zam_direktor", "zavuch", "kutubxonachi", "admin"])
+    .order("full_name")
+    .range(offset, offset + limit - 1);
+  const rows = ((data ?? []) as { id: string; full_name: string; role: string }[]).map((r) => ({
+    id: r.id,
+    full_name: r.full_name,
+    extra: STAFF_ROLE_LABELS[r.role] ?? r.role,
+  }));
+  return { rows, table: "staff", hasMore: rows.length === limit };
+}
+
+function buildOnboardUserKb(
+  rows: { id: string; full_name: string; extra: string }[],
+  table: "users" | "staff",
+  roleGroup: RegRoleGroup,
+  page: number,
+  hasMore: boolean
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const r of rows) {
+    const label = r.extra ? `${r.full_name} (${r.extra})` : r.full_name;
+    kb.text(label.slice(0, 60), `reg_pick:${table}:${r.id}`).row();
+  }
+  if (page > 0 && hasMore) {
+    kb.text("⬅️ Oldingi", `reg_page:${roleGroup}:${page - 1}`)
+      .text("Keyingi ➡️", `reg_page:${roleGroup}:${page + 1}`)
+      .row();
+  } else if (page > 0) {
+    kb.text("⬅️ Oldingi", `reg_page:${roleGroup}:${page - 1}`).row();
+  } else if (hasMore) {
+    kb.text("Keyingi ➡️", `reg_page:${roleGroup}:${page + 1}`).row();
+  }
+  kb.text("🔙 Orqaga", "reg_back");
+  return kb;
+}
+
+async function sendAccountInfo(
+  ctx: { reply: Function },
+  table: "users" | "staff",
+  dbId: string,
+  tgId: number
+): Promise<void> {
+  // Akkauntni bog'lash
+  await supabase.from(table).update({ telegram_id: tgId }).eq("id", dbId);
+
+  // Ma'lumotlarni olish
+  if (table === "users") {
+    const { data } = await supabase
+      .from("users")
+      .select("full_name, login, password, class_name")
+      .eq("id", dbId)
+      .maybeSingle();
+    if (!data) return;
+    const u = data as { full_name: string; login: string; password: string; class_name?: string };
+
+    const payload = {
+      id: dbId,
+      role: "student",
+      full_name: u.full_name,
+      login: u.login,
+      class_name: u.class_name ?? "",
+      class_id: null as null,
+      telegram_id: tgId,
+    };
+
+    // class_id ni ham topamiz
+    if (u.class_name) {
+      const { data: cls } = await supabase
+        .from("classes")
+        .select("id")
+        .eq("name", u.class_name)
+        .maybeSingle();
+      if (cls) payload.class_id = (cls as { id: string }).id as unknown as null;
+    }
+
+    const magicToken = createMagicToken(payload);
+    const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
+    const kb = new InlineKeyboard()
+      .url("🚀 Platformaga kirish (bir bosish)", loginUrl)
+      .row()
+      .url("🌐 Oddiy kirish", `${WEBSITE_URL}/login`);
+
+    await ctx.reply(
+      `🎉 *Akkauntingiz muvaffaqiyatli bog'landi\\!*\n\n` +
+      `👤 *${u.full_name.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}*\n` +
+      `🏫 Sinf: ${(u.class_name ?? "—").replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `🔑 *Kirish ma'lumotlari:*\n` +
+      `👤 Login: \`${u.login}\`\n` +
+      `🔒 Parol: \`${u.password}\`\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📌 *"Bir bosish"* tugmasi 15 daqiqa amal qiladi\\.`,
+      { parse_mode: "MarkdownV2", reply_markup: kb }
+    );
+  } else {
+    // staff
+    const { data } = await supabase
+      .from("staff")
+      .select("full_name, login, role, subjects")
+      .eq("id", dbId)
+      .maybeSingle();
+    if (!data) return;
+    const s = data as { full_name: string; login: string; role: string; subjects?: string[] };
+
+    const roleLabel = STAFF_ROLE_LABELS[s.role] ?? s.role;
+    const payload = {
+      id: dbId,
+      role: s.role,
+      full_name: s.full_name,
+      login: s.login,
+      telegram_id: tgId,
+      subjects: s.subjects ?? [],
+    };
+    const magicToken = createMagicToken(payload);
+    const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
+    const kb = new InlineKeyboard()
+      .url("🚀 Platformaga kirish (bir bosish)", loginUrl)
+      .row()
+      .url("🌐 Oddiy kirish", `${WEBSITE_URL}/login`);
+
+    await ctx.reply(
+      `🎉 *Akkauntingiz muvaffaqiyatli bog'landi\\!*\n\n` +
+      `👤 *${s.full_name.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}*\n` +
+      `💼 Lavozim: ${roleLabel.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `🔑 Login: \`${s.login}\`\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📌 *"Bir bosish"* tugmasi 15 daqiqa amal qiladi\\.`,
+      { parse_mode: "MarkdownV2", reply_markup: kb }
+    );
+  }
+}
+
+function buildRoleSelectionKb(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("👨‍🎓 O'quvchi", "reg_role:student").row()
+    .text("👨‍🏫 O'qituvchi / Sinf rahbari", "reg_role:teacher").row()
+    .text("👔 Boshqa xodim", "reg_role:staff");
+}
+
 export function createBot(): Bot {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN kerak");
@@ -249,20 +449,23 @@ export function createBot(): Bot {
       return;
     }
 
-    await sendWelcome(ctx, isAdmin(userId));
+    // DB da bog'langanligini tekshirish
+    const { data: staffLinked } = await supabase
+      .from("staff").select("id").eq("telegram_id", userId).maybeSingle();
+    const { data: userLinked } = await supabase
+      .from("users").select("id").eq("telegram_id", userId).maybeSingle();
 
-    // Telefon raqami bog'lanmagan bo'lsa — so'rash
-    const alreadyLinked = getPhoneByChatId(userId);
-    if (!alreadyLinked) {
-      await ctx.reply(
-        "📱 *Platformadagi akkauntingizni bog'lash uchun telefon raqamingizni ulashing.*\n\n" +
-        "_Shu orqali sizga xabarlar yuborilishi mumkin bo'ladi._",
-        {
-          parse_mode: "Markdown",
-          reply_markup: buildContactKeyboard(),
-        }
-      );
+    if (staffLinked || userLinked) {
+      await sendWelcome(ctx, isAdmin(userId));
+      return;
     }
+
+    // Bog'lanmagan → onboarding
+    await ctx.reply(
+      "🎓 *Toshloq tumani 3-maktab — TALIM PLATFORM*\n\n" +
+      "Platformaga kirish uchun avval o'z toifangizni tanlang 👇",
+      { parse_mode: "Markdown", reply_markup: buildRoleSelectionKb() }
+    );
   });
 
   // ─── /jadval ────────────────────────────────────────────────────────────────
@@ -628,15 +831,197 @@ export function createBot(): Bot {
       return;
     }
 
-    await ctx.reply(
-      loadSettings().welcomeMessage,
-      { parse_mode: "Markdown", reply_markup: buildWelcomeKeyboard() }
-    );
+    // DB da bog'langanligini tekshirish
+    const { data: slk } = await supabase
+      .from("staff").select("id").eq("telegram_id", userId).maybeSingle();
+    const { data: ulk } = await supabase
+      .from("users").select("id").eq("telegram_id", userId).maybeSingle();
+
+    if (slk || ulk) {
+      await ctx.reply(loadSettings().welcomeMessage, {
+        parse_mode: "Markdown",
+        reply_markup: buildWelcomeKeyboard(),
+      });
+    } else {
+      await ctx.reply(
+        "🎓 *Toshloq tumani 3-maktab — TALIM PLATFORM*\n\n" +
+        "Platformaga kirish uchun avval o'z toifangizni tanlang 👇",
+        { parse_mode: "Markdown", reply_markup: buildRoleSelectionKb() }
+      );
+    }
   });
 
   // ─── Callback: noop ─────────────────────────────────────────────────────────
   bot.callbackQuery("noop", async (ctx) => {
     await ctx.answerCallbackQuery();
+  });
+
+  // ─── Onboarding: rol tanlash ─────────────────────────────────────────────────
+  bot.callbackQuery(/^reg_role:(student|teacher|staff)$/, async (ctx) => {
+    const roleGroup = ctx.match[1] as RegRoleGroup;
+    await ctx.answerCallbackQuery();
+    const { rows, table, hasMore } = await getOnboardUserList(roleGroup, 0);
+    const labels: Record<RegRoleGroup, string> = {
+      student: "O'quvchilar",
+      teacher: "O'qituvchi / Sinf rahbarlari",
+      staff: "Xodimlar",
+    };
+    if (rows.length === 0) {
+      await ctx.editMessageText(
+        `ℹ️ ${labels[roleGroup]} ro'yxati hozircha bo'sh.\n\nAdmin bilan bog'laning.`,
+        { reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back") }
+      );
+      return;
+    }
+    const kb = buildOnboardUserKb(rows, table, roleGroup, 0, hasMore);
+    await ctx.editMessageText(
+      `👤 *${labels[roleGroup]} ro'yxati*\n\nRo'yxatdan o'z ismingizni toping va tanlang:`,
+      { parse_mode: "Markdown", reply_markup: kb }
+    );
+  });
+
+  // ─── Onboarding: sahifalash ───────────────────────────────────────────────────
+  bot.callbackQuery(/^reg_page:(student|teacher|staff):(\d+)$/, async (ctx) => {
+    const roleGroup = ctx.match[1] as RegRoleGroup;
+    const page = parseInt(ctx.match[2] ?? "0", 10);
+    await ctx.answerCallbackQuery();
+    const { rows, table, hasMore } = await getOnboardUserList(roleGroup, page);
+    const kb = buildOnboardUserKb(rows, table, roleGroup, page, hasMore);
+    const labels: Record<RegRoleGroup, string> = {
+      student: "O'quvchilar",
+      teacher: "O'qituvchi / Sinf rahbarlari",
+      staff: "Xodimlar",
+    };
+    await ctx.editMessageText(
+      `👤 *${labels[roleGroup]} ro'yxati*\n\nRo'yxatdan o'z ismingizni toping va tanlang:`,
+      { parse_mode: "Markdown", reply_markup: kb }
+    );
+  });
+
+  // ─── Onboarding: orqaga ───────────────────────────────────────────────────────
+  bot.callbackQuery("reg_back", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(
+      "🎓 *Toshloq tumani 3-maktab — TALIM PLATFORM*\n\nPlatformaga kirish uchun avval o'z toifangizni tanlang 👇",
+      { parse_mode: "Markdown", reply_markup: buildRoleSelectionKb() }
+    );
+  });
+
+  // ─── Onboarding: foydalanuvchi tanlandi ──────────────────────────────────────
+  bot.callbackQuery(/^reg_pick:(users|staff):(.+)$/, async (ctx) => {
+    const table = ctx.match[1] as "users" | "staff";
+    const dbId = ctx.match[2];
+    if (!dbId) { await ctx.answerCallbackQuery(); return; }
+    await ctx.answerCallbackQuery();
+
+    // Ma'lumotni olish
+    const { data } = await supabase
+      .from(table)
+      .select("full_name, role, class_name")
+      .eq("id", dbId)
+      .maybeSingle();
+
+    if (!data) {
+      await ctx.editMessageText("❌ Foydalanuvchi topilmadi. Qaytadan urinib ko'ring.", {
+        reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back"),
+      });
+      return;
+    }
+
+    const d = data as { full_name: string; role?: string; class_name?: string };
+    const roleLabel = d.role ? (STAFF_ROLE_LABELS[d.role] ?? d.role) : "";
+    const extra = d.class_name ? `${d.class_name} sinf` : roleLabel;
+
+    const kb = new InlineKeyboard()
+      .text("✅ Ha, bu men!", `reg_yes:${table}:${dbId}`)
+      .text("❌ Yo'q", "reg_back");
+
+    await ctx.editMessageText(
+      `👤 *Siz tanlagan shaxs:*\n\n` +
+      `*${d.full_name}*` +
+      (extra ? `\n${extra}` : "") +
+      `\n\nBu sizmisiz?`,
+      { parse_mode: "Markdown", reply_markup: kb }
+    );
+  });
+
+  // ─── Onboarding: tasdiqlash (Ha, bu men) ─────────────────────────────────────
+  bot.callbackQuery(/^reg_yes:(users|staff):(.+)$/, async (ctx) => {
+    const table = ctx.match[1] as "users" | "staff";
+    const dbId = ctx.match[2];
+    if (!dbId) { await ctx.answerCallbackQuery(); return; }
+    await ctx.answerCallbackQuery("✅ Ajoyib!");
+
+    const settings = loadSettings();
+    const videoFileId = settings.onboardingVideoFileId;
+
+    if (videoFileId) {
+      // Yoriqnoma videoni yuborish
+      const kb = new InlineKeyboard().text(
+        "✅ Ko'rdim, tasdiqlash",
+        `reg_watched:${table}:${dbId}`
+      );
+      await ctx.editMessageText(
+        "📹 *Quyida platformadan foydalanish bo'yicha qisqa yoriqnoma video kelmoqda...*\n\n" +
+        "Videoni ko'rgach, *\"Ko'rdim, tasdiqlash\"* tugmasini bosing 👇",
+        { parse_mode: "Markdown" }
+      );
+      await ctx.replyWithVideo(videoFileId, {
+        caption: "🎓 Toshloq tumani 3-maktab — TALIM PLATFORM\n\nYoriqnoma videosini tomosha qiling va tasdiqlang.",
+        reply_markup: kb,
+      });
+    } else {
+      // Video yo'q — to'g'ridan akkaunt bog'lash
+      await ctx.editMessageText("⏳ Akkauntingiz bog'lanmoqda...");
+      await sendAccountInfo(ctx, table, dbId, ctx.from.id);
+    }
+  });
+
+  // ─── Onboarding: video ko'rildi → akkaunt bog'lash ───────────────────────────
+  bot.callbackQuery(/^reg_watched:(users|staff):(.+)$/, async (ctx) => {
+    const table = ctx.match[1] as "users" | "staff";
+    const dbId = ctx.match[2];
+    if (!dbId) { await ctx.answerCallbackQuery(); return; }
+    await ctx.answerCallbackQuery("✅ Barakalla!");
+    await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() });
+    await sendAccountInfo(ctx, table, dbId, ctx.from.id);
+  });
+
+  // ─── /setvideo (admin) ────────────────────────────────────────────────────────
+  bot.command("setvideo", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId || !isAdmin(userId)) {
+      await ctx.reply("⛔ Ruxsat yo'q.");
+      return;
+    }
+    userStates.set(userId, { type: "awaiting_video_file" });
+    await ctx.reply(
+      "📹 *Onboarding yoriqnoma videosini yuklash*\n\n" +
+      "Endi video faylni shu chatga yuboring (forward qilmang, to'g'ridan yuklang).\n\n" +
+      "Video saqlangandan keyin barcha yangi foydalanuvchilarga avtomatik yuboriladi.",
+      {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard().text("❌ Bekor qilish", "admin_panel"),
+      }
+    );
+  });
+
+  // ─── Video message handler (admin video yuklash) ──────────────────────────────
+  bot.on("message:video", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId) return;
+    const state = userStates.get(userId) ?? { type: "idle" };
+    if (state.type === "awaiting_video_file" && isAdmin(userId)) {
+      const fileId = ctx.message.video.file_id;
+      setOnboardingVideo(fileId);
+      userStates.set(userId, { type: "idle" });
+      await ctx.reply(
+        "✅ *Yoriqnoma video saqlandi!*\n\n" +
+        "Endi yangi foydalanuvchilar ro'yxatdan o'tishda shu video ko'rsatiladi.\n\n" +
+        `📌 File ID: \`${fileId}\``,
+        { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("⚙️ Admin panel", "admin_panel") }
+      );
+    }
   });
 
   // ─── Message handler ─────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ export interface BotSettings {
   channels: Channel[];
   welcomeMessage: string;
   phoneMappings: PhoneMapping[];
+  onboardingVideoFileId?: string;
 }
 
 const DEFAULT_SETTINGS: BotSettings = {
@@ -29,6 +30,7 @@ const DEFAULT_SETTINGS: BotSettings = {
     "Toshloq tuman 3-maktab — *TALIM PLATFORM*\n\n" +
     "Platformaga kirish uchun quyidagi tugmani bosing 👇",
   phoneMappings: [],
+  onboardingVideoFileId: undefined,
 };
 
 function ensureDir(): void {
@@ -48,6 +50,7 @@ export function loadSettings(): BotSettings {
       channels: parsed.channels ?? [],
       welcomeMessage: parsed.welcomeMessage ?? DEFAULT_SETTINGS.welcomeMessage,
       phoneMappings: parsed.phoneMappings ?? [],
+      onboardingVideoFileId: parsed.onboardingVideoFileId,
     };
   } catch {
     return { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
@@ -108,4 +111,10 @@ export function getChatIdByPhone(phone: string): number | null {
 export function getPhoneByChatId(chatId: number): string | null {
   const settings = loadSettings();
   return settings.phoneMappings.find((m) => m.chatId === chatId)?.phone ?? null;
+}
+
+export function setOnboardingVideo(fileId: string): void {
+  const settings = loadSettings();
+  settings.onboardingVideoFileId = fileId;
+  saveSettings(settings);
 }
