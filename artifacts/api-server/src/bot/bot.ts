@@ -47,6 +47,7 @@ type UserState =
   | { type: "awaiting_support_reply"; ticketId: string }
   | { type: "awaiting_video_file" }
   | { type: "awaiting_reg_code"; roleGroup: RegRoleGroup }
+  | { type: "awaiting_personal_code"; roleGroup: RegRoleGroup | "management" }
   | { type: "awaiting_management_code" }
   | { type: "awaiting_new_reg_code" }
   | { type: "awaiting_set_role_code"; role: keyof RoleRegCodes }
@@ -1027,71 +1028,27 @@ export function createBot(): Bot {
     await ctx.editMessageText("❌ Bekor qilindi.");
   });
 
-  // ─── Onboarding: rol tanlash ─────────────────────────────────────────────────
+  // ─── Onboarding: rol tanlash → shaxsiy mahfiy kod so'rash ───────────────────
   bot.callbackQuery(/^reg_role:(student|teacher|sinf_rahbari|management)$/, async (ctx) => {
     const roleGroup = ctx.match[1] as RegRoleGroup;
     const userId = ctx.from.id;
     await ctx.answerCallbackQuery();
 
-    // Rahbar (management) — maxfiy kod so'rash
-    if (roleGroup === "management") {
-      userStates.set(userId, { type: "awaiting_management_code" });
-      await ctx.editMessageText(
-        "👔 *Rahbar tizimiga kirish*\n\n" +
-        "Direktor, zavuch yoki zam.direktor uchun.\n\n" +
-        "Admin tomonidan berilgan *maxfiy kodni* kiriting:",
-        { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back") }
-      );
-      return;
-    }
-
-    // YouTube video ko'rsatish
-    const videoUrls = getRoleVideoUrls();
-    const videoMap: Record<string, string | undefined> = {
-      student: videoUrls.student,
-      teacher: videoUrls.teacher,
-      sinf_rahbari: videoUrls.sinfRahbari,
-    };
-    const videoUrl = videoMap[roleGroup];
     const roleLabels: Record<string, string> = {
       student: "O'quvchi",
       teacher: "O'qituvchi",
-      sinf_rahbari: "Sinf rahbari + O'qituvchi",
+      sinf_rahbari: "Sinf rahbari",
+      management: "Maktab rahbari",
     };
     const roleLabel = roleLabels[roleGroup] ?? roleGroup;
 
-    // Kod kerakmi?
-    const codes = getRoleRegCodes();
-    const codeMap: Record<string, string | undefined> = {
-      teacher: codes.teacher ?? getStaffRegCode(),
-      sinf_rahbari: codes.sinfRahbari ?? getStaffRegCode(),
-    };
-    const requiredCode = roleGroup !== "student" ? codeMap[roleGroup] : undefined;
-
-    if (videoUrl) {
-      // Video bor — avval video ko'rsatib, keyin davom etish tugmasi
-      const kb = new InlineKeyboard()
-        .url("▶️ Yo'riqnoma videoni ko'rish", videoUrl).row()
-        .text("✅ Ko'rdim, davom etish", `reg_proceed:${roleGroup}`).row()
-        .text("🔙 Orqaga", "reg_back");
-      await ctx.editMessageText(
-        `🎬 *${roleLabel} uchun yo'riqnoma*\n\n` +
-        `Ro'yxatdan o'tishdan oldin videoni ko'ring:\n\n` +
-        `📌 Videoni ko'rgach *"Ko'rdim, davom etish"* tugmasini bosing.`,
-        { parse_mode: "Markdown", reply_markup: kb }
-      );
-    } else {
-      // Video yo'q — tez orada deb xabar berish va davom etish
-      const kb = new InlineKeyboard()
-        .text("✅ Davom etish", `reg_proceed:${roleGroup}`).row()
-        .text("🔙 Orqaga", "reg_back");
-      await ctx.editMessageText(
-        `🎬 *${roleLabel} uchun yo'riqnoma*\n\n` +
-        `📹 Yo'riqnoma video *tez orada* yaratiladi va bu yerda ko'rsatiladi.\n\n` +
-        `Hozircha davom etish uchun quyidagi tugmani bosing:`,
-        { parse_mode: "Markdown", reply_markup: kb }
-      );
-    }
+    userStates.set(userId, { type: "awaiting_personal_code", roleGroup });
+    await ctx.editMessageText(
+      `🔐 *${roleLabel} sifatida kirish*\n\n` +
+      `Sizga berilgan *shaxsiy mahfiy kodingizni* kiriting:\n\n` +
+      `_(Kod admin tomonidan sizga alohida berilgan)_`,
+      { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back") }
+    );
   });
 
   // ─── Onboarding: videoni ko'rgach yoki video yo'q → davom etish ──────────────
@@ -1424,6 +1381,81 @@ export function createBot(): Bot {
         );
       }
       return;
+    }
+
+    // ── Shaxsiy mahfiy kod tekshirish (barcha rollar) ─────────────────────
+    if (state.type === "awaiting_personal_code") {
+      const entered = ctx.message.text.trim();
+      const roleGroup = state.roleGroup;
+
+      if (roleGroup === "student") {
+        // O'quvchilar jadvalidan password bo'yicha qidirish
+        const { data } = await supabase
+          .from("users")
+          .select("id, full_name, login, password, class_name")
+          .eq("password", entered)
+          .maybeSingle();
+
+        if (!data) {
+          await ctx.reply(
+            "❌ *Mahfiy kod noto'g'ri!*\n\nKodingizni qaytadan tekshiring yoki admin bilan bog'laning.",
+            { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back") }
+          );
+          return;
+        }
+        const u = data as { id: string; full_name: string; login: string; password: string; class_name?: string };
+        userStates.set(userId, { type: "idle" });
+        const waitMsg1 = await ctx.reply("⏳ Akkauntingiz bog'lanmoqda...");
+        await sendAccountInfo(ctx, "users", u.id, userId);
+        await ctx.api.deleteMessage(ctx.chat.id, waitMsg1.message_id).catch(() => {});
+        return;
+      }
+
+      if (roleGroup === "teacher" || roleGroup === "sinf_rahbari") {
+        const roleFilter = roleGroup === "teacher" ? ["teacher"] : ["sinf_rahbari"];
+        const { data } = await supabase
+          .from("staff")
+          .select("id, full_name, login, role, subjects")
+          .eq("password", entered)
+          .in("role", roleFilter)
+          .maybeSingle();
+
+        if (!data) {
+          await ctx.reply(
+            "❌ *Mahfiy kod noto'g'ri!*\n\nKodingizni qaytadan tekshiring yoki admin bilan bog'laning.",
+            { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back") }
+          );
+          return;
+        }
+        userStates.set(userId, { type: "idle" });
+        const waitMsg2 = await ctx.reply("⏳ Akkauntingiz bog'lanmoqda...");
+        await sendAccountInfo(ctx, "staff", (data as { id: string }).id, userId);
+        await ctx.api.deleteMessage(ctx.chat.id, waitMsg2.message_id).catch(() => {});
+        return;
+      }
+
+      if (roleGroup === "management") {
+        const mgmtRoles = ["director", "zam_direktor", "zavuch", "kutubxonachi"];
+        const { data } = await supabase
+          .from("staff")
+          .select("id, full_name, login, role, subjects")
+          .eq("password", entered)
+          .in("role", mgmtRoles)
+          .maybeSingle();
+
+        if (!data) {
+          await ctx.reply(
+            "❌ *Mahfiy kod noto'g'ri!*\n\nKodingizni qaytadan tekshiring yoki admin bilan bog'laning.",
+            { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back") }
+          );
+          return;
+        }
+        userStates.set(userId, { type: "idle" });
+        const waitMsg3 = await ctx.reply("⏳ Akkauntingiz bog'lanmoqda...");
+        await sendAccountInfo(ctx, "staff", (data as { id: string }).id, userId);
+        await ctx.api.deleteMessage(ctx.chat.id, waitMsg3.message_id).catch(() => {});
+        return;
+      }
     }
 
     // ── Management kod tekshirish ──────────────────────────────────────────
