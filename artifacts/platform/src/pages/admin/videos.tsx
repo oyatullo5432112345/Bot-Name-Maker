@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Video, GraduationCap, Users2, Briefcase, Save, ExternalLink } from "lucide-react";
+import { Video, GraduationCap, Users2, Briefcase, BookOpen, Save, ExternalLink } from "lucide-react";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -33,10 +33,17 @@ function VideoPreview({ url }: { url: string }) {
   );
 }
 
+interface VideoUrls {
+  student: string;
+  teacher: string;
+  staff: string;
+  sinfRahbari: string;
+}
+
 export default function AdminVideosPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [urls, setUrls] = useState({ student: "", teacher: "", staff: "" });
+  const [urls, setUrls] = useState<VideoUrls>({ student: "", teacher: "", staff: "", sinfRahbari: "" });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -44,7 +51,12 @@ export default function AdminVideosPage() {
     setLoading(true);
     fetch(`${API_BASE}/settings/videos`)
       .then(r => r.json())
-      .then((data: { student: string; teacher: string; staff: string }) => setUrls(data))
+      .then((data: VideoUrls) => setUrls({
+        student: data.student ?? "",
+        teacher: data.teacher ?? "",
+        staff: data.staff ?? "",
+        sinfRahbari: data.sinfRahbari ?? "",
+      }))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -75,21 +87,27 @@ export default function AdminVideosPage() {
   const SECTIONS = [
     {
       key: "student" as const,
-      label: "O'quvchilar uchun video",
-      icon: Users2,
-      desc: "Ro'yxatdan o'tish sahifasida o'quvchi bo'limida ko'rsatiladi",
+      label: "O'quvchilar uchun yo'riqnoma",
+      icon: GraduationCap,
+      desc: "O'quvchi ro'yxatdan o'tganda va yo'riqnomalar sahifasida ko'rsatiladi",
     },
     {
       key: "teacher" as const,
-      label: "O'qituvchilar uchun video",
-      icon: GraduationCap,
-      desc: "O'qituvchi va sinf rahbari ro'yxatdan o'tishda ko'rsatiladi",
+      label: "O'qituvchilar uchun yo'riqnoma",
+      icon: Users2,
+      desc: "O'qituvchi ro'yxatdan o'tganda va yo'riqnomalar sahifasida ko'rsatiladi",
+    },
+    {
+      key: "sinfRahbari" as const,
+      label: "Sinf rahbarlari uchun yo'riqnoma",
+      icon: BookOpen,
+      desc: "Sinf rahbari ro'yxatdan o'tganda va yo'riqnomalar sahifasida ko'rsatiladi",
     },
     {
       key: "staff" as const,
-      label: "Xodimlar uchun video",
+      label: "Rahbarlar uchun yo'riqnoma",
       icon: Briefcase,
-      desc: "Direktor, zavuch va boshqa xodimlar uchun ko'rsatiladi",
+      desc: "Direktor, zavuch va boshqa rahbarlar uchun (ixtiyoriy)",
     },
   ] as const;
 
@@ -98,10 +116,11 @@ export default function AdminVideosPage() {
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Video className="w-6 h-6 text-primary" />
-          Onboarding videolari
+          Yo'riqnoma videolari
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Ro'yxatdan o'tish sahifasida ko'rsatiladigan 3 ta yoriqnoma video URL larini kiriting (YouTube yoki to'g'ridan video URL)
+          Har bir rol uchun YouTube yo'riqnoma video URLini kiriting.
+          Video bo'lmasa, foydalanuvchilarga "Tez orada" xabari ko'rsatiladi.
         </p>
       </div>
 
@@ -119,10 +138,10 @@ export default function AdminVideosPage() {
                 <CardDescription>{desc}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Label>Video URL</Label>
+                <Label>YouTube URL</Label>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="https://www.youtube.com/watch?v=... yoki to'g'ridan video URL"
+                    placeholder="https://www.youtube.com/watch?v=..."
                     value={urls[key]}
                     onChange={e => setUrls(prev => ({ ...prev, [key]: e.target.value }))}
                   />

@@ -291,6 +291,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </SidebarGroup>
             )}
 
+            {/* Yo'riqnoma videolari — hamma ko'ra oladi */}
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/qollanmalar"}>
+                      <Link href="/qollanmalar">
+                        <Video className="w-4 h-4" />
+                        <span>Yo'riqnomalar</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
             {/* Qo'llab-quvvatlash tugmasi */}
             <SidebarGroup>
               <SidebarGroupContent>

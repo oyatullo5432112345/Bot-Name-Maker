@@ -22,13 +22,29 @@ export interface VideoUrls {
   staff: string;
 }
 
+export interface RoleVideoUrls {
+  student?: string;
+  teacher?: string;
+  sinfRahbari?: string;
+}
+
+export interface RoleRegCodes {
+  teacher?: string;
+  sinfRahbari?: string;
+  director?: string;
+  zavuch?: string;
+  zamDirector?: string;
+}
+
 export interface BotSettings {
   channels: Channel[];
   welcomeMessage: string;
   phoneMappings: PhoneMapping[];
   onboardingVideoFileId?: string;
   videoUrls: VideoUrls;
+  roleVideoUrls: RoleVideoUrls;
   staffRegCode?: string;
+  roleRegCodes: RoleRegCodes;
 }
 
 const DEFAULT_SETTINGS: BotSettings = {
@@ -40,7 +56,9 @@ const DEFAULT_SETTINGS: BotSettings = {
   phoneMappings: [],
   onboardingVideoFileId: undefined,
   videoUrls: { student: "", teacher: "", staff: "" },
+  roleVideoUrls: {},
   staffRegCode: undefined,
+  roleRegCodes: {},
 };
 
 function ensureDir(): void {
@@ -62,7 +80,9 @@ export function loadSettings(): BotSettings {
       phoneMappings: parsed.phoneMappings ?? [],
       onboardingVideoFileId: parsed.onboardingVideoFileId,
       videoUrls: parsed.videoUrls ?? { student: "", teacher: "", staff: "" },
+      roleVideoUrls: parsed.roleVideoUrls ?? {},
       staffRegCode: parsed.staffRegCode,
+      roleRegCodes: parsed.roleRegCodes ?? {},
     };
   } catch {
     return { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
@@ -145,4 +165,55 @@ export function setVideoUrls(urls: VideoUrls): void {
   const settings = loadSettings();
   settings.videoUrls = urls;
   saveSettings(settings);
+}
+
+export function getRoleVideoUrls(): RoleVideoUrls {
+  return loadSettings().roleVideoUrls;
+}
+
+export function setRoleVideoUrls(urls: RoleVideoUrls): void {
+  const settings = loadSettings();
+  settings.roleVideoUrls = urls;
+  saveSettings(settings);
+}
+
+export function getRoleRegCodes(): RoleRegCodes {
+  return loadSettings().roleRegCodes;
+}
+
+export function setRoleRegCode(
+  role: keyof RoleRegCodes,
+  code: string
+): void {
+  const settings = loadSettings();
+  if (!settings.roleRegCodes) settings.roleRegCodes = {};
+  if (code.trim()) {
+    settings.roleRegCodes[role] = code.trim();
+  } else {
+    delete settings.roleRegCodes[role];
+  }
+  saveSettings(settings);
+}
+
+export function findRoleByCode(code: string): {
+  role: "teacher" | "sinf_rahbari" | "director" | "zavuch" | "zam_direktor";
+  group: "teacher" | "sinf_rahbari" | "management";
+} | null {
+  const codes = loadSettings().roleRegCodes;
+  const trimmed = code.trim();
+  if (!trimmed) return null;
+  if (codes.teacher && trimmed === codes.teacher)
+    return { role: "teacher", group: "teacher" };
+  if (codes.sinfRahbari && trimmed === codes.sinfRahbari)
+    return { role: "sinf_rahbari", group: "sinf_rahbari" };
+  if (codes.director && trimmed === codes.director)
+    return { role: "director", group: "management" };
+  if (codes.zavuch && trimmed === codes.zavuch)
+    return { role: "zavuch", group: "management" };
+  if (codes.zamDirector && trimmed === codes.zamDirector)
+    return { role: "zam_direktor", group: "management" };
+  const legacyCode = loadSettings().staffRegCode;
+  if (legacyCode && trimmed === legacyCode)
+    return { role: "teacher", group: "teacher" };
+  return null;
 }
