@@ -16,11 +16,18 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const isProduction = process.env["NODE_ENV"] === "production";
-// Production da REPLIT_DOMAINS dan ol (to'g'ri production URL)
-// Development da WEBSITE_URL dan ol
-const WEBSITE_URL = isProduction
-  ? (process.env["REPLIT_DOMAINS"]?.split(",")[0]?.trim() ?? process.env["WEBSITE_URL"] ?? "")
-  : (process.env["WEBSITE_URL"] ?? process.env["REPLIT_DOMAINS"]?.split(",")[0]?.trim() ?? "");
+
+function buildWebsiteUrl(): string {
+  const rawDomain = process.env["REPLIT_DOMAINS"]?.split(",")[0]?.trim() ?? "";
+  const envUrl = process.env["WEBSITE_URL"] ?? "";
+  if (isProduction) {
+    if (rawDomain) return `https://${rawDomain}`;
+    return envUrl;
+  }
+  return envUrl || (rawDomain ? `https://${rawDomain}` : "");
+}
+
+const WEBSITE_URL = buildWebsiteUrl();
 
 try {
   const bot = createBot();
