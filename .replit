@@ -1,4 +1,4 @@
-modules = ["nodejs-24"]
+modules = ["nodejs-20", "web", "bash"]
 
 [deployment]
 router = "application"
@@ -49,7 +49,7 @@ waitForPort = 23633
 outputType = "webview"
 
 [agent]
-stack = "PNPM_WORKSPACE"
+stack = "BEST_EFFORT_FALLBACK"
 expertMode = true
 
 [postMerge]
@@ -75,11 +75,11 @@ externalPort = 3000
 [userenv]
 
 [userenv.shared]
-ADMIN_PASSWORD = "oyatullo"
 SUPABASE_URL = "https://saodkjnjskghqqktcxkj.supabase.co"
-SUPABASE_ANON_KEY = "sb_publishable_Py1MQeKrN2uyz8HUOUmS0Q__nrQQNbp"
-TELEGRAM_BOT_TOKEN = "8727402043:AAEE2UNCFUmdcJICSFS2ZLBk6FVZcEclbKs"
 ADMIN_ID = "611665022"
 WEBSITE_URL = "https://bot-name-maker--chnvuvnjj.replit.app"
 
 [userenv.production]
+
+[nix]
+channel = "stable-25_05"
