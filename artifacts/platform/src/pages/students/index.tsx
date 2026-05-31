@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -92,12 +92,20 @@ export default function StudentsList() {
         </div>
         
         {isAdmin && (
-          <Button asChild>
-            <Link href="/students/new">
-              <Plus className="w-4 h-4 mr-2" />
-              Yangi o'quvchi
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/students/bulk-new">
+                <Users className="w-4 h-4 mr-2" />
+                Ommaviy qo'shish
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/students/new">
+                <Plus className="w-4 h-4 mr-2" />
+                Yangi o'quvchi
+              </Link>
+            </Button>
+          </div>
         )}
       </div>
 

@@ -78,6 +78,49 @@ router.get("/staff", async (_req, res): Promise<void> => {
   res.json(ListStaffResponse.parse(enriched));
 });
 
+// POST /api/staff/bulk
+router.post("/staff/bulk", async (req, res): Promise<void> => {
+  const { staff: items } = req.body as {
+    staff: { full_name: string; role: string; subjects?: string[]; can_teach?: boolean }[];
+  };
+  if (!Array.isArray(items) || items.length === 0) {
+    res.status(400).json({ error: "staff massivi bo'sh" });
+    return;
+  }
+
+  const created: { full_name: string; login: string; password: string; role: string }[] = [];
+  const errors: { full_name: string; error: string }[] = [];
+
+  for (const s of items) {
+    const parts = (s.full_name ?? "").trim().toLowerCase().split(" ");
+    const base = parts[0] ?? "staff";
+    const num = Math.floor(100 + Math.random() * 900);
+    const login = `${base}${num}`;
+    const password = Math.floor(10000 + Math.random() * 90000).toString();
+    const can_teach = s.can_teach ?? (s.role === "teacher" || s.role === "sinf_rahbari");
+
+    const { error } = await supabase
+      .from("staff")
+      .insert([{
+        full_name: s.full_name,
+        role: s.role,
+        login,
+        password,
+        telegram_id: null,
+        subjects: s.subjects ?? [],
+        can_teach,
+      }]);
+
+    if (error) {
+      errors.push({ full_name: s.full_name, error: error.message });
+    } else {
+      created.push({ full_name: s.full_name, login, password, role: s.role });
+    }
+  }
+
+  res.status(201).json({ created, errors });
+});
+
 // POST /api/staff
 router.post("/staff", async (req, res): Promise<void> => {
   const parsed = CreateStaffBody.safeParse(req.body);

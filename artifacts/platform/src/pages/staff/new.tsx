@@ -54,11 +54,13 @@ const staffSchema = z.object({
 type StaffFormValues = z.infer<typeof staffSchema>;
 
 const rolesWithClass = [StaffInputRole.sinf_rahbari, StaffInputRole.teacher];
+const managerRoles = [StaffInputRole.director, StaffInputRole.zam_direktor, StaffInputRole.zavuch];
 
 export default function NewStaff() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+  const [canTeach, setCanTeach] = useState(false);
 
   const createMutation = useCreateStaff();
 
@@ -74,6 +76,8 @@ export default function NewStaff() {
   const roleValue = form.watch("role");
   const showClassField = rolesWithClass.includes(roleValue as typeof rolesWithClass[number]);
   const isTeacherRole = roleValue === StaffInputRole.teacher || roleValue === StaffInputRole.sinf_rahbari;
+  const isManagerRole = managerRoles.includes(roleValue as typeof managerRoles[number]);
+  const showSubjects = isTeacherRole || (isManagerRole && canTeach);
 
   const toggleSubject = (subject: string) => {
     setSelectedSubjects(prev =>
@@ -84,17 +88,19 @@ export default function NewStaff() {
   const onSubmit = (data: StaffFormValues) => {
     const payload = {
       ...data,
-      class_id: showClassField ? (data.class_id || null) : null
+      class_id: showClassField ? (data.class_id || null) : null,
+      can_teach: isTeacherRole ? true : (isManagerRole ? canTeach : false),
+      subjects: showSubjects ? selectedSubjects : [],
     };
 
     createMutation.mutate(
-      { data: payload },
+      { data: payload as Parameters<typeof createMutation.mutate>[0]["data"] },
       {
         onSuccess: (result: unknown) => {
           const newId = (result as { id?: string }).id;
-          if (isTeacherRole && newId) {
+          if ((isTeacherRole || (isManagerRole && canTeach)) && newId) {
             toast({
-              title: roleValue === StaffInputRole.sinf_rahbari ? "Sinf rahbari qo'shildi" : "O'qituvchi qo'shildi",
+              title: roleValue === StaffInputRole.sinf_rahbari ? "Sinf rahbari qo'shildi" : "Xodim qo'shildi",
               description: "Endi fanlarni biriktiring",
             });
             setLocation(`/staff/${newId}/subjects`);
@@ -207,18 +213,34 @@ export default function NewStaff() {
               )}
             </div>
 
-            {isTeacherRole && (
+            {isManagerRole && (
+              <div className="flex items-center gap-3 rounded-md border p-3 bg-amber-50 border-amber-200">
+                <input
+                  type="checkbox"
+                  id="can_teach_chk"
+                  checked={canTeach}
+                  onChange={(e) => {
+                    setCanTeach(e.target.checked);
+                    if (!e.target.checked) setSelectedSubjects([]);
+                  }}
+                  className="w-4 h-4 rounded"
+                />
+                <label htmlFor="can_teach_chk" className="text-sm text-amber-800 cursor-pointer">
+                  Bu rahbar dars ham o'tadi — fanlarni belgilash imkoniyatini yoqish
+                </label>
+              </div>
+            )}
+
+            {showSubjects && (
               <div className="space-y-3">
                 <div>
                   <FormLabel>
-                    {roleValue === StaffInputRole.sinf_rahbari
+                    {isManagerRole ? "O'qitiladigan fanlar (rahbar)" : roleValue === StaffInputRole.sinf_rahbari
                       ? "O'qitiladigan fanlar (sinf rahbari)"
                       : "O'qitiladigan fanlar (ixtiyoriy, keyinroq ham belgilash mumkin)"}
                   </FormLabel>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {roleValue === StaffInputRole.sinf_rahbari
-                      ? "Sinf rahbari ham fan o'qituvchisi sifatida dars bera oladi — fanlarini tanlang"
-                      : "Qo'shgandan so'ng har bir fanga sinflar biriktirasiz"}
+                    Qo'shgandan so'ng har bir fanga sinflar biriktirasiz
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -254,17 +276,10 @@ export default function NewStaff() {
                   </div>
                 )}
                 <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-muted-foreground">
-                  💡 O'qituvchi qo'shilgandan so'ng avtomatik ravishda <strong>fanlarni biriktirish sahifasiga</strong> o'tasiz.
+                  💡 Qo'shilgandan so'ng avtomatik ravishda <strong>fanlarni biriktirish sahifasiga</strong> o'tasiz.
                 </div>
               </div>
             )}
-
-            {roleValue === StaffInputRole.director || roleValue === StaffInputRole.zam_direktor || roleValue === StaffInputRole.zavuch ? (
-              <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
-                ℹ️ <strong>Dars o'tish:</strong> Direktor/Zavuch/Zam. direktorlar uchun "Dars o'tish" belgisi
-                xodimlar ro'yxatidan admin tomonidan alohida yoqiladi.
-              </div>
-            ) : null}
 
             <div className="flex justify-end gap-3 pt-4 border-t">
               <Button

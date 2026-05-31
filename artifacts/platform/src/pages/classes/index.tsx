@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Search, Trash2, UserPlus, BookOpen, X } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, UserPlus, BookOpen, X, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -48,6 +48,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const TOKEN_KEY = "talim_auth_token";
@@ -74,6 +75,10 @@ export default function ClassesList() {
   
   const [createOpen, setCreateOpen] = useState(false);
   const [newClassName, setNewClassName] = useState("");
+
+  const [bulkCreateOpen, setBulkCreateOpen] = useState(false);
+  const [bulkNamesText, setBulkNamesText] = useState("");
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignClassId, setAssignClassId] = useState("");
@@ -113,6 +118,39 @@ export default function ClassesList() {
   // Tanlangan o'qituvchining o'z fanlari
   const selectedTeacher = oqituvchilar?.find(t => t.id === newSubjectTeacherId);
   const teacherOwnSubjects: string[] = (selectedTeacher as (typeof selectedTeacher & { subjects?: string[] | null }))?.subjects ?? [];
+
+  const handleBulkCreate = async () => {
+    const names = bulkNamesText
+      .split("\n")
+      .map((n) => n.trim())
+      .filter(Boolean);
+    if (names.length === 0) return;
+    setBulkLoading(true);
+    try {
+      const token = localStorage.getItem("talim_auth_token");
+      const headers: HeadersInit = token
+        ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+        : { "Content-Type": "application/json" };
+      const res = await fetch(`${API_BASE}/classes/bulk`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ names }),
+      });
+      const data = await res.json() as { created: { id: string; name: string }[]; errors: { name: string; error: string }[] };
+      queryClient.invalidateQueries({ queryKey: getListClassesQueryKey() });
+      setBulkCreateOpen(false);
+      setBulkNamesText("");
+      if (data.created.length > 0) {
+        toast({ title: "Muvaffaqiyatli", description: `${data.created.length} ta sinf qo'shildi` });
+      }
+      if (data.errors.length > 0) {
+        toast({ variant: "destructive", title: "Ba'zilar qo'shilmadi", description: data.errors.map(e => e.name).join(", ") });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanishda xatolik" });
+    }
+    setBulkLoading(false);
+  };
 
   const handleCreate = () => {
     if (!newClassName.trim()) return;
@@ -253,35 +291,73 @@ export default function ClassesList() {
         </div>
         
         {isAdmin && (
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Yangi sinf
-            </Button>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Yangi sinf qo'shish</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Sinf nomi</Label>
-                  <Input 
-                    placeholder="Masalan: 10-A" 
-                    value={newClassName}
-                    onChange={(e) => setNewClassName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
-                  />
+          <div className="flex gap-2">
+            <Dialog open={bulkCreateOpen} onOpenChange={setBulkCreateOpen}>
+              <Button variant="outline" onClick={() => setBulkCreateOpen(true)}>
+                <Users className="w-4 h-4 mr-2" />
+                Ommaviy qo'shish
+              </Button>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Ommaviy sinf qo'shish</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Sinf nomlari (har qatorda bitta)</Label>
+                    <Textarea
+                      placeholder={"1-A\n1-B\n2-A\n2-B\n10-A\n11-B"}
+                      rows={8}
+                      value={bulkNamesText}
+                      onChange={(e) => setBulkNamesText(e.target.value)}
+                      className="font-mono text-sm"
+                    />
+                    {bulkNamesText.trim() && (
+                      <p className="text-xs text-muted-foreground">
+                        {bulkNamesText.split("\n").filter(n => n.trim()).length} ta sinf
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setCreateOpen(false)}>Bekor qilish</Button>
-                <Button onClick={handleCreate} disabled={createMutation.isPending || !newClassName.trim()}>
-                  {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Saqlash
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setBulkCreateOpen(false)}>Bekor qilish</Button>
+                  <Button onClick={handleBulkCreate} disabled={bulkLoading || !bulkNamesText.trim()}>
+                    {bulkLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Qo'shish
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Yangi sinf
+              </Button>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Yangi sinf qo'shish</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Sinf nomi</Label>
+                    <Input 
+                      placeholder="Masalan: 10-A" 
+                      value={newClassName}
+                      onChange={(e) => setNewClassName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setCreateOpen(false)}>Bekor qilish</Button>
+                  <Button onClick={handleCreate} disabled={createMutation.isPending || !newClassName.trim()}>
+                    {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Saqlash
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
         )}
       </div>
 

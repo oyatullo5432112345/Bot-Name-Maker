@@ -45,6 +45,41 @@ router.get("/students", async (req, res): Promise<void> => {
   res.json(ListStudentsResponse.parse(data ?? []));
 });
 
+// POST /api/students/bulk
+router.post("/students/bulk", async (req, res): Promise<void> => {
+  const { students } = req.body as { students: { full_name: string; phone_number?: string; class_name: string }[] };
+  if (!Array.isArray(students) || students.length === 0) {
+    res.status(400).json({ error: "students massivi bo'sh" });
+    return;
+  }
+
+  const created: { full_name: string; login: string; password: string; class_name: string }[] = [];
+  const errors: { full_name: string; error: string }[] = [];
+
+  for (const s of students) {
+    const parts = (s.full_name ?? "").trim().toLowerCase().split(" ");
+    const base = parts[0] ?? "user";
+    const num = Math.floor(100 + Math.random() * 900);
+    const login = `${base}${num}`;
+    const password = Math.floor(10000 + Math.random() * 90000).toString();
+    const telegram_id = Date.now() + Math.floor(Math.random() * 10000);
+    const registration_date = new Date().toISOString();
+    const phone_number = s.phone_number || "";
+
+    const { error } = await supabase
+      .from("users")
+      .insert([{ telegram_id, full_name: s.full_name, phone_number, class_name: s.class_name, login, password, registration_date }]);
+
+    if (error) {
+      errors.push({ full_name: s.full_name, error: error.message });
+    } else {
+      created.push({ full_name: s.full_name, login, password, class_name: s.class_name });
+    }
+  }
+
+  res.status(201).json({ created, errors });
+});
+
 // POST /api/students
 router.post("/students", async (req, res): Promise<void> => {
   const parsed = CreateStudentBody.safeParse(req.body);

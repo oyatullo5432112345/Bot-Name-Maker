@@ -61,6 +61,36 @@ router.get("/classes", async (_req, res): Promise<void> => {
   res.json(ListClassesResponse.parse(classesWithDetails));
 });
 
+// POST /api/classes/bulk
+router.post("/classes/bulk", async (req, res): Promise<void> => {
+  const { names } = req.body as { names: string[] };
+  if (!Array.isArray(names) || names.length === 0) {
+    res.status(400).json({ error: "names massivi bo'sh" });
+    return;
+  }
+
+  const created: { id: string; name: string }[] = [];
+  const errors: { name: string; error: string }[] = [];
+
+  for (const name of names) {
+    const trimmed = name.trim();
+    if (!trimmed) continue;
+    const { data, error } = await supabase
+      .from("classes")
+      .insert([{ name: trimmed, created_at: new Date().toISOString() }])
+      .select()
+      .single();
+
+    if (error) {
+      errors.push({ name: trimmed, error: error.message });
+    } else {
+      created.push({ id: data.id, name: data.name });
+    }
+  }
+
+  res.status(201).json({ created, errors });
+});
+
 // POST /api/classes
 router.post("/classes", async (req, res): Promise<void> => {
   const parsed = CreateClassBody.safeParse(req.body);

@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Search, Trash2, Pencil, BookOpen, Filter } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, Pencil, BookOpen, Filter, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -237,12 +237,20 @@ export default function StaffList() {
           <p className="text-muted-foreground mt-1">Maktab xodimlari ro'yxati</p>
         </div>
         {isAdmin && (
-          <Button asChild>
-            <Link href="/staff/new">
-              <Plus className="w-4 h-4 mr-2" />
-              Yangi xodim
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/staff/bulk-new">
+                <Users className="w-4 h-4 mr-2" />
+                Ommaviy qo'shish
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/staff/new">
+                <Plus className="w-4 h-4 mr-2" />
+                Yangi xodim
+              </Link>
+            </Button>
+          </div>
         )}
       </div>
 

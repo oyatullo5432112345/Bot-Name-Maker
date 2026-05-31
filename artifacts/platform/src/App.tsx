@@ -14,9 +14,11 @@ import Register from "@/pages/register";
 import Dashboard from "@/pages/dashboard";
 import StudentsList from "@/pages/students/index";
 import NewStudent from "@/pages/students/new";
+import BulkNewStudents from "@/pages/students/bulk-new";
 import ClassesList from "@/pages/classes/index";
 import StaffList from "@/pages/staff/index";
 import NewStaff from "@/pages/staff/new";
+import BulkNewStaff from "@/pages/staff/bulk-new";
 import StaffSubjectsPage from "@/pages/staff/subjects";
 
 import GamesPage from "@/pages/games/index";
@@ -89,6 +91,9 @@ function Router() {
       <Route path="/students/new">
         <ProtectedRoute component={NewStudent} roles={["admin"]} />
       </Route>
+      <Route path="/students/bulk-new">
+        <ProtectedRoute component={BulkNewStudents} roles={["admin"]} />
+      </Route>
 
       <Route path="/classes">
         <ProtectedRoute 
@@ -102,6 +107,9 @@ function Router() {
       </Route>
       <Route path="/staff/new">
         <ProtectedRoute component={NewStaff} roles={["admin"]} />
+      </Route>
+      <Route path="/staff/bulk-new">
+        <ProtectedRoute component={BulkNewStaff} roles={["admin"]} />
       </Route>
       <Route path="/staff/:id/subjects">
         <ProtectedRoute component={StaffSubjectsPage} roles={["admin"]} />
