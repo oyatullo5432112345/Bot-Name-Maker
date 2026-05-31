@@ -13,6 +13,7 @@ import {
   normalizePhone,
 } from "./settings.js";
 import { createMagicToken } from "../routes/auth.js";
+import { generateCertificatePNG, todayUzDate } from "../lib/certificate-generator.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.resolve(__dirname, "logo.png");
@@ -293,6 +294,75 @@ export function createBot(): Bot {
       .url("🌐 To'liq jadval", `${WEBSITE_URL}/dars-jadvali`);
 
     await ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb });
+  });
+
+  // ─── /sertifikat ────────────────────────────────────────────────────────────
+  bot.command("sertifikat", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId) return;
+
+    const waitMsg = await ctx.reply("⏳ Sertifikat tayyorlanmoqda...");
+
+    // Avval staff dan qidirish
+    const { data: staffData } = await supabase
+      .from("staff")
+      .select("full_name, role, subjects")
+      .eq("telegram_id", userId)
+      .maybeSingle();
+
+    let fullName: string | null = null;
+    let role: string | null = null;
+    let className: string | undefined;
+    let subjects: string[] | undefined;
+
+    if (staffData) {
+      const s = staffData as { full_name: string; role: string; subjects?: string[] | null };
+      fullName = s.full_name;
+      role = s.role;
+      subjects = s.subjects ?? [];
+    } else {
+      const { data: userData } = await supabase
+        .from("users")
+        .select("full_name, role, class_name")
+        .eq("telegram_id", userId)
+        .maybeSingle();
+      if (userData) {
+        const u = userData as { full_name: string; role: string; class_name?: string };
+        fullName = u.full_name;
+        role = u.role;
+        className = u.class_name;
+      }
+    }
+
+    if (!fullName || !role) {
+      await ctx.api.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+      await ctx.reply(
+        "❌ Akkauntingiz topilmadi.\n\n" +
+        "Telefon raqamingizni /start orqali bog'lang yoki platformaga ro'yxatdan o'ting."
+      );
+      return;
+    }
+
+    try {
+      const date = todayUzDate();
+      const pngBuffer = await generateCertificatePNG({ fullName, role, className, subjects, date });
+      await ctx.api.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+      await ctx.replyWithPhoto(
+        new InputFile(pngBuffer, `sertifikat.png`),
+        {
+          caption:
+            `🎓 *${fullName}* — Sertifikat\n\n` +
+            `🏫 Toshloq tumani 3-maktab\n` +
+            `📅 ${date}`,
+          parse_mode: "Markdown",
+          reply_markup: new InlineKeyboard().url("🌐 Platforma", `${WEBSITE_URL}/certificate`),
+        }
+      );
+    } catch (err) {
+      await ctx.api.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+      await ctx.reply("❌ Sertifikat yaratishda xatolik. Qayta urinib ko'ring.");
+      logger.error({ err }, "Sertifikat yaratishda xatolik");
+    }
   });
 
   // ─── Callback: schedule_tomorrow:staffId ────────────────────────────────────

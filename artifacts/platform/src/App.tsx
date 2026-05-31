@@ -33,6 +33,7 @@ import DarsJadvaliPage from "@/pages/dars-jadvali/index";
 import LibraryPage from "@/pages/library/index";
 import NewBookPage from "@/pages/library/new";
 import LibraryLoansPage from "@/pages/library/loans";
+import CertificatePage from "@/pages/certificate";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -130,6 +131,10 @@ function Router() {
       </Route>
       <Route path="/library">
         <ProtectedRoute component={LibraryPage} />
+      </Route>
+
+      <Route path="/certificate">
+        <ProtectedRoute component={CertificatePage} />
       </Route>
 
       <Route path="/games/sozoyini">

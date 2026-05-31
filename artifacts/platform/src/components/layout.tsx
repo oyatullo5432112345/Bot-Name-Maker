@@ -17,6 +17,7 @@ import {
   MessageCircleQuestion,
   Loader2,
   Library,
+  Award,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -204,6 +205,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       <Link href="/library">
                         <Library className="w-4 h-4" />
                         <span>Kutubxona</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/certificate"}>
+                      <Link href="/certificate">
+                        <Award className="w-4 h-4" />
+                        <span>Sertifikat</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
