@@ -449,6 +449,30 @@ export function createBot(): Bot {
       return;
     }
 
+    // ─── Admin uchun avto-login ────────────────────────────────────────────────
+    if (isAdmin(userId)) {
+      const adminPayload = {
+        id: String(userId),
+        role: "admin",
+        full_name: "Admin",
+        login: "admin",
+        telegram_id: userId,
+      };
+      const magicToken = createMagicToken(adminPayload);
+      const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
+      const adminKb = new InlineKeyboard()
+        .url("🚀 Platformaga kirish (1 bosish)", loginUrl)
+        .row()
+        .url("🌐 Oddiy kirish", `${WEBSITE_URL}/login`);
+      await ctx.reply(
+        "👨‍💼 *Administrator paneli*\n\n" +
+        "Quyidagi tugma orqali avtomatik kiring.\n" +
+        "_(Havola 15 daqiqa amal qiladi)_",
+        { parse_mode: "Markdown", reply_markup: adminKb }
+      );
+      return;
+    }
+
     // DB da bog'langanligini tekshirish (String konversiyasi - type xatosidan saqlanish uchun)
     const { data: staffLinked } = await supabase
       .from("staff").select("id").eq("telegram_id", String(userId)).maybeSingle();
@@ -456,7 +480,7 @@ export function createBot(): Bot {
       .from("users").select("id").eq("telegram_id", String(userId)).maybeSingle();
 
     if (staffLinked || userLinked) {
-      await sendWelcome(ctx, isAdmin(userId));
+      await sendWelcome(ctx, false);
       return;
     }
 
