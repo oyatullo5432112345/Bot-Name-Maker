@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Search, Trash2, Pencil, BookOpen, Filter, Users } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, Pencil, BookOpen, Filter, Users, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -75,6 +75,146 @@ type StaffMember = {
   subjects?: string[] | null;
   can_teach?: boolean;
 };
+
+const COMMON_SUBJECTS = [
+  "Matematika", "Ona tili", "Adabiyot", "Ingliz tili", "Rus tili",
+  "Fizika", "Kimyo", "Biologiya", "Geografiya", "Tarix",
+  "Informatika", "Chizmachilik", "Jismoniy tarbiya", "Musiqa",
+  "Texnologiya", "Astronomiya", "Mehnat", "Tarbiya soati",
+];
+
+const API_BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
+const getTokenFn = () => localStorage.getItem("talim_auth_token");
+const buildAuthHeaders = (): HeadersInit => {
+  const t = getTokenFn();
+  return t ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+};
+
+function ManageSubjectsDialog({
+  member,
+  open,
+  onClose,
+  onSaved,
+}: {
+  member: StaffMember;
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [subjects, setSubjects] = useState<string[]>(member.subjects ?? []);
+  const [customInput, setCustomInput] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const toggle = (s: string) => {
+    setSubjects((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
+  };
+
+  const addCustom = () => {
+    const val = customInput.trim();
+    if (val && !subjects.includes(val)) setSubjects((prev) => [...prev, val]);
+    setCustomInput("");
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/staff/${member.id}`, {
+        method: "PATCH",
+        headers: buildAuthHeaders(),
+        body: JSON.stringify({ subjects }),
+      });
+      if (res.ok) {
+        toast({ title: "Saqlandi", description: `${member.full_name} fanlar yangilandi` });
+        onSaved();
+        onClose();
+      } else {
+        const d = await res.json() as { error?: string };
+        toast({ variant: "destructive", title: "Xatolik", description: d.error ?? "Saqlashda xatolik" });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanib bo'lmadi" });
+    }
+    setSaving(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{member.full_name} — Fanlarni boshqarish</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label>Tayyor fanlar ro'yxatidan tanlang</Label>
+            <div className="flex flex-wrap gap-2">
+              {COMMON_SUBJECTS.map((s) => {
+                const sel = subjects.includes(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => toggle(s)}
+                    className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                      sel
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background hover:bg-secondary border-border text-foreground"
+                    }`}
+                  >
+                    {sel && <span className="mr-1">✓</span>}
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Qo'lda fan nomi yozing</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Fan nomini kiriting..."
+                value={customInput}
+                onChange={(e) => setCustomInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }}
+                className="text-sm"
+              />
+              <Button type="button" variant="outline" size="sm" onClick={addCustom} disabled={!customInput.trim()}>
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                Qo'shish
+              </Button>
+            </div>
+          </div>
+
+          {subjects.length > 0 ? (
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">Tanlangan fanlar ({subjects.length} ta)</Label>
+              <div className="flex flex-wrap gap-1.5 p-3 bg-secondary/30 rounded-md min-h-[40px]">
+                {subjects.map((s) => (
+                  <Badge key={s} variant="secondary" className="gap-1 text-sm py-1 px-2">
+                    {s}
+                    <button type="button" onClick={() => toggle(s)} className="ml-1">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground italic">Hali fan tanlanmagan</p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Bekor qilish</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+            Saqlash
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function EditStaffDialog({
   member,
@@ -162,6 +302,7 @@ export default function StaffList() {
   const [search, setSearch] = useState("");
   const [filterSubject, setFilterSubject] = useState<string>("all");
   const [editMember, setEditMember] = useState<StaffMember | null>(null);
+  const [subjectsMember, setSubjectsMember] = useState<StaffMember | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [, setLocation] = useLocation();
 
@@ -325,7 +466,7 @@ export default function StaffList() {
                     </span>
                   </TableCell>
                   <TableCell>
-                    {(member.role === "teacher" || member.role === "sinf_rahbari") && (member.subjects ?? []).length > 0 ? (
+                    {(member.subjects ?? []).length > 0 ? (
                       <div className="flex flex-wrap gap-1 max-w-[200px]">
                         {(member.subjects ?? []).map(s => (
                           <span key={s} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
@@ -367,12 +508,12 @@ export default function StaffList() {
                               }
                             </Button>
                           )}
-                          {(member.role === "teacher" || member.role === "sinf_rahbari") && (
+                          {(member.role === "teacher" || member.role === "sinf_rahbari" || member.can_teach) && (
                             <Button
                               variant="ghost"
                               size="icon"
                               className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-8 w-8"
-                              onClick={() => setLocation(`/staff/${member.id}/subjects`)}
+                              onClick={() => setSubjectsMember(member)}
                               title="Fanlarni boshqarish"
                             >
                               <BookOpen className="w-4 h-4" />
@@ -426,6 +567,15 @@ export default function StaffList() {
           member={editMember}
           open={!!editMember}
           onClose={() => setEditMember(null)}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: getListStaffQueryKey() })}
+        />
+      )}
+
+      {subjectsMember && (
+        <ManageSubjectsDialog
+          member={subjectsMember}
+          open={!!subjectsMember}
+          onClose={() => setSubjectsMember(null)}
           onSaved={() => queryClient.invalidateQueries({ queryKey: getListStaffQueryKey() })}
         />
       )}

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { ChevronLeft, Loader2, Copy, CheckCheck, Users, X } from "lucide-react";
+import { ChevronLeft, Loader2, Copy, CheckCheck, Users, X, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -14,13 +15,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -38,6 +32,17 @@ const COMMON_SUBJECTS = [
   "Texnologiya", "Astronomiya", "Mehnat", "Tarbiya soati",
 ];
 
+const TEACHER_ROLES = [
+  { value: "teacher", label: "Fan o'qituvchisi" },
+  { value: "sinf_rahbari", label: "Sinf rahbari" },
+];
+const MANAGER_ROLES = [
+  { value: "director", label: "Direktor" },
+  { value: "zam_direktor", label: "Direktor o'rinbosari" },
+  { value: "zavuch", label: "Zavuch" },
+  { value: "kutubxonachi", label: "Kutubxonachi" },
+];
+
 const roleLabels: Record<string, string> = {
   director: "Direktor",
   zam_direktor: "Direktor o'rinbosari",
@@ -47,54 +52,121 @@ const roleLabels: Record<string, string> = {
   kutubxonachi: "Kutubxonachi",
 };
 
-const teachingRoles = ["director", "zam_direktor", "zavuch", "sinf_rahbari", "teacher"];
-
 interface CreatedStaff {
   full_name: string;
   login: string;
   password: string;
   role: string;
 }
-
 interface BulkResult {
   created: CreatedStaff[];
   errors: { full_name: string; error: string }[];
 }
 
+function SubjectSelector({
+  subjects,
+  onChange,
+}: {
+  subjects: string[];
+  onChange: (subjects: string[]) => void;
+}) {
+  const [customInput, setCustomInput] = useState("");
+
+  const toggle = (s: string) => {
+    onChange(subjects.includes(s) ? subjects.filter((x) => x !== s) : [...subjects, s]);
+  };
+
+  const addCustom = () => {
+    const val = customInput.trim();
+    if (val && !subjects.includes(val)) {
+      onChange([...subjects, val]);
+    }
+    setCustomInput("");
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {COMMON_SUBJECTS.map((s) => {
+          const sel = subjects.includes(s);
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => toggle(s)}
+              className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                sel
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background hover:bg-secondary border-border text-foreground"
+              }`}
+            >
+              {sel && <span className="mr-1">✓</span>}
+              {s}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-2 items-center">
+        <Input
+          placeholder="Qo'lda fan nomi yozing..."
+          value={customInput}
+          onChange={(e) => setCustomInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }}
+          className="max-w-xs text-sm"
+        />
+        <Button type="button" size="sm" variant="outline" onClick={addCustom} disabled={!customInput.trim()}>
+          <Plus className="w-3.5 h-3.5 mr-1" />
+          Qo'shish
+        </Button>
+      </div>
+
+      {subjects.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {subjects.map((s) => (
+            <Badge key={s} variant="secondary" className="gap-1 text-sm py-1 px-2">
+              {s}
+              <button type="button" onClick={() => toggle(s)} className="ml-1">
+                <X className="w-3 h-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type TabType = "teacher" | "manager";
+
 export default function BulkNewStaff() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const [namesText, setNamesText] = useState("");
-  const [role, setRole] = useState("");
+  const [tab, setTab] = useState<TabType>("teacher");
+  const [role, setRole] = useState("teacher");
   const [canTeach, setCanTeach] = useState(false);
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+  const [subjects, setSubjects] = useState<string[]>([]);
+  const [namesText, setNamesText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BulkResult | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const isTeacherRole = role === "teacher" || role === "sinf_rahbari";
-  const isManagerRole = role === "director" || role === "zam_direktor" || role === "zavuch";
-  const showSubjects = isTeacherRole || (isManagerRole && canTeach);
+  const isTeacherTab = tab === "teacher";
+  const showSubjects = isTeacherTab || canTeach;
 
-  const toggleSubject = (subject: string) => {
-    setSelectedSubjects((prev) =>
-      prev.includes(subject) ? prev.filter((s) => s !== subject) : [...prev, subject]
-    );
+  const switchTab = (t: TabType) => {
+    setTab(t);
+    setRole(t === "teacher" ? "teacher" : "director");
+    setCanTeach(false);
+    setSubjects([]);
+    setNamesText("");
   };
 
   const handleSubmit = async () => {
-    const names = namesText
-      .split("\n")
-      .map((n) => n.trim())
-      .filter(Boolean);
-
+    const names = namesText.split("\n").map((n) => n.trim()).filter(Boolean);
     if (names.length === 0) {
       toast({ variant: "destructive", title: "Xatolik", description: "Kamida bitta xodim ismi kiriting" });
-      return;
-    }
-    if (!role) {
-      toast({ variant: "destructive", title: "Xatolik", description: "Lavozimni tanlang" });
       return;
     }
 
@@ -107,8 +179,8 @@ export default function BulkNewStaff() {
           staff: names.map((full_name) => ({
             full_name,
             role,
-            subjects: showSubjects ? selectedSubjects : [],
-            can_teach: isTeacherRole ? true : (isManagerRole ? canTeach : false),
+            subjects: showSubjects ? subjects : [],
+            can_teach: isTeacherTab ? true : canTeach,
           })),
         }),
       });
@@ -133,6 +205,77 @@ export default function BulkNewStaff() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  if (result) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex gap-2">
+            <Badge variant="default">{result.created.length} ta qo'shildi</Badge>
+            {result.errors.length > 0 && <Badge variant="destructive">{result.errors.length} ta xatolik</Badge>}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleCopyAll}>
+              {copied ? <CheckCheck className="w-4 h-4 mr-1 text-green-600" /> : <Copy className="w-4 h-4 mr-1" />}
+              {copied ? "Nusxalandi!" : "Hammasini nusxalash"}
+            </Button>
+            <Button size="sm" onClick={() => setLocation("/staff")}>Xodimlar ro'yxatiga</Button>
+          </div>
+        </div>
+
+        {result.created.length > 0 && (
+          <div className="border rounded-md overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>#</TableHead>
+                  <TableHead>F.I.O</TableHead>
+                  <TableHead>Lavozim</TableHead>
+                  <TableHead>Login</TableHead>
+                  <TableHead>Mahfiy kod</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {result.created.map((s, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                    <TableCell className="font-medium">{s.full_name}</TableCell>
+                    <TableCell>{roleLabels[s.role] ?? s.role}</TableCell>
+                    <TableCell className="font-mono">{s.login}</TableCell>
+                    <TableCell>
+                      <span className="font-mono font-bold text-primary text-lg tracking-widest">{s.password}</span>
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" onClick={() => {
+                        void navigator.clipboard.writeText(`${s.full_name} | Login: ${s.login} | Mahfiy kod: ${s.password}`);
+                        toast({ title: "Nusxalandi", description: s.full_name });
+                      }}>
+                        <Copy className="w-3.5 h-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {result.errors.length > 0 && (
+          <div className="border border-destructive/40 rounded-md overflow-hidden">
+            <div className="bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive">Qo'shilmagan xodimlar</div>
+            {result.errors.map((e, i) => (
+              <div key={i} className="px-4 py-2 text-sm border-t border-destructive/20">
+                <span className="font-medium">{e.full_name}</span>
+                <span className="text-muted-foreground ml-2">— {e.error}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <Button variant="outline" onClick={() => { setResult(null); setNamesText(""); }}>← Yana qo'shish</Button>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
@@ -141,207 +284,145 @@ export default function BulkNewStaff() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Ommaviy xodim qo'shish</h1>
-          <p className="text-muted-foreground mt-1">Bir lavozim uchun bir nechta xodimni birdaniga qo'shish</p>
+          <p className="text-muted-foreground mt-1">Bir nechta xodimni birdaniga qo'shish</p>
         </div>
       </div>
 
-      {!result ? (
-        <div className="border rounded-md bg-card p-6 space-y-5">
+      <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+        <button
+          type="button"
+          onClick={() => switchTab("teacher")}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            tab === "teacher" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          O'qituvchilar
+        </button>
+        <button
+          type="button"
+          onClick={() => switchTab("manager")}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            tab === "manager" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Rahbarlar
+        </button>
+      </div>
+
+      <div className="border rounded-md bg-card p-6 space-y-5">
+
+        {isTeacherTab ? (
           <div className="space-y-2">
             <Label>Lavozimi</Label>
-            <Select
-              value={role}
-              onValueChange={(v) => {
-                setRole(v);
-                setCanTeach(false);
-                setSelectedSubjects([]);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Lavozimni tanlang..." />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(roleLabels).map(([val, label]) => (
-                  <SelectItem key={val} value={val}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {isManagerRole && (
-            <div className="flex items-center gap-3 rounded-md border p-3 bg-amber-50 border-amber-200">
-              <input
-                type="checkbox"
-                id="can_teach"
-                checked={canTeach}
-                onChange={(e) => {
-                  setCanTeach(e.target.checked);
-                  if (!e.target.checked) setSelectedSubjects([]);
-                }}
-                className="w-4 h-4 rounded"
-              />
-              <Label htmlFor="can_teach" className="text-amber-800 cursor-pointer">
-                Bu rahbarlar dars ham o'tadi (fanlarni belgilash imkoniyati ochiladi)
-              </Label>
-            </div>
-          )}
-
-          {showSubjects && (
-            <div className="space-y-3">
-              <Label>O'qitiladigan fanlar (ixtiyoriy)</Label>
-              <div className="flex flex-wrap gap-2">
-                {COMMON_SUBJECTS.map((subject) => {
-                  const selected = selectedSubjects.includes(subject);
-                  return (
-                    <button
-                      key={subject}
-                      type="button"
-                      onClick={() => toggleSubject(subject)}
-                      className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                        selected
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-background hover:bg-secondary border-border text-foreground"
-                      }`}
-                    >
-                      {selected && <span className="mr-1">✓</span>}
-                      {subject}
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedSubjects.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedSubjects.map((s) => (
-                    <Badge key={s} variant="secondary" className="gap-1">
-                      {s}
-                      <button type="button" onClick={() => toggleSubject(s)}>
-                        <X className="w-2.5 h-2.5" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="names">Xodimlar ismlari</Label>
-            <p className="text-xs text-muted-foreground">Har bir qatorda bitta F.I.O kiriting</p>
-            <Textarea
-              id="names"
-              placeholder={"Aliyeva Malika Aliyevna\nToshmatov Jasur Toshmatovich"}
-              rows={8}
-              value={namesText}
-              onChange={(e) => setNamesText(e.target.value)}
-              className="font-mono text-sm"
-            />
-            {namesText.trim() && (
-              <p className="text-xs text-muted-foreground">
-                <Users className="inline w-3 h-3 mr-1" />
-                {namesText.split("\n").filter((n) => n.trim()).length} ta xodim
-              </p>
-            )}
-          </div>
-
-          <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
-            💡 Har bir xodimga avtomatik ravishda <strong>5 xonali mahfiy kod</strong> va <strong>login</strong> beriladi.
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2 border-t">
-            <Button variant="outline" onClick={() => setLocation("/staff")} disabled={loading}>
-              Bekor qilish
-            </Button>
-            <Button onClick={handleSubmit} disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Qo'shish
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex gap-2">
-              <Badge variant="default">{result.created.length} ta qo'shildi</Badge>
-              {result.errors.length > 0 && (
-                <Badge variant="destructive">{result.errors.length} ta xatolik</Badge>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleCopyAll}>
-                {copied ? <CheckCheck className="w-4 h-4 mr-1 text-green-600" /> : <Copy className="w-4 h-4 mr-1" />}
-                {copied ? "Nusxalandi!" : "Hammasini nusxalash"}
-              </Button>
-              <Button size="sm" onClick={() => setLocation("/staff")}>
-                Xodimlar ro'yxatiga
-              </Button>
-            </div>
-          </div>
-
-          {result.created.length > 0 && (
-            <div className="border rounded-md overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>#</TableHead>
-                    <TableHead>F.I.O</TableHead>
-                    <TableHead>Lavozim</TableHead>
-                    <TableHead>Login</TableHead>
-                    <TableHead>Mahfiy kod (5 xonali)</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {result.created.map((s, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="text-muted-foreground">{i + 1}</TableCell>
-                      <TableCell className="font-medium">{s.full_name}</TableCell>
-                      <TableCell>{roleLabels[s.role] ?? s.role}</TableCell>
-                      <TableCell className="font-mono">{s.login}</TableCell>
-                      <TableCell>
-                        <span className="font-mono font-bold text-primary text-lg tracking-widest">
-                          {s.password}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            void navigator.clipboard.writeText(
-                              `${s.full_name} | Login: ${s.login} | Mahfiy kod: ${s.password}`
-                            );
-                            toast({ title: "Nusxalandi", description: s.full_name });
-                          }}
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {result.errors.length > 0 && (
-            <div className="border border-destructive/40 rounded-md overflow-hidden">
-              <div className="bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive">
-                Qo'shilmagan xodimlar
-              </div>
-              {result.errors.map((e, i) => (
-                <div key={i} className="px-4 py-2 text-sm border-t border-destructive/20">
-                  <span className="font-medium">{e.full_name}</span>
-                  <span className="text-muted-foreground ml-2">— {e.error}</span>
-                </div>
+            <div className="flex flex-wrap gap-2">
+              {TEACHER_ROLES.map((r) => (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => setRole(r.value)}
+                  className={`px-4 py-2 rounded-md text-sm border font-medium transition-colors ${
+                    role === r.value
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background border-border hover:bg-secondary"
+                  }`}
+                >
+                  {r.label}
+                </button>
               ))}
             </div>
-          )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Lavozimi</Label>
+              <div className="flex flex-wrap gap-2">
+                {MANAGER_ROLES.map((r) => (
+                  <button
+                    key={r.value}
+                    type="button"
+                    onClick={() => setRole(r.value)}
+                    className={`px-4 py-2 rounded-md text-sm border font-medium transition-colors ${
+                      role === r.value
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background border-border hover:bg-secondary"
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {role !== "kutubxonachi" && (
+              <div className="flex items-center gap-3 rounded-md border p-3 bg-amber-50 border-amber-200">
+                <input
+                  type="checkbox"
+                  id="can_teach"
+                  checked={canTeach}
+                  onChange={(e) => {
+                    setCanTeach(e.target.checked);
+                    if (!e.target.checked) setSubjects([]);
+                  }}
+                  className="w-4 h-4 rounded"
+                />
+                <label htmlFor="can_teach" className="text-sm text-amber-800 cursor-pointer">
+                  Bu rahbarlar dars ham o'tadi — fanlarni belgilash imkoniyati ochiladi
+                </label>
+              </div>
+            )}
+          </div>
+        )}
 
-          <Button variant="outline" onClick={() => { setResult(null); setNamesText(""); }}>
-            ← Yana qo'shish
+        {showSubjects && (
+          <div className="space-y-2">
+            <Label>
+              O'qitiladigan fanlar
+              <span className="text-muted-foreground font-normal ml-1">(ixtiyoriy)</span>
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Ro'yxatdan tanlang yoki qo'lda yozing
+            </p>
+            <SubjectSelector subjects={subjects} onChange={setSubjects} />
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <Label htmlFor="names">
+            {isTeacherTab ? "O'qituvchilar ismlari" : "Rahbarlar ismlari"}
+          </Label>
+          <p className="text-xs text-muted-foreground">Har bir qatorda bitta F.I.O</p>
+          <Textarea
+            id="names"
+            placeholder={isTeacherTab
+              ? "Aliyeva Malika Aliyevna\nToshmatov Jasur Toshmatovich"
+              : "Karimov Bobur Karimovich\nXasanov Sherzod Xasanovich"
+            }
+            rows={7}
+            value={namesText}
+            onChange={(e) => setNamesText(e.target.value)}
+            className="font-mono text-sm"
+          />
+          {namesText.trim() && (
+            <p className="text-xs text-muted-foreground">
+              <Users className="inline w-3 h-3 mr-1" />
+              {namesText.split("\n").filter((n) => n.trim()).length} ta xodim
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+          💡 Har bir xodimga avtomatik ravishda <strong>5 xonali mahfiy kod</strong> va <strong>login</strong> beriladi.
+        </div>
+
+        <div className="flex justify-end gap-3 pt-2 border-t">
+          <Button variant="outline" onClick={() => setLocation("/staff")} disabled={loading}>
+            Bekor qilish
+          </Button>
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Qo'shish
           </Button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
