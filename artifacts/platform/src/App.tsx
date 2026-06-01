@@ -37,6 +37,7 @@ import NewBookPage from "@/pages/library/new";
 import LibraryLoansPage from "@/pages/library/loans";
 import CertificatePage from "@/pages/certificate";
 import AdminVideosPage from "@/pages/admin/videos";
+import AdminCodesPage from "@/pages/admin/codes";
 import QollanmalarPage from "@/pages/qollanmalar";
 
 const queryClient = new QueryClient({
@@ -149,6 +150,9 @@ function Router() {
 
       <Route path="/admin/videos">
         <ProtectedRoute component={AdminVideosPage} roles={["admin", "director"]} />
+      </Route>
+      <Route path="/admin/codes">
+        <ProtectedRoute component={AdminCodesPage} roles={["admin", "director"]} />
       </Route>
 
       <Route path="/qollanmalar">

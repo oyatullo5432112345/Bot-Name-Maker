@@ -201,11 +201,12 @@ function generateStudentPassword(className: string): string {
 
 // POST /api/auth/register
 router.post("/auth/register", async (req, res): Promise<void> => {
-  const { last_name, first_name, phone_number, class_name } = req.body as {
+  const { last_name, first_name, phone_number, class_name, code_id } = req.body as {
     last_name?: string;
     first_name?: string;
     phone_number?: string;
     class_name?: string;
+    code_id?: string;
   };
 
   if (!first_name || first_name.trim().length < 2) {
@@ -279,6 +280,13 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     return;
   }
 
+  // Kodni ishlatilgan deb belgilash
+  if (code_id) {
+    await supabase.from("registration_codes")
+      .update({ used: true, used_at: new Date().toISOString() })
+      .eq("id", code_id);
+  }
+
   const payload = {
     id: String(telegram_id),
     role: "student",
@@ -294,7 +302,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
 // POST /api/auth/register-staff
 router.post("/auth/register-staff", async (req, res): Promise<void> => {
-  const { last_name, first_name, full_name: rawFullName, role, class_id, phone_number, subjects, login: customLogin, password: customPassword } = req.body as {
+  const { last_name, first_name, full_name: rawFullName, role, class_id, phone_number, subjects, login: customLogin, password: customPassword, code_id } = req.body as {
     last_name?: string;
     first_name?: string;
     full_name?: string;
@@ -304,6 +312,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     subjects?: string[];
     login?: string;
     password?: string;
+    code_id?: string;
   };
 
   // Ism: ikkita qatordan yoki to'liq ismdan olish
@@ -420,6 +429,13 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
   if ((role === "teacher" || role === "sinf_rahbari") && Array.isArray(subjects) && subjects.length > 0) {
     const staffId = (data as { id: string }).id;
     await supabase.from("staff").update({ subjects }).eq("id", staffId);
+  }
+
+  // Kodni ishlatilgan deb belgilash
+  if (code_id) {
+    await supabase.from("registration_codes")
+      .update({ used: true, used_at: new Date().toISOString() })
+      .eq("id", code_id);
   }
 
   const staffData = data as {

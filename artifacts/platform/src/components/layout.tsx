@@ -19,6 +19,7 @@ import {
   Library,
   Award,
   Video,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -227,6 +228,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <SidebarGroupContent>
                   <SidebarMenu>
                     <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/admin/codes"}>
+                        <Link href="/admin/codes">
+                          <KeyRound className="w-4 h-4" />
+                          <span>Mahfiy kodlar</span>
+                        </Link>
+                      </SidebarMenuButton>
                       <SidebarMenuButton asChild isActive={location === "/admin/videos"}>
                         <Link href="/admin/videos">
                           <Video className="w-4 h-4" />

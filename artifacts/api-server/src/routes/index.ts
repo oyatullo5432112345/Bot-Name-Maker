@@ -14,6 +14,7 @@ import supportRouter from "./support.js";
 import libraryRouter from "./library.js";
 import certificateRouter from "./certificate.js";
 import settingsRouter from "./settings.js";
+import codesRouter from "./codes.js";
 
 const router: IRouter = Router();
 
@@ -23,6 +24,7 @@ router.use(supportRouter);
 router.use(libraryRouter);
 router.use(certificateRouter);
 router.use(settingsRouter);
+router.use(codesRouter);
 router.use(studentsRouter);
 router.use(classesRouter);
 router.use(staffRouter);

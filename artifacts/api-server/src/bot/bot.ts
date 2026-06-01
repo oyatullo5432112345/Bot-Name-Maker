@@ -572,16 +572,34 @@ export function createBot(): Bot {
       return;
     }
 
-    // Bog'lanmagan → onboarding
+    // Bog'lanmagan → platforma linki + admin bildirishnomasi
+    const regKb = new InlineKeyboard()
+      .url("📝 Ro'yxatdan o'tish", `${WEBSITE_URL}/register`);
     await ctx.reply(
-      "🎓 *Toshloq tumani 3-maktab — TALIM PLATFORM*\n\n" +
-      "Platformaga kirish uchun avval o'z toifangizni tanlang 👇\n\n" +
-      "👨‍🎓 *O'quvchi* — maktab o'quvchisi\n" +
-      "👨‍🏫 *O'qituvchi* — fan o'qituvchisi\n" +
-      "👩‍🏫 *Sinf rahbari* — sinf rahbari + o'qituvchi\n" +
-      "👔 *Rahbar* — direktor, zavuch, zam.direktor",
-      { parse_mode: "Markdown", reply_markup: buildRoleSelectionKb() }
+      "📱 *TALIM Platform*\n\n" +
+      "Platformaga kirish uchun *mahfiy kod* kerak bo'ladi\\.\n" +
+      "Kodni admindan oling va quyidagi tugma orqali ro'yxatdan o'ting 👇",
+      { parse_mode: "MarkdownV2", reply_markup: regKb }
     );
+
+    // Admin bildirishnomasi
+    const adminTgId = Number(process.env["ADMIN_ID"] ?? "0");
+    if (adminTgId && adminTgId !== userId) {
+      const fName = ctx.from?.first_name ?? "";
+      const lName = ctx.from?.last_name ?? "";
+      const uname = ctx.from?.username ? ` (@${ctx.from.username})` : "";
+      try {
+        await bot.api.sendMessage(
+          adminTgId,
+          `🆕 Yangi foydalanuvchi botni ishga tushirdi!\n\n` +
+          `👤 ${fName} ${lName}${uname}\n` +
+          `🆔 Telegram ID: ${userId}\n` +
+          `📡 Kanal a'zosi: ✅\n` +
+          `💡 Hali platformaga ro'yxatdan o'tmagan.\n\n` +
+          `🔗 Platform: ${WEBSITE_URL}/register`
+        );
+      } catch { /* bildirishnoma xato bo'lsa davom etamiz */ }
+    }
   });
 
   // ─── /jadval ────────────────────────────────────────────────────────────────
