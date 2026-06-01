@@ -360,7 +360,7 @@ async function sendAccountInfo(
   tgId: number
 ): Promise<void> {
   // Akkauntni bog'lash
-  await supabase.from(table).update({ telegram_id: String(tgId) }).eq("id", dbId);
+  await supabase.from(table).update({ telegram_id: tgId }).eq("id", dbId);
 
   // Ma'lumotlarni olish
   if (table === "users") {
@@ -524,9 +524,9 @@ export function createBot(): Bot {
 
     // DB da bog'langanligini tekshirish (String konversiyasi - type xatosidan saqlanish uchun)
     const { data: staffLinked } = await supabase
-      .from("staff").select("id").eq("telegram_id", String(userId)).maybeSingle();
+      .from("staff").select("id").eq("telegram_id", userId).maybeSingle();
     const { data: userLinked } = await supabase
-      .from("users").select("id").eq("telegram_id", String(userId)).maybeSingle();
+      .from("users").select("id").eq("telegram_id", userId).maybeSingle();
 
     if (staffLinked || userLinked) {
       // Allaqachon bog'langan — bevosita kirish
@@ -1005,9 +1005,9 @@ export function createBot(): Bot {
 
     // DB da bog'langanligini tekshirish
     const { data: slk } = await supabase
-      .from("staff").select("id").eq("telegram_id", String(userId)).maybeSingle();
+      .from("staff").select("id").eq("telegram_id", userId).maybeSingle();
     const { data: ulk } = await supabase
-      .from("users").select("id").eq("telegram_id", String(userId)).maybeSingle();
+      .from("users").select("id").eq("telegram_id", userId).maybeSingle();
 
     if (slk || ulk) {
       await ctx.reply(loadSettings().welcomeMessage, {
@@ -1354,7 +1354,7 @@ export function createBot(): Bot {
         const realPass = (spass as { password?: string } | null)?.password ?? "";
         if (realPass && password === realPass) {
           found = true;
-          await supabase.from("staff").update({ telegram_id: String(userId) }).eq("id", s.id);
+          await supabase.from("staff").update({ telegram_id: userId }).eq("id", s.id);
           const payload = { id: s.id, role: s.role, full_name: s.full_name, login: s.login, telegram_id: userId, subjects: s.subjects ?? [] };
           const magicToken = createMagicToken(payload);
           const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
@@ -1371,7 +1371,7 @@ export function createBot(): Bot {
         const u = userData as { id: string; full_name: string; login: string; password: string; class_name?: string };
         if (password === u.password) {
           found = true;
-          await supabase.from("users").update({ telegram_id: String(userId) }).eq("id", u.id);
+          await supabase.from("users").update({ telegram_id: userId }).eq("id", u.id);
           const { data: cls } = await supabase.from("classes").select("id").eq("name", u.class_name ?? "").maybeSingle();
           const payload = { id: u.id, role: "student", full_name: u.full_name, login: u.login, class_name: u.class_name, class_id: (cls as { id?: string } | null)?.id ?? null, telegram_id: userId };
           const magicToken = createMagicToken(payload);
