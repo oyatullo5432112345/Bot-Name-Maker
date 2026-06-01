@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/use-auth";
 import { useLogin } from "@workspace/api-client-react";
 import { Loader2, MessageCircleQuestion } from "lucide-react";
 import { useEffect, useState } from "react";
+import { WelcomeAnimation } from "@/components/welcome-animation";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +39,8 @@ export default function Login() {
   const { login: authLogin } = useAuth();
   const { toast } = useToast();
   const [botLoginLoading, setBotLoginLoading] = useState(false);
+  const [welcomeUser, setWelcomeUser] = useState<{ name: string; role: string } | null>(null);
+  const [pendingLocation, setPendingLocation] = useState("/dashboard");
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportMsg, setSupportMsg] = useState("");
   const [supportName, setSupportName] = useState("");
@@ -82,7 +85,9 @@ export default function Login() {
       .then((data) => {
         if (data && data.token) {
           authLogin(data);
-          setLocation("/dashboard");
+          setWelcomeUser({ name: data.full_name ?? "Foydalanuvchi", role: data.role ?? "" });
+          setPendingLocation("/dashboard");
+          setBotLoginLoading(false);
         } else {
           toast({
             variant: "destructive",
@@ -108,7 +113,8 @@ export default function Login() {
       {
         onSuccess: (result) => {
           authLogin(result);
-          setLocation("/dashboard");
+          setWelcomeUser({ name: result.full_name ?? "Foydalanuvchi", role: result.role ?? "" });
+          setPendingLocation("/dashboard");
         },
         onError: () => {
           toast({
@@ -120,6 +126,19 @@ export default function Login() {
       }
     );
   };
+
+  if (welcomeUser) {
+    return (
+      <WelcomeAnimation
+        name={welcomeUser.name}
+        role={welcomeUser.role}
+        onDone={() => {
+          setWelcomeUser(null);
+          setLocation(pendingLocation);
+        }}
+      />
+    );
+  }
 
   if (botLoginLoading) {
     return (

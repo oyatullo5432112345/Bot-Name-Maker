@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
+import { WelcomeAnimation } from "@/components/welcome-animation";
 import { useAuth } from "@/lib/use-auth";
 import { useListClasses, useListStaff } from "@workspace/api-client-react";
 import {
@@ -361,6 +362,8 @@ function StaffRegisterModal({
 }) {
   const { toast } = useToast();
   const { login: authLogin } = useAuth();
+  const [, setLocation] = useLocation();
+  const [welcomeStaff, setWelcomeStaff] = useState<{ name: string; role: string } | null>(null);
   const [lastName, setLastName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [phone, setPhone] = useState("");
@@ -463,6 +466,19 @@ function StaffRegisterModal({
     onClose();
   };
 
+  if (welcomeStaff) {
+    return (
+      <WelcomeAnimation
+        name={welcomeStaff.name}
+        role={welcomeStaff.role}
+        onDone={() => {
+          setWelcomeStaff(null);
+          setLocation("/dashboard");
+        }}
+      />
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -484,6 +500,11 @@ function StaffRegisterModal({
             credentials={credentials}
             subjects={isTeacher ? selectedSubjects : undefined}
             onClose={handleClose}
+            onDashboard={() => {
+              if (pendingAuthData) authLogin(pendingAuthData);
+              const fullName = `${(codeData?.last_name ?? lastName).trim()} ${(codeData?.first_name ?? firstName).trim()}`.trim();
+              setWelcomeStaff({ name: fullName || "Foydalanuvchi", role });
+            }}
           />
         ) : !codeData ? (
           <div className="space-y-4 py-3">
@@ -706,6 +727,7 @@ function StudentRegister() {
   const [isLoading, setIsLoading] = useState(false);
   const [credentials, setCredentials] = useState<{ login: string; password: string } | null>(null);
   const [pendingAuthData, setPendingAuthData] = useState<Parameters<typeof authLogin>[0] | null>(null);
+  const [welcomeStudent, setWelcomeStudent] = useState<{ name: string } | null>(null);
 
   const previewLogin = codeData ? previewStudentLogin(codeData.first_name.trim()) : "";
   const previewPassword = codeData?.class_name ? `3maktab${codeData.class_name.toLowerCase().replace(/\s+/g, "")}` : "";
@@ -771,13 +793,27 @@ function StudentRegister() {
     }
   };
 
+  if (welcomeStudent) {
+    return (
+      <WelcomeAnimation
+        name={welcomeStudent.name}
+        role="student"
+        onDone={() => {
+          setWelcomeStudent(null);
+          setLocation("/dashboard");
+        }}
+      />
+    );
+  }
+
   if (credentials) {
     return (
       <CredentialsView
         credentials={credentials}
         onDashboard={() => {
           if (pendingAuthData) authLogin(pendingAuthData);
-          setLocation("/dashboard");
+          const fullName = codeData ? `${codeData.last_name} ${codeData.first_name}`.trim() : "O'quvchi";
+          setWelcomeStudent({ name: fullName });
         }}
       />
     );
