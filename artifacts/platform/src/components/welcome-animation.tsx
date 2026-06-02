@@ -108,7 +108,7 @@ export function WelcomeAnimation({ name, role, onDone }: WelcomeAnimationProps) 
     const t2 = setTimeout(() => setPhase("exit"), 2600);
     const t3 = setTimeout(() => onDone(), 3200);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, []);
+  }, [onDone]);
 
   const roleLabel = role ? ROLE_GREETINGS[role] : "";
   const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
