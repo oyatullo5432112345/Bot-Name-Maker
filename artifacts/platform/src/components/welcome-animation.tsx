@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const COLORS = ["#6366f1","#f59e0b","#10b981","#ef4444","#3b82f6","#ec4899","#f97316","#8b5cf6","#06b6d4","#84cc16"];
 
@@ -103,15 +103,22 @@ export function WelcomeAnimation({ name, role, onDone }: WelcomeAnimationProps) 
   const [phase, setPhase] = useState<"enter" | "show" | "exit">("enter");
   const particles = useParticles(phase !== "exit");
 
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
   useEffect(() => {
     const t1 = setTimeout(() => setPhase("show"), 300);
     const t2 = setTimeout(() => setPhase("exit"), 2600);
-    const t3 = setTimeout(() => onDone(), 3200);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [onDone]);
+    const t3 = setTimeout(() => onDoneRef.current(), 3200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, []);
 
   const roleLabel = role ? ROLE_GREETINGS[role] : "";
-  const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+  const emoji = useRef(EMOJIS[Math.floor(Math.random() * EMOJIS.length)]).current;
 
   return (
     <div
