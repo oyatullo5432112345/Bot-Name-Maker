@@ -39,6 +39,7 @@ import CertificatePage from "@/pages/certificate";
 import AdminVideosPage from "@/pages/admin/videos";
 import AdminCodesPage from "@/pages/admin/codes";
 import QollanmalarPage from "@/pages/qollanmalar";
+import OlimpiyadaPage from "@/pages/olimpiada/index";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -146,6 +147,10 @@ function Router() {
 
       <Route path="/certificate">
         <ProtectedRoute component={CertificatePage} />
+      </Route>
+
+      <Route path="/olimpiada">
+        <ProtectedRoute component={OlimpiyadaPage} />
       </Route>
 
       <Route path="/admin/videos">

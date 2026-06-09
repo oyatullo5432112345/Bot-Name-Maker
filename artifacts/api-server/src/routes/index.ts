@@ -15,6 +15,7 @@ import libraryRouter from "./library.js";
 import certificateRouter from "./certificate.js";
 import settingsRouter from "./settings.js";
 import codesRouter from "./codes.js";
+import olimpiadaRouter from "./olimpiada.js";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(gamesRouter);
 router.use(lessonsRouter);
 router.use(gradesRouter);
 router.use(timetableRouter);
+router.use(olimpiadaRouter);
 
 export default router;

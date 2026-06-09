@@ -223,6 +223,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </SidebarGroupContent>
             </SidebarGroup>
 
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/olimpiada"}>
+                      <Link href="/olimpiada">
+                        <Trophy className="w-4 h-4" />
+                        <span>Olimpiada natijalari</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
             {["admin", "director", "mudir"].includes(user.role) && (
               <SidebarGroup>
                 <SidebarGroupLabel>Sozlamalar</SidebarGroupLabel>
