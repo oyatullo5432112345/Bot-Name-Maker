@@ -50,6 +50,12 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
     label: "Direktor",
     description: "Maktab boshqaruvi rahbari",
   },
+  mudir: {
+    color: "purple",
+    icon: Shield,
+    label: "Obidov Boburjon",
+    description: "Mahfiy kod bilan ro'yxatdan o'ting",
+  },
   zam_direktor: {
     color: "indigo",
     icon: Briefcase,
@@ -1128,7 +1134,7 @@ export default function Register() {
 
   const activeClass = modalClassId ? (classes ?? []).find((c: { id: string; name: string }) => c.id === modalClassId) : undefined;
 
-  const SINGLE_SLOT_ROLES = ["director", "zam_direktor", "zavuch", "kutubxonachi"];
+  const SINGLE_SLOT_ROLES = ["director", "mudir", "zam_direktor", "zavuch", "kutubxonachi"];
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">

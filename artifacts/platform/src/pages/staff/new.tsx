@@ -172,7 +172,7 @@ export default function NewStaff() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value={StaffInputRole.director}>Direktor</SelectItem>
-                        <SelectItem value={StaffInputRole.mudir}>Maktab mudiri</SelectItem>
+                        <SelectItem value={StaffInputRole.mudir}>Obidov Boburjon</SelectItem>
                         <SelectItem value={StaffInputRole.zam_direktor}>Direktor o'rinbosari</SelectItem>
                         <SelectItem value={StaffInputRole.zavuch}>Zavuch</SelectItem>
                         <SelectItem value={StaffInputRole.sinf_rahbari}>Sinf rahbari</SelectItem>

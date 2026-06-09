@@ -62,7 +62,7 @@ router.post("/auth/verify-code", async (req, res): Promise<void> => {
 // GET /api/admin/codes — kodlar ro'yxati (admin)
 router.get("/admin/codes", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || !["admin", "director"].includes(user["role"] as string)) {
+  if (!user || !["admin", "director", "mudir"].includes(user["role"] as string)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }
@@ -78,7 +78,7 @@ router.get("/admin/codes", async (req, res): Promise<void> => {
 // POST /api/admin/codes/generate — ommaviy kod yaratish (admin)
 router.post("/admin/codes/generate", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || !["admin", "director"].includes(user["role"] as string)) {
+  if (!user || !["admin", "director", "mudir"].includes(user["role"] as string)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }
@@ -108,7 +108,7 @@ router.post("/admin/codes/generate", async (req, res): Promise<void> => {
 // DELETE /api/admin/codes/:id — kodni o'chirish (admin)
 router.delete("/admin/codes/:id", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || !["admin", "director"].includes(user["role"] as string)) {
+  if (!user || !["admin", "director", "mudir"].includes(user["role"] as string)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }

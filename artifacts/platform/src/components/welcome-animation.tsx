@@ -89,7 +89,7 @@ interface WelcomeAnimationProps {
 const ROLE_GREETINGS: Record<string, string> = {
   admin: "Administrator",
   director: "Direktor",
-  mudir: "Maktab mudiri",
+  mudir: "Obidov Boburjon",
   zam_direktor: "Direktor o'rinbosari",
   zavuch: "Zavuch",
   teacher: "O'qituvchi",

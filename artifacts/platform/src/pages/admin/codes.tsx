@@ -33,7 +33,7 @@ const ROLE_LABELS: Record<string, string> = {
   teacher: "O'qituvchi",
   sinf_rahbari: "Sinf rahbari",
   director: "Direktor",
-  mudir: "Maktab mudiri",
+  mudir: "Obidov Boburjon",
   zam_direktor: "Zam. direktor",
   zavuch: "Zavuch",
   kutubxonachi: "Kutubxonachi",

@@ -52,7 +52,7 @@ const getToken = () => localStorage.getItem("talim_auth_token");
 const roleDisplay: Record<string, string> = {
   admin: "Admin",
   director: "Direktor",
-  mudir: "Maktab mudiri",
+  mudir: "Obidov Boburjon",
   zam_direktor: "Direktor o'rinbosari",
   zavuch: "Zavuch",
   teacher: "O'qituvchi",
