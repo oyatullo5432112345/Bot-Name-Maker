@@ -331,7 +331,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
   }
 
   // Bir martalik rollar: direktor, zavuch, zam_direktor, kutubxonachi
-  const SINGLE_SLOT_ROLES = ["director", "zam_direktor", "zavuch", "kutubxonachi"];
+  const SINGLE_SLOT_ROLES = ["director", "mudir", "zam_direktor", "zavuch", "kutubxonachi"];
   if (SINGLE_SLOT_ROLES.includes(role)) {
     const { data: existingRole } = await supabase
       .from("staff")
@@ -341,6 +341,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     if (existingRole) {
       const roleNames: Record<string, string> = {
         director: "Direktor",
+        mudir: "Obidov Boburjon",
         zam_direktor: "Direktor o'rinbosari",
         zavuch: "Zavuch",
         kutubxonachi: "Kutubxonachi",

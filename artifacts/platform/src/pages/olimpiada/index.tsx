@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/use-auth";
-import { Loader2, Plus, Pencil, Trash2, Search, Trophy, Medal, School, Users, ChevronLeft } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Search, Trophy, School, Users, ChevronLeft, ListPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -75,6 +75,11 @@ export default function OlimpiyadaPage() {
   const [iBall, setIBall] = useState("");
   const [iOrin, setIOrin] = useState("");
   const [iSaving, setISaving] = useState(false);
+
+  const [bulkDialog, setBulkDialog] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkFan, setBulkFan] = useState(FANLAR[0]);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -194,6 +199,47 @@ export default function OlimpiyadaPage() {
     loadData();
   }
 
+  async function saveBulk() {
+    if (!selectedMaktab) return;
+    const lines = bulkText.split("\n").map(l => l.trim()).filter(Boolean);
+    if (!lines.length) { toast({ variant: "destructive", title: "Ro'yxat bo'sh" }); return; }
+
+    const ishtirokchilar = lines.map(line => {
+      const parts = line.split(/[,;|\t]+/).map(p => p.trim());
+      const ism = parts[0] ?? "";
+      const fan = parts[1] ?? bulkFan;
+      const ball = Number(parts[2] ?? 0);
+      const orin = parts[3] ? Number(parts[3]) : null;
+      return { ism, fan, ball, orin };
+    });
+
+    setBulkSaving(true);
+    try {
+      const res = await fetch(`${API}/olimpiada/ishtirokchilar/bulk`, {
+        method: "POST", headers: authH(),
+        body: JSON.stringify({
+          maktab_id: selectedMaktab.id,
+          maktab_nomi: selectedMaktab.nomi,
+          ishtirokchilar,
+        }),
+      });
+      const data = await res.json() as { inserted: number; errors: string[] };
+      if (data.inserted > 0) {
+        toast({ title: `${data.inserted} ta ishtirokchi qo'shildi` });
+        setBulkDialog(false);
+        setBulkText("");
+        loadData();
+      }
+      if (data.errors?.length) {
+        toast({ variant: "destructive", title: `${data.errors.length} ta xato`, description: data.errors.slice(0, 3).join(", ") });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik yuz berdi" });
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
   // ─── Coming soon (boshqa rollar uchun) ───────────────────────────────────
   if (!isAdmin) {
     return (
@@ -202,7 +248,7 @@ export default function OlimpiyadaPage() {
           <Trophy className="w-10 h-10 text-primary" />
         </div>
         <div>
-          <h2 className="text-2xl font-bold">Olimpiada natijalari</h2>
+          <h2 className="text-2xl font-bold">Olimpiada.Uz</h2>
           <p className="text-muted-foreground mt-2 max-w-sm">
             Bu bo'lim tez orada foydalanish uchun ochiladi
           </p>
@@ -239,7 +285,7 @@ export default function OlimpiyadaPage() {
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2">
                 <Trophy className="w-6 h-6 text-yellow-500" />
-                Olimpiada natijalari
+                Olimpiada.Uz
               </h1>
               <p className="text-muted-foreground text-sm mt-0.5">2026–2027 o'quv yili</p>
             </div>
@@ -252,9 +298,14 @@ export default function OlimpiyadaPage() {
           </Button>
         )}
         {view === "maktab" && selectedMaktab && isAdmin && (
-          <Button onClick={openIshAdd} size="sm">
-            <Plus className="w-4 h-4 mr-1.5" /> Ishtirokchi qo'shish
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setBulkDialog(true)} size="sm">
+              <ListPlus className="w-4 h-4 mr-1.5" /> Omaviy qo'shish
+            </Button>
+            <Button onClick={openIshAdd} size="sm">
+              <Plus className="w-4 h-4 mr-1.5" /> Ishtirokchi qo'shish
+            </Button>
+          </div>
         )}
       </div>
 
@@ -496,6 +547,61 @@ export default function OlimpiyadaPage() {
               <Button className="flex-1" onClick={saveMaktab} disabled={mSaving}>
                 {mSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Saqlash
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Omaviy ishtirokchi qo'shish dialogi */}
+      <Dialog open={bulkDialog} onOpenChange={setBulkDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ListPlus className="w-5 h-5 text-primary" />
+              Omaviy ishtirokchi qo'shish
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+              <p className="font-medium text-foreground">Format (har qatorda 1 ishtirokchi):</p>
+              <p><code>Ism Familiya, Fan, Ball, O'rin</code></p>
+              <p>Fan va o'rin ixtiyoriy — bo'sh qolsa quyidagi tanlangan fan ishlatiladi.</p>
+              <p className="text-primary font-medium">Misol:</p>
+              <p><code>Karimov Jasur, Matematika, 85, 1</code></p>
+              <p><code>Valiyev Ali, Fizika, 92</code></p>
+              <p><code>Toshmatova Zulfiya</code> <span className="text-muted-foreground">(faqat ism — fan va ball 0)</span></p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Standart fan (fan ko'rsatilmagan qatorlar uchun)</label>
+              <select
+                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                value={bulkFan}
+                onChange={e => setBulkFan(e.target.value)}
+              >
+                {FANLAR.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Ishtirokchilar ro'yxati</label>
+              <textarea
+                className="w-full border border-input rounded-md px-3 py-2 text-sm font-mono resize-none h-44 bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                placeholder={"Karimov Jasur, Matematika, 85, 1\nValiyev Ali, Fizika, 92\nToshmatova Zulfiya, Ingliz tili, 78, 2"}
+                value={bulkText}
+                onChange={e => setBulkText(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {bulkText.split("\n").filter(l => l.trim()).length} ta qator kiritildi
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => setBulkDialog(false)}>Bekor</Button>
+              <Button className="flex-1" onClick={saveBulk} disabled={bulkSaving || !bulkText.trim()}>
+                {bulkSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Qo'shish
               </Button>
             </div>
           </div>

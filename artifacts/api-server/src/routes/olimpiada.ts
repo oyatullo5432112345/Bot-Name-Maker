@@ -145,6 +145,47 @@ router.patch("/olimpiada/ishtirokchilar/:id", async (req, res): Promise<void> =>
   }
 });
 
+router.post("/olimpiada/ishtirokchilar/bulk", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+
+  const { maktab_id, maktab_nomi, ishtirokchilar, yil } = req.body as {
+    maktab_id?: string;
+    maktab_nomi?: string;
+    ishtirokchilar?: { ism: string; fan: string; ball: number; orin?: number | null }[];
+    yil?: number;
+  };
+
+  if (!maktab_id) { res.status(400).json({ error: "Maktab tanlanmagan" }); return; }
+  if (!Array.isArray(ishtirokchilar) || !ishtirokchilar.length) {
+    res.status(400).json({ error: "Ishtirokchilar ro'yxati bo'sh" }); return;
+  }
+
+  const currentYil = yil ?? new Date().getFullYear();
+  const inserted: unknown[] = [];
+  const errors: string[] = [];
+
+  for (const i of ishtirokchilar) {
+    if (!i.ism?.trim() || !i.fan?.trim() || isNaN(Number(i.ball))) {
+      errors.push(`"${i.ism}" — to'liq to'ldirilmagan`);
+      continue;
+    }
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO olimpiada_ishtirokchilar (maktab_id, maktab_nomi, ism, fan, ball, orin, yil)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [maktab_id, maktab_nomi ?? "", i.ism.trim(), i.fan.trim(), Number(i.ball), i.orin ?? null, currentYil]
+      );
+      inserted.push(rows[0]);
+    } catch (e) {
+      errors.push(`"${i.ism}" — ${(e as Error).message}`);
+    }
+  }
+
+  if (inserted.length > 0) await recalcBall(maktab_id);
+  res.status(201).json({ inserted: inserted.length, errors });
+});
+
 router.delete("/olimpiada/ishtirokchilar/:id", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }

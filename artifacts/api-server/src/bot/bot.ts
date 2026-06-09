@@ -249,7 +249,7 @@ const STAFF_ROLE_LABELS: Record<string, string> = {
   teacher: "O'qituvchi",
   sinf_rahbari: "Sinf rahbari",
   director: "Direktor",
-  mudir: "Maktab mudiri",
+  mudir: "Obidov Boburjon",
   zam_direktor: "Direktor o'rinbosari",
   zavuch: "Zavuch",
   kutubxonachi: "Kutubxonachi",

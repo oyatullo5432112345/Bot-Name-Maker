@@ -58,6 +58,7 @@ const authHeaders = (): HeadersInit => {
 const roleDisplay: Record<string, string> = {
   admin: "Admin",
   director: "Direktor",
+  mudir: "Obidov Boburjon",
   zam_direktor: "Direktor o'rinbosari",
   zavuch: "Zavuch",
   sinf_rahbari: "Sinf rahbari",
@@ -351,7 +352,7 @@ export default function StaffList() {
     setTogglingId(null);
   };
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || user?.role === "mudir";
 
   // Barcha fanlar ro'yxatini yig'ish (o'qituvchilarning subjects dan)
   const allSubjects = Array.from(new Set(
