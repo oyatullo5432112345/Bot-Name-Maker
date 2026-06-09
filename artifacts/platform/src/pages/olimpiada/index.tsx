@@ -62,19 +62,29 @@ export default function OlimpiyadaPage() {
   const [searchIsh, setSearchIsh] = useState("");
 
   // Dialogs
+  const TUMAN = "Toshloq tumani";
+
   const [maktabDialog, setMaktabDialog] = useState(false);
   const [maktabEdit, setMaktabEdit] = useState<Maktab | null>(null);
   const [mNomi, setMNomi] = useState("");
-  const [mTuman, setMTuman] = useState("");
   const [mSaving, setMSaving] = useState(false);
 
   const [ishDialog, setIshDialog] = useState(false);
   const [ishEdit, setIshEdit] = useState<Ishtirokchi | null>(null);
   const [iIsm, setIIsm] = useState("");
-  const [iFan, setIFan] = useState(FANLAR[0]);
+  const [iFan, setIFan] = useState("");
   const [iBall, setIBall] = useState("");
   const [iOrin, setIOrin] = useState("");
   const [iSaving, setISaving] = useState(false);
+
+  const [fanDialog, setFanDialog] = useState(false);
+  const [fanNomi, setFanNomi] = useState("");
+  const [fanStudents, setFanStudents] = useState([
+    { ism: "", ball: "", orin: "" },
+    { ism: "", ball: "", orin: "" },
+    { ism: "", ball: "", orin: "" },
+  ]);
+  const [fanSaving, setFanSaving] = useState(false);
 
   const [bulkDialog, setBulkDialog] = useState(false);
   const [bulkText, setBulkText] = useState("");
@@ -118,10 +128,10 @@ export default function OlimpiyadaPage() {
 
   // ─── Maktab CRUD ──────────────────────────────────────────────────────────
   function openMaktabAdd() {
-    setMaktabEdit(null); setMNomi(""); setMTuman(""); setMaktabDialog(true);
+    setMaktabEdit(null); setMNomi(""); setMaktabDialog(true);
   }
   function openMaktabEdit(m: Maktab) {
-    setMaktabEdit(m); setMNomi(m.nomi); setMTuman(m.tuman); setMaktabDialog(true);
+    setMaktabEdit(m); setMNomi(m.nomi); setMaktabDialog(true);
   }
   async function saveMaktab() {
     if (mNomi.trim().length < 2) { toast({ variant: "destructive", title: "Maktab nomini kiriting" }); return; }
@@ -130,12 +140,12 @@ export default function OlimpiyadaPage() {
       if (maktabEdit) {
         await fetch(`${API}/olimpiada/maktablar/${maktabEdit.id}`, {
           method: "PATCH", headers: authH(),
-          body: JSON.stringify({ nomi: mNomi, tuman: mTuman }),
+          body: JSON.stringify({ nomi: mNomi, tuman: TUMAN }),
         });
       } else {
         await fetch(`${API}/olimpiada/maktablar`, {
           method: "POST", headers: authH(),
-          body: JSON.stringify({ nomi: mNomi, tuman: mTuman }),
+          body: JSON.stringify({ nomi: mNomi, tuman: TUMAN }),
         });
       }
       toast({ title: maktabEdit ? "Yangilandi" : "Maktab qo'shildi" });
@@ -145,6 +155,46 @@ export default function OlimpiyadaPage() {
       toast({ variant: "destructive", title: "Xatolik yuz berdi" });
     } finally {
       setMSaving(false);
+    }
+  }
+
+  function openFanAdd() {
+    setFanNomi("");
+    setFanStudents([
+      { ism: "", ball: "", orin: "" },
+      { ism: "", ball: "", orin: "" },
+      { ism: "", ball: "", orin: "" },
+    ]);
+    setFanDialog(true);
+  }
+
+  async function saveFanStudents() {
+    if (!selectedMaktab) return;
+    if (!fanNomi.trim()) { toast({ variant: "destructive", title: "Fan nomini kiriting" }); return; }
+    const valid = fanStudents.filter(s => s.ism.trim());
+    if (!valid.length) { toast({ variant: "destructive", title: "Kamida 1 ta o'quvchi ismini kiriting" }); return; }
+    setFanSaving(true);
+    try {
+      for (const s of valid) {
+        await fetch(`${API}/olimpiada/ishtirokchilar`, {
+          method: "POST", headers: authH(),
+          body: JSON.stringify({
+            maktab_id: selectedMaktab.id,
+            maktab_nomi: selectedMaktab.nomi,
+            ism: s.ism.trim(),
+            fan: fanNomi.trim(),
+            ball: Number(s.ball) || 0,
+            orin: s.orin ? Number(s.orin) : null,
+          }),
+        });
+      }
+      toast({ title: `${valid.length} ta ishtirokchi qo'shildi` });
+      setFanDialog(false);
+      loadData();
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik yuz berdi" });
+    } finally {
+      setFanSaving(false);
     }
   }
   async function deleteMaktab(m: Maktab) {
@@ -300,10 +350,10 @@ export default function OlimpiyadaPage() {
         {view === "maktab" && selectedMaktab && isAdmin && (
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setBulkDialog(true)} size="sm">
-              <ListPlus className="w-4 h-4 mr-1.5" /> Omaviy qo'shish
+              <ListPlus className="w-4 h-4 mr-1.5" /> Omaviy
             </Button>
-            <Button onClick={openIshAdd} size="sm">
-              <Plus className="w-4 h-4 mr-1.5" /> Ishtirokchi qo'shish
+            <Button onClick={openFanAdd} size="sm">
+              <Plus className="w-4 h-4 mr-1.5" /> Fan qo'shish
             </Button>
           </div>
         )}
@@ -410,11 +460,11 @@ export default function OlimpiyadaPage() {
         </div>
       )}
 
-      {/* Maktab ishtirokchilari ko'rinishi */}
+      {/* Maktab ishtirokchilari ko'rinishi — Fan bo'yicha guruhlab */}
       {view === "maktab" && selectedMaktab && (
         <div className="space-y-4">
           {/* Statistika */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <Card>
               <CardContent className="pt-4">
                 <p className="text-xs text-muted-foreground">Ishtirokchilar</p>
@@ -425,16 +475,6 @@ export default function OlimpiyadaPage() {
               <CardContent className="pt-4">
                 <p className="text-xs text-muted-foreground">Jami ball</p>
                 <p className="text-2xl font-bold text-primary">{selectedMaktab.jami_ball}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-xs text-muted-foreground">O'rtacha ball</p>
-                <p className="text-2xl font-bold">
-                  {maktabIshtirokchilar.length > 0
-                    ? Math.round(maktabIshtirokchilar.reduce((s, i) => s + i.ball, 0) / maktabIshtirokchilar.length)
-                    : 0}
-                </p>
               </CardContent>
             </Card>
             <Card>
@@ -458,64 +498,76 @@ export default function OlimpiyadaPage() {
             />
           </div>
 
-          {/* Ishtirokchilar jadvali */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                Ishtirokchilar ({maktabIshtirokchilar.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {maktabIshtirokchilar.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  {searchIsh ? "Qidiruv natijalari yo'q" : "Hali ishtirokchi qo'shilmagan"}
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Ism Familiya</TableHead>
-                      <TableHead>Fan</TableHead>
-                      <TableHead className="text-right">Ball</TableHead>
-                      <TableHead className="text-right">O'rin</TableHead>
-                      {isAdmin && <TableHead className="w-20"></TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {maktabIshtirokchilar.map(i => (
-                      <TableRow key={i.id}>
-                        <TableCell className="font-medium">{i.ism}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{i.fan}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-bold text-primary">{i.ball}</TableCell>
-                        <TableCell className="text-right">
-                          {i.orin ? (
-                            <span className={i.orin <= 3 ? "font-bold text-yellow-600" : ""}>
-                              {i.orin <= 3 ? MEDAL_ICONS[i.orin - 1] : ""} {i.orin}-o'rin
-                            </span>
-                          ) : "—"}
-                        </TableCell>
-                        {isAdmin && (
-                          <TableCell>
-                            <div className="flex justify-end gap-1">
-                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openIshEdit(i)}>
-                                <Pencil className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteIsh(i)}>
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+          {/* Fan bo'yicha guruhlar */}
+          {maktabIshtirokchilar.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground rounded-lg border border-dashed">
+              <Trophy className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p>Hali ishtirokchi qo'shilmagan</p>
+              {isAdmin && (
+                <Button className="mt-4" size="sm" onClick={openFanAdd}>
+                  <Plus className="w-4 h-4 mr-1.5" /> Fan va ishtirokchi qo'shish
+                </Button>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {Object.entries(
+                maktabIshtirokchilar.reduce((acc, i) => {
+                  if (!acc[i.fan]) acc[i.fan] = [];
+                  acc[i.fan].push(i);
+                  return acc;
+                }, {} as Record<string, Ishtirokchi[]>)
+              ).map(([fan, students]) => (
+                <Card key={fan}>
+                  <CardHeader className="pb-2 pt-3 px-4">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs">{fan}</Badge>
+                      <span className="text-muted-foreground font-normal text-xs">{students.length} ishtirokchi</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="pl-4">Ism Familiya</TableHead>
+                          <TableHead className="text-right">Ball</TableHead>
+                          <TableHead className="text-right">O'rin</TableHead>
+                          {isAdmin && <TableHead className="w-16"></TableHead>}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {students.map(i => (
+                          <TableRow key={i.id}>
+                            <TableCell className="font-medium pl-4">{i.ism}</TableCell>
+                            <TableCell className="text-right font-bold text-primary">{i.ball}</TableCell>
+                            <TableCell className="text-right">
+                              {i.orin ? (
+                                <span className={i.orin <= 3 ? "font-bold text-yellow-600" : ""}>
+                                  {i.orin <= 3 ? MEDAL_ICONS[i.orin - 1] : ""} {i.orin}-o'rin
+                                </span>
+                              ) : "—"}
+                            </TableCell>
+                            {isAdmin && (
+                              <TableCell>
+                                <div className="flex justify-end gap-1">
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openIshEdit(i)}>
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteIsh(i)}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -534,18 +586,94 @@ export default function OlimpiyadaPage() {
                 onChange={e => setMNomi(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Tuman</label>
-              <Input
-                placeholder="Masalan: Toshloq tumani"
-                value={mTuman}
-                onChange={e => setMTuman(e.target.value)}
-              />
+            <div className="rounded-md bg-muted/60 px-3 py-2 text-sm flex items-center gap-2">
+              <span className="text-muted-foreground">Tuman:</span>
+              <span className="font-medium">Toshloq tumani</span>
             </div>
             <div className="flex gap-2 pt-1">
               <Button variant="outline" className="flex-1" onClick={() => setMaktabDialog(false)}>Bekor</Button>
               <Button className="flex-1" onClick={saveMaktab} disabled={mSaving}>
                 {mSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Saqlash
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Fan + Ishtirokchilar qo'shish dialogi */}
+      <Dialog open={fanDialog} onOpenChange={setFanDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-primary" />
+              Fan va ishtirokchi qo'shish
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Fan nomi *</label>
+              <Input
+                placeholder="Masalan: Matematika, Fizika, Ingliz tili..."
+                value={fanNomi}
+                onChange={e => setFanNomi(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-0.5">
+                <span className="col-span-6">Ism Familiya</span>
+                <span className="col-span-3 text-center">Ball</span>
+                <span className="col-span-3 text-center">O'rin</span>
+              </div>
+              {fanStudents.map((s, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2">
+                  <Input
+                    className="col-span-6 h-9"
+                    placeholder={`${idx + 1}-o'quvchi ismi`}
+                    value={s.ism}
+                    onChange={e => {
+                      const updated = [...fanStudents];
+                      updated[idx] = { ...updated[idx], ism: e.target.value };
+                      setFanStudents(updated);
+                    }}
+                  />
+                  <Input
+                    className="col-span-3 h-9 text-center"
+                    type="number"
+                    placeholder="0"
+                    value={s.ball}
+                    onChange={e => {
+                      const updated = [...fanStudents];
+                      updated[idx] = { ...updated[idx], ball: e.target.value };
+                      setFanStudents(updated);
+                    }}
+                  />
+                  <Input
+                    className="col-span-3 h-9 text-center"
+                    type="number"
+                    placeholder="—"
+                    value={s.orin}
+                    onChange={e => {
+                      const updated = [...fanStudents];
+                      updated[idx] = { ...updated[idx], orin: e.target.value };
+                      setFanStudents(updated);
+                    }}
+                  />
+                </div>
+              ))}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-muted-foreground"
+                onClick={() => setFanStudents(prev => [...prev, { ism: "", ball: "", orin: "" }])}
+              >
+                <Plus className="w-4 h-4 mr-1.5" /> Qator qo'shish
+              </Button>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => setFanDialog(false)}>Bekor</Button>
+              <Button className="flex-1" onClick={saveFanStudents} disabled={fanSaving}>
+                {fanSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Saqlash
               </Button>
             </div>
@@ -625,13 +753,11 @@ export default function OlimpiyadaPage() {
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Fan *</label>
-              <select
-                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+              <Input
+                placeholder="Masalan: Matematika, Fizika..."
                 value={iFan}
                 onChange={e => setIFan(e.target.value)}
-              >
-                {FANLAR.map(f => <option key={f} value={f}>{f}</option>)}
-              </select>
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

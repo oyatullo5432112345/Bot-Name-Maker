@@ -109,11 +109,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (!user) return <>{children}</>;
 
-  const canViewStaff = ["admin", "director", "mudir", "zam_direktor", "zavuch"].includes(user.role);
-  const canViewClasses = ["admin", "director", "mudir", "zam_direktor", "zavuch"].includes(user.role);
-  const canViewStudents = ["admin", "director", "mudir", "zam_direktor", "zavuch", "sinf_rahbari"].includes(user.role);
+  const isMudir = user.role === "mudir";
+  const canViewStaff = !isMudir && ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
+  const canViewClasses = !isMudir && ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
+  const canViewStudents = !isMudir && ["admin", "director", "zam_direktor", "zavuch", "sinf_rahbari"].includes(user.role);
   const isStudent = user.role === "student";
-  const canManageLibrary = ["admin", "kutubxonachi"].includes(user.role);
+  const canManageLibrary = !isMudir && ["admin", "kutubxonachi"].includes(user.role);
 
   return (
     <SidebarProvider>
@@ -130,6 +131,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
+                  {!isMudir && (
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={location === "/dashboard" || location === "/"}>
                       <Link href="/dashboard">
@@ -138,6 +140,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  )}
 
                   {canViewStudents && (
                     <SidebarMenuItem>
@@ -175,6 +178,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </SidebarGroupContent>
             </SidebarGroup>
 
+            {!isMudir && (
             <SidebarGroup>
               <SidebarGroupLabel>Ta'lim</SidebarGroupLabel>
               <SidebarGroupContent>
@@ -222,6 +226,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
+            )}
 
             <SidebarGroup>
               <SidebarGroupContent>
@@ -230,7 +235,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <SidebarMenuButton asChild isActive={location === "/olimpiada"}>
                       <Link href="/olimpiada">
                         <Trophy className="w-4 h-4" />
-                        <span>Olimpiada natijalari</span>
+                        <span>Olimpiada.Uz</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -238,7 +243,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {["admin", "director", "mudir"].includes(user.role) && (
+            {!isMudir && ["admin", "director"].includes(user.role) && (
               <SidebarGroup>
                 <SidebarGroupLabel>Sozlamalar</SidebarGroupLabel>
                 <SidebarGroupContent>
@@ -314,7 +319,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </SidebarGroup>
             )}
 
-            {/* Yo'riqnoma videolari — hamma ko'ra oladi */}
+            {!isMudir && (
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -329,6 +334,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
+            )}
 
             {/* Qo'llab-quvvatlash tugmasi */}
             <SidebarGroup>

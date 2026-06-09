@@ -77,11 +77,11 @@ function Router() {
           : user ? <Redirect to="/dashboard" /> : <Register />}
       </Route>
       <Route path="/">
-        <Redirect to="/dashboard" />
+        {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <Redirect to="/dashboard" />}
       </Route>
 
       <Route path="/dashboard">
-        <ProtectedRoute component={Dashboard} />
+        {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <ProtectedRoute component={Dashboard} />}
       </Route>
 
       <Route path="/students">
