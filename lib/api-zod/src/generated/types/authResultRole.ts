@@ -12,6 +12,7 @@ export type AuthResultRole = typeof AuthResultRole[keyof typeof AuthResultRole];
 export const AuthResultRole = {
   admin: 'admin',
   director: 'director',
+  mudir: 'mudir',
   zam_direktor: 'zam_direktor',
   zavuch: 'zavuch',
   teacher: 'teacher',

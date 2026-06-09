@@ -42,6 +42,7 @@ const staffSchema = z.object({
   full_name: z.string().min(2, "F.I.O ni kiriting"),
   role: z.enum([
     StaffInputRole.director,
+    StaffInputRole.mudir,
     StaffInputRole.zam_direktor,
     StaffInputRole.zavuch,
     StaffInputRole.sinf_rahbari,
@@ -171,6 +172,7 @@ export default function NewStaff() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value={StaffInputRole.director}>Direktor</SelectItem>
+                        <SelectItem value={StaffInputRole.mudir}>Maktab mudiri</SelectItem>
                         <SelectItem value={StaffInputRole.zam_direktor}>Direktor o'rinbosari</SelectItem>
                         <SelectItem value={StaffInputRole.zavuch}>Zavuch</SelectItem>
                         <SelectItem value={StaffInputRole.sinf_rahbari}>Sinf rahbari</SelectItem>

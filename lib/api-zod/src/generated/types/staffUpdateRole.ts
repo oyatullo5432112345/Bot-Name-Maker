@@ -2,6 +2,7 @@ export type StaffUpdateRole = typeof StaffUpdateRole[keyof typeof StaffUpdateRol
 
 export const StaffUpdateRole = {
   director: 'director',
+  mudir: 'mudir',
   zam_direktor: 'zam_direktor',
   zavuch: 'zavuch',
   teacher: 'teacher',

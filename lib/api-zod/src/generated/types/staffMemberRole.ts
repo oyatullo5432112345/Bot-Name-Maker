@@ -2,6 +2,7 @@ export type StaffMemberRole = typeof StaffMemberRole[keyof typeof StaffMemberRol
 
 export const StaffMemberRole = {
   director: 'director',
+  mudir: 'mudir',
   zam_direktor: 'zam_direktor',
   zavuch: 'zavuch',
   teacher: 'teacher',

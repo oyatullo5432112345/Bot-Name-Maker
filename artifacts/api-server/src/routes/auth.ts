@@ -320,7 +320,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     ? `${last_name.trim()} ${first_name.trim()}`
     : (rawFullName ?? "");
 
-  const allowedRoles = ["director", "zam_direktor", "zavuch", "sinf_rahbari", "teacher", "kutubxonachi"];
+  const allowedRoles = ["director", "mudir", "zam_direktor", "zavuch", "sinf_rahbari", "teacher", "kutubxonachi"];
   if (!role || !allowedRoles.includes(role)) {
     res.status(400).json({ error: "Noto'g'ri rol tanlandi" });
     return;

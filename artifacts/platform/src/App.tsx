@@ -86,7 +86,7 @@ function Router() {
       <Route path="/students">
         <ProtectedRoute 
           component={StudentsList} 
-          roles={["admin", "director", "zam_direktor", "zavuch", "sinf_rahbari"]} 
+          roles={["admin", "director", "mudir", "zam_direktor", "zavuch", "sinf_rahbari"]} 
         />
       </Route>
       <Route path="/students/new">
@@ -99,7 +99,7 @@ function Router() {
       <Route path="/classes">
         <ProtectedRoute 
           component={ClassesList} 
-          roles={["admin", "director", "zam_direktor", "zavuch"]} 
+          roles={["admin", "director", "mudir", "zam_direktor", "zavuch"]} 
         />
       </Route>
 
@@ -149,10 +149,10 @@ function Router() {
       </Route>
 
       <Route path="/admin/videos">
-        <ProtectedRoute component={AdminVideosPage} roles={["admin", "director"]} />
+        <ProtectedRoute component={AdminVideosPage} roles={["admin", "director", "mudir"]} />
       </Route>
       <Route path="/admin/codes">
-        <ProtectedRoute component={AdminCodesPage} roles={["admin", "director"]} />
+        <ProtectedRoute component={AdminCodesPage} roles={["admin", "director", "mudir"]} />
       </Route>
 
       <Route path="/qollanmalar">

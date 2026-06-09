@@ -52,6 +52,7 @@ const getToken = () => localStorage.getItem("talim_auth_token");
 const roleDisplay: Record<string, string> = {
   admin: "Admin",
   director: "Direktor",
+  mudir: "Maktab mudiri",
   zam_direktor: "Direktor o'rinbosari",
   zavuch: "Zavuch",
   teacher: "O'qituvchi",
@@ -108,9 +109,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (!user) return <>{children}</>;
 
-  const canViewStaff = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
-  const canViewClasses = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
-  const canViewStudents = ["admin", "director", "zam_direktor", "zavuch", "sinf_rahbari"].includes(user.role);
+  const canViewStaff = ["admin", "director", "mudir", "zam_direktor", "zavuch"].includes(user.role);
+  const canViewClasses = ["admin", "director", "mudir", "zam_direktor", "zavuch"].includes(user.role);
+  const canViewStudents = ["admin", "director", "mudir", "zam_direktor", "zavuch", "sinf_rahbari"].includes(user.role);
   const isStudent = user.role === "student";
   const canManageLibrary = ["admin", "kutubxonachi"].includes(user.role);
 
@@ -222,7 +223,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {["admin", "director"].includes(user.role) && (
+            {["admin", "director", "mudir"].includes(user.role) && (
               <SidebarGroup>
                 <SidebarGroupLabel>Sozlamalar</SidebarGroupLabel>
                 <SidebarGroupContent>

@@ -2,6 +2,7 @@ export type StaffInputRole = typeof StaffInputRole[keyof typeof StaffInputRole];
 
 export const StaffInputRole = {
   director: 'director',
+  mudir: 'mudir',
   zam_direktor: 'zam_direktor',
   zavuch: 'zavuch',
   teacher: 'teacher',
