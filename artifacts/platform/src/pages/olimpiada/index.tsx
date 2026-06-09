@@ -83,8 +83,10 @@ export default function OlimpiyadaPage() {
         fetch(`${API}/olimpiada/maktablar`, { headers: authH() }),
         fetch(`${API}/olimpiada/ishtirokchilar`, { headers: authH() }),
       ]);
-      setMaktablar(await mRes.json());
-      setIshtirokchilar(await iRes.json());
+      const mData = await mRes.json();
+      const iData = await iRes.json();
+      setMaktablar(Array.isArray(mData) ? mData : []);
+      setIshtirokchilar(Array.isArray(iData) ? iData : []);
     } catch {
       toast({ variant: "destructive", title: "Xatolik", description: "Ma'lumot yuklanmadi" });
     } finally {

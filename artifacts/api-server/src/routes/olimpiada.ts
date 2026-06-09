@@ -1,241 +1,174 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
+import pg from "pg";
 import { getAuthUser } from "./auth.js";
+
+const { Pool } = pg;
+const pool = new Pool({ connectionString: process.env["DATABASE_URL"] });
 
 const router: IRouter = Router();
 
 const ADMIN_ROLES = ["admin", "mudir"];
-
-function isAdminRole(role: string) {
-  return ADMIN_ROLES.includes(role);
-}
+function isAdmin(role: string) { return ADMIN_ROLES.includes(role); }
 
 // ─── MAKTABLAR ────────────────────────────────────────────────────────────────
 
-// GET /api/olimpiada/maktablar
 router.get("/olimpiada/maktablar", async (_req, res): Promise<void> => {
-  const { data, error } = await supabase
-    .from("olimpiada_maktablar")
-    .select("*")
-    .order("jami_ball", { ascending: false });
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  try {
+    const { rows } = await pool.query(
+      "SELECT * FROM olimpiada_maktablar ORDER BY jami_ball DESC"
+    );
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
   }
-  res.json(data ?? []);
 });
 
-// POST /api/olimpiada/maktablar
 router.post("/olimpiada/maktablar", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || !isAdminRole(String(user.role))) {
-    res.status(403).json({ error: "Ruxsat yo'q" });
-    return;
-  }
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
   const { nomi, tuman, yil } = req.body as { nomi?: string; tuman?: string; yil?: number };
-  if (!nomi || nomi.trim().length < 2) {
-    res.status(400).json({ error: "Maktab nomini kiriting" });
-    return;
-  }
+  if (!nomi || nomi.trim().length < 2) { res.status(400).json({ error: "Maktab nomini kiriting" }); return; }
 
-  const { data, error } = await supabase
-    .from("olimpiada_maktablar")
-    .insert([{ nomi: nomi.trim(), tuman: tuman?.trim() ?? "", jami_ball: 0, yil: yil ?? new Date().getFullYear() }])
-    .select()
-    .single();
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  try {
+    const { rows } = await pool.query(
+      "INSERT INTO olimpiada_maktablar (nomi, tuman, yil) VALUES ($1, $2, $3) RETURNING *",
+      [nomi.trim(), (tuman ?? "").trim(), yil ?? new Date().getFullYear()]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
   }
-  res.status(201).json(data);
 });
 
-// PATCH /api/olimpiada/maktablar/:id
 router.patch("/olimpiada/maktablar/:id", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || !isAdminRole(String(user.role))) {
-    res.status(403).json({ error: "Ruxsat yo'q" });
-    return;
-  }
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
   const { id } = req.params;
-  const updates: Record<string, unknown> = {};
-  const body = req.body as Record<string, unknown>;
-  if (body.nomi) updates.nomi = String(body.nomi).trim();
-  if (body.tuman !== undefined) updates.tuman = String(body.tuman).trim();
-  if (body.yil) updates.yil = Number(body.yil);
-
-  const { data, error } = await supabase
-    .from("olimpiada_maktablar")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error || !data) {
-    res.status(404).json({ error: "Maktab topilmadi" });
-    return;
+  const body = req.body as { nomi?: string; tuman?: string; yil?: number };
+  try {
+    const { rows } = await pool.query(
+      `UPDATE olimpiada_maktablar SET
+        nomi = COALESCE($1, nomi),
+        tuman = COALESCE($2, tuman),
+        yil = COALESCE($3, yil)
+       WHERE id = $4 RETURNING *`,
+      [body.nomi?.trim() ?? null, body.tuman?.trim() ?? null, body.yil ?? null, id]
+    );
+    if (!rows.length) { res.status(404).json({ error: "Topilmadi" }); return; }
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
   }
-  res.json(data);
 });
 
-// DELETE /api/olimpiada/maktablar/:id
 router.delete("/olimpiada/maktablar/:id", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || !isAdminRole(String(user.role))) {
-    res.status(403).json({ error: "Ruxsat yo'q" });
-    return;
-  }
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
   const { id } = req.params;
-  await supabase.from("olimpiada_ishtirokchilar").delete().eq("maktab_id", id);
-  const { error } = await supabase.from("olimpiada_maktablar").delete().eq("id", id);
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  try {
+    await pool.query("DELETE FROM olimpiada_ishtirokchilar WHERE maktab_id = $1", [id]);
+    await pool.query("DELETE FROM olimpiada_maktablar WHERE id = $1", [id]);
+    res.sendStatus(204);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
   }
-  res.sendStatus(204);
 });
 
 // ─── ISHTIROKCHILAR ───────────────────────────────────────────────────────────
 
-// GET /api/olimpiada/ishtirokchilar
 router.get("/olimpiada/ishtirokchilar", async (req, res): Promise<void> => {
   const maktab_id = req.query["maktab_id"] as string | undefined;
-
-  let query = supabase
-    .from("olimpiada_ishtirokchilar")
-    .select("*")
-    .order("ball", { ascending: false });
-
-  if (maktab_id) query = query.eq("maktab_id", maktab_id);
-
-  const { data, error } = await query;
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  try {
+    const { rows } = maktab_id
+      ? await pool.query("SELECT * FROM olimpiada_ishtirokchilar WHERE maktab_id = $1 ORDER BY ball DESC", [maktab_id])
+      : await pool.query("SELECT * FROM olimpiada_ishtirokchilar ORDER BY ball DESC");
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
   }
-  res.json(data ?? []);
 });
 
-// POST /api/olimpiada/ishtirokchilar
 router.post("/olimpiada/ishtirokchilar", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || !isAdminRole(String(user.role))) {
-    res.status(403).json({ error: "Ruxsat yo'q" });
-    return;
-  }
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
   const { maktab_id, maktab_nomi, ism, fan, ball, orin, yil } = req.body as {
-    maktab_id?: string;
-    maktab_nomi?: string;
-    ism?: string;
-    fan?: string;
-    ball?: number;
-    orin?: number;
-    yil?: number;
+    maktab_id?: string; maktab_nomi?: string; ism?: string;
+    fan?: string; ball?: number; orin?: number; yil?: number;
   };
 
   if (!maktab_id) { res.status(400).json({ error: "Maktab tanlanmagan" }); return; }
-  if (!ism || ism.trim().length < 2) { res.status(400).json({ error: "Ishtirokchi ismini kiriting" }); return; }
-  if (!fan || fan.trim().length < 1) { res.status(400).json({ error: "Fanni kiriting" }); return; }
+  if (!ism?.trim()) { res.status(400).json({ error: "Ism kiriting" }); return; }
+  if (!fan?.trim()) { res.status(400).json({ error: "Fan kiriting" }); return; }
   if (ball === undefined || isNaN(Number(ball))) { res.status(400).json({ error: "Ball kiriting" }); return; }
 
-  const { data, error } = await supabase
-    .from("olimpiada_ishtirokchilar")
-    .insert([{
-      maktab_id,
-      maktab_nomi: maktab_nomi?.trim() ?? "",
-      ism: ism.trim(),
-      fan: fan.trim(),
-      ball: Number(ball),
-      orin: orin ? Number(orin) : null,
-      yil: yil ?? new Date().getFullYear(),
-    }])
-    .select()
-    .single();
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO olimpiada_ishtirokchilar (maktab_id, maktab_nomi, ism, fan, ball, orin, yil)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [maktab_id, maktab_nomi ?? "", ism.trim(), fan.trim(), Number(ball), orin ?? null, yil ?? new Date().getFullYear()]
+    );
+    await recalcBall(maktab_id);
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
   }
-
-  // Maktab jami ballini yangilash
-  await recalcMaktabBall(maktab_id);
-
-  res.status(201).json(data);
 });
 
-// PATCH /api/olimpiada/ishtirokchilar/:id
 router.patch("/olimpiada/ishtirokchilar/:id", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || !isAdminRole(String(user.role))) {
-    res.status(403).json({ error: "Ruxsat yo'q" });
-    return;
-  }
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
   const { id } = req.params;
-  const body = req.body as Record<string, unknown>;
-  const updates: Record<string, unknown> = {};
-  if (body.ism) updates.ism = String(body.ism).trim();
-  if (body.fan) updates.fan = String(body.fan).trim();
-  if (body.ball !== undefined) updates.ball = Number(body.ball);
-  if (body.orin !== undefined) updates.orin = body.orin ? Number(body.orin) : null;
-
-  const { data, error } = await supabase
-    .from("olimpiada_ishtirokchilar")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error || !data) {
-    res.status(404).json({ error: "Ishtirokchi topilmadi" });
-    return;
+  const body = req.body as { ism?: string; fan?: string; ball?: number; orin?: number | null };
+  try {
+    const { rows } = await pool.query(
+      `UPDATE olimpiada_ishtirokchilar SET
+        ism  = COALESCE($1, ism),
+        fan  = COALESCE($2, fan),
+        ball = COALESCE($3, ball),
+        orin = $4
+       WHERE id = $5 RETURNING *`,
+      [body.ism?.trim() ?? null, body.fan?.trim() ?? null,
+       body.ball !== undefined ? Number(body.ball) : null,
+       body.orin !== undefined ? (body.orin ? Number(body.orin) : null) : null,
+       id]
+    );
+    if (!rows.length) { res.status(404).json({ error: "Topilmadi" }); return; }
+    await recalcBall((rows[0] as { maktab_id: string }).maktab_id);
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
   }
-
-  await recalcMaktabBall((data as { maktab_id: string }).maktab_id);
-  res.json(data);
 });
 
-// DELETE /api/olimpiada/ishtirokchilar/:id
 router.delete("/olimpiada/ishtirokchilar/:id", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || !isAdminRole(String(user.role))) {
-    res.status(403).json({ error: "Ruxsat yo'q" });
-    return;
-  }
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
   const { id } = req.params;
-  const { data: existing } = await supabase
-    .from("olimpiada_ishtirokchilar")
-    .select("maktab_id")
-    .eq("id", id)
-    .single();
-
-  const { error } = await supabase.from("olimpiada_ishtirokchilar").delete().eq("id", id);
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  try {
+    const { rows: ex } = await pool.query(
+      "SELECT maktab_id FROM olimpiada_ishtirokchilar WHERE id = $1", [id]
+    );
+    await pool.query("DELETE FROM olimpiada_ishtirokchilar WHERE id = $1", [id]);
+    if (ex[0]) await recalcBall((ex[0] as { maktab_id: string }).maktab_id);
+    res.sendStatus(204);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
   }
-
-  if (existing) await recalcMaktabBall((existing as { maktab_id: string }).maktab_id);
-  res.sendStatus(204);
 });
 
-// ─── Yordamchi: maktab jami ballini qayta hisoblash ───────────────────────────
-async function recalcMaktabBall(maktab_id: string) {
-  const { data } = await supabase
-    .from("olimpiada_ishtirokchilar")
-    .select("ball")
-    .eq("maktab_id", maktab_id);
-
-  const jami_ball = ((data ?? []) as { ball: number }[]).reduce((sum, r) => sum + (r.ball || 0), 0);
-  await supabase.from("olimpiada_maktablar").update({ jami_ball }).eq("id", maktab_id);
+async function recalcBall(maktab_id: string) {
+  await pool.query(
+    `UPDATE olimpiada_maktablar SET jami_ball = (
+       SELECT COALESCE(SUM(ball), 0) FROM olimpiada_ishtirokchilar WHERE maktab_id = $1
+     ) WHERE id = $1`,
+    [maktab_id]
+  );
 }
 
 export default router;

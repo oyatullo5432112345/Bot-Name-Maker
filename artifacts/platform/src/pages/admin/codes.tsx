@@ -33,6 +33,7 @@ const ROLE_LABELS: Record<string, string> = {
   teacher: "O'qituvchi",
   sinf_rahbari: "Sinf rahbari",
   director: "Direktor",
+  mudir: "Maktab mudiri",
   zam_direktor: "Zam. direktor",
   zavuch: "Zavuch",
   kutubxonachi: "Kutubxonachi",
@@ -63,7 +64,7 @@ export default function AdminCodesPage() {
   const [listLoading, setListLoading] = useState(false);
   const [filterClass, setFilterClass] = useState("");
 
-  if (!user || !["admin", "director"].includes(user.role)) {
+  if (!user || !["admin", "director", "mudir"].includes(user.role)) {
     return <p className="text-muted-foreground p-4">Ruxsat yo'q.</p>;
   }
 
