@@ -42,6 +42,7 @@ import AdminVideosPage from "@/pages/admin/videos";
 import AdminCodesPage from "@/pages/admin/codes";
 import QollanmalarPage from "@/pages/qollanmalar";
 import OlimpiyadaPage from "@/pages/olimpiada/index";
+import AnnouncementsPage from "@/pages/announcements/index";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -164,6 +165,10 @@ function Router() {
 
       <Route path="/qollanmalar">
         <ProtectedRoute component={QollanmalarPage} />
+      </Route>
+
+      <Route path="/announcements">
+        <ProtectedRoute component={AnnouncementsPage} />
       </Route>
 
       <Route path="/games/sozoyini">

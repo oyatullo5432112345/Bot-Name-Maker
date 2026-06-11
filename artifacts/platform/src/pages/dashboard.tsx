@@ -1,13 +1,15 @@
 import { useAuth } from "@/lib/use-auth";
 import { useState, useEffect, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   useGetDashboardStats,
   getGetDashboardStatsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User } from "lucide-react";
+import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User, Megaphone, Pin, ChevronRight } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Link } from "wouter";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -62,6 +64,72 @@ interface TeacherSubjectEntry {
   class_name?: string | null;
 }
 
+const UZ_MOTIVATIONAL = [
+  "Bilim — eng katta boylik. 📚",
+  "Har bir yangi kun — yangi imkoniyat! 🌟",
+  "Qiyinchilik — muvaffaqiyatning boshlanishi. 💪",
+  "Mehnat va sabr — maqsadga yetkazadi. 🎯",
+  "Kelajagingiz bugungi saydingizda. 🚀",
+  "Har bir dars — yangi ufq. 🌅",
+  "O'rgan, o'sa, yaxshilan — har kuni! ✨",
+];
+
+function getMorningGreeting(name: string): string {
+  const h = new Date().getHours();
+  if (h < 6) return `Hurmatli ${name}, erta tongda ham mehnat — buni qadrlaymiz! 🌙`;
+  if (h < 12) return `Xayrli tong, ${name}! 🌤️`;
+  if (h < 18) return `Xayrli kun, ${name}! ☀️`;
+  return `Xayrli kech, ${name}! 🌆`;
+}
+
+type Announcement = {
+  id: string; title: string; content: string;
+  author_name: string; pinned: boolean; created_at: string;
+};
+
+function AnnouncementsBanner() {
+  const { data } = useQuery<Announcement[]>({
+    queryKey: ["announcements-dashboard"],
+    queryFn: async () => {
+      const t = localStorage.getItem("talim_auth_token");
+      const r = await fetch(`${API_BASE}/announcements`, {
+        headers: t ? { Authorization: `Bearer ${t}` } : {},
+      });
+      if (!r.ok) return [];
+      return r.json() as Promise<Announcement[]>;
+    },
+    staleTime: 60_000,
+  });
+
+  const items = (data ?? []).slice(0, 3);
+  if (items.length === 0) return null;
+
+  return (
+    <Card className="border-primary/30 bg-primary/5">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium flex items-center gap-2 text-primary">
+          <Megaphone className="w-4 h-4" />
+          So'nggi e'lonlar
+          <Link href="/announcements" className="ml-auto text-xs text-primary/70 hover:text-primary flex items-center gap-0.5">
+            Barchasi <ChevronRight className="w-3 h-3" />
+          </Link>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 pt-0">
+        {items.map(a => (
+          <div key={a.id} className="flex items-start gap-2 text-sm">
+            {a.pinned && <Pin className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />}
+            <div className="min-w-0">
+              <span className="font-medium">{a.title}</span>
+              <span className="text-muted-foreground ml-2 text-xs line-clamp-1">{a.content}</span>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   if (!user) return null;
@@ -70,12 +138,16 @@ export default function Dashboard() {
   const isTeacher = ["teacher", "sinf_rahbari"].includes(user.role);
   const isStudent = user.role === "student";
 
+  const motivation = UZ_MOTIVATIONAL[new Date().getDate() % UZ_MOTIVATIONAL.length]!;
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Bosh sahifa</h1>
-        <p className="text-muted-foreground mt-1">Xush kelibsiz, {user.full_name}</p>
+        <p className="text-muted-foreground mt-1">{getMorningGreeting(user.full_name ?? "")}</p>
+        <p className="text-xs text-muted-foreground/70 mt-0.5 italic">{motivation}</p>
       </div>
+      <AnnouncementsBanner />
       {isAdminOrDir && <AdminDashboard />}
       {isTeacher && <TeacherDashboard />}
       {isStudent && <StudentDashboard />}
@@ -373,6 +445,72 @@ function CountdownBanner() {
   );
 }
 
+type Grade = { id: string; subject: string; grade: number; comment: string; teacher_name: string; created_at: string };
+
+const GRADE_COLORS: Record<number, string> = {
+  5: "bg-green-100 text-green-700 border-green-200",
+  4: "bg-blue-100 text-blue-700 border-blue-200",
+  3: "bg-yellow-100 text-yellow-700 border-yellow-200",
+  2: "bg-red-100 text-red-700 border-red-200",
+  1: "bg-gray-100 text-gray-700 border-gray-200",
+};
+
+function StudentGradesWidget({ login }: { login: string }) {
+  const { data: grades, isLoading } = useQuery<Grade[]>({
+    queryKey: ["student-grades-widget", login],
+    queryFn: async () => {
+      const t = localStorage.getItem("talim_auth_token");
+      const r = await fetch(`${API_BASE}/grades`, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+      if (!r.ok) return [];
+      return r.json() as Promise<Grade[]>;
+    },
+    staleTime: 60_000,
+  });
+
+  const recent = (grades ?? []).slice(0, 5);
+  const avg = recent.length > 0 ? (recent.reduce((s, g) => s + g.grade, 0) / recent.length).toFixed(1) : null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm font-medium">
+          <BookOpen className="w-4 h-4" />
+          Oxirgi baholar
+          {avg && (
+            <span className="ml-auto text-xs font-medium text-muted-foreground">
+              O'rtacha: <span className="font-bold text-primary">{avg}</span>
+            </span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {isLoading ? (
+          <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-primary" /></div>
+        ) : recent.length === 0 ? (
+          <p className="text-center text-muted-foreground text-sm py-4">Hali baho yo'q</p>
+        ) : (
+          <div className="space-y-2">
+            {recent.map(g => (
+              <div key={g.id} className="flex items-center gap-3">
+                <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold border shrink-0 ${GRADE_COLORS[g.grade] ?? ""}`}>
+                  {g.grade}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{g.subject}</div>
+                  <div className="text-xs text-muted-foreground">{g.teacher_name} · {new Date(g.created_at).toLocaleDateString("uz-UZ")}</div>
+                </div>
+              </div>
+            ))}
+            <Link href="/baholash" className="block text-center text-xs text-primary hover:underline mt-2 pt-2 border-t">
+              Barcha baholar →
+            </Link>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function StudentDashboard() {
   const { user } = useAuth();
   const [sinfRahbari, setSinfRahbari] = useState<string | null>(null);
@@ -495,6 +633,8 @@ function StudentDashboard() {
           )}
         </CardContent>
       </Card>
+
+      {user.login && <StudentGradesWidget login={user.login} />}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   Award,
   Video,
   KeyRound,
+  Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -334,6 +335,24 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
+            )}
+
+            {/* E'lonlar */}
+            {!isMudir && (
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/announcements"}>
+                        <Link href="/announcements">
+                          <Megaphone className="w-4 h-4" />
+                          <span>E'lonlar</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
             )}
 
             {/* Qo'llab-quvvatlash tugmasi */}

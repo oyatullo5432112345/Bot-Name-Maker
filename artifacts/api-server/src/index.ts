@@ -92,9 +92,15 @@ try {
         const info = await bot.api.getWebhookInfo();
         if (info.url && info.url.length > 0) {
           logger.warn(
-            `Dev: production webhook faol (${info.url}) — polling ishga tushmaydi. Bu normal holat.`
+            `Dev: eski webhook topildi (${info.url}) — o'chirilmoqda...`
           );
-          return;
+          try {
+            await bot.api.deleteWebhook({ drop_pending_updates: true });
+            logger.info("Eski webhook o'chirildi ✅ — polling boshlanmoqda...");
+          } catch (delErr) {
+            logger.error({ err: delErr }, "Webhook o'chirishda xatolik — polling ishlamaydi");
+            return;
+          }
         }
 
         const stopDev = async () => {
