@@ -1,9 +1,6 @@
 import { Router, type IRouter } from "express";
-import pg from "pg";
+import { query, queryOne } from "../lib/db.js";
 import { getAuthUser } from "./auth.js";
-
-const { Pool } = pg;
-const pool = new Pool({ connectionString: process.env["DATABASE_URL"] });
 
 const router: IRouter = Router();
 
@@ -14,9 +11,7 @@ function isAdmin(role: string) { return ADMIN_ROLES.includes(role); }
 
 router.get("/olimpiada/maktablar", async (_req, res): Promise<void> => {
   try {
-    const { rows } = await pool.query(
-      "SELECT * FROM olimpiada_maktablar ORDER BY jami_ball DESC"
-    );
+    const rows = await query("SELECT * FROM olimpiada_maktablar ORDER BY jami_ball DESC");
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -31,11 +26,11 @@ router.post("/olimpiada/maktablar", async (req, res): Promise<void> => {
   if (!nomi || nomi.trim().length < 2) { res.status(400).json({ error: "Maktab nomini kiriting" }); return; }
 
   try {
-    const { rows } = await pool.query(
+    const row = await queryOne(
       "INSERT INTO olimpiada_maktablar (nomi, tuman, yil) VALUES ($1, $2, $3) RETURNING *",
       [nomi.trim(), (tuman ?? "").trim(), yil ?? new Date().getFullYear()]
     );
-    res.status(201).json(rows[0]);
+    res.status(201).json(row);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -48,7 +43,7 @@ router.patch("/olimpiada/maktablar/:id", async (req, res): Promise<void> => {
   const { id } = req.params;
   const body = req.body as { nomi?: string; tuman?: string; yil?: number };
   try {
-    const { rows } = await pool.query(
+    const row = await queryOne(
       `UPDATE olimpiada_maktablar SET
         nomi = COALESCE($1, nomi),
         tuman = COALESCE($2, tuman),
@@ -56,8 +51,8 @@ router.patch("/olimpiada/maktablar/:id", async (req, res): Promise<void> => {
        WHERE id = $4 RETURNING *`,
       [body.nomi?.trim() ?? null, body.tuman?.trim() ?? null, body.yil ?? null, id]
     );
-    if (!rows.length) { res.status(404).json({ error: "Topilmadi" }); return; }
-    res.json(rows[0]);
+    if (!row) { res.status(404).json({ error: "Topilmadi" }); return; }
+    res.json(row);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -69,8 +64,8 @@ router.delete("/olimpiada/maktablar/:id", async (req, res): Promise<void> => {
 
   const { id } = req.params;
   try {
-    await pool.query("DELETE FROM olimpiada_ishtirokchilar WHERE maktab_id = $1", [id]);
-    await pool.query("DELETE FROM olimpiada_maktablar WHERE id = $1", [id]);
+    await query("DELETE FROM olimpiada_ishtirokchilar WHERE maktab_id = $1", [id]);
+    await query("DELETE FROM olimpiada_maktablar WHERE id = $1", [id]);
     res.sendStatus(204);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -82,9 +77,9 @@ router.delete("/olimpiada/maktablar/:id", async (req, res): Promise<void> => {
 router.get("/olimpiada/ishtirokchilar", async (req, res): Promise<void> => {
   const maktab_id = req.query["maktab_id"] as string | undefined;
   try {
-    const { rows } = maktab_id
-      ? await pool.query("SELECT * FROM olimpiada_ishtirokchilar WHERE maktab_id = $1 ORDER BY ball DESC", [maktab_id])
-      : await pool.query("SELECT * FROM olimpiada_ishtirokchilar ORDER BY ball DESC");
+    const rows = maktab_id
+      ? await query("SELECT * FROM olimpiada_ishtirokchilar WHERE maktab_id = $1 ORDER BY ball DESC", [maktab_id])
+      : await query("SELECT * FROM olimpiada_ishtirokchilar ORDER BY ball DESC");
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -106,13 +101,13 @@ router.post("/olimpiada/ishtirokchilar", async (req, res): Promise<void> => {
   if (ball === undefined || isNaN(Number(ball))) { res.status(400).json({ error: "Ball kiriting" }); return; }
 
   try {
-    const { rows } = await pool.query(
+    const row = await queryOne(
       `INSERT INTO olimpiada_ishtirokchilar (maktab_id, maktab_nomi, ism, fan, ball, orin, yil)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [maktab_id, maktab_nomi ?? "", ism.trim(), fan.trim(), Number(ball), orin ?? null, yil ?? new Date().getFullYear()]
     );
     await recalcBall(maktab_id);
-    res.status(201).json(rows[0]);
+    res.status(201).json(row);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -125,7 +120,7 @@ router.patch("/olimpiada/ishtirokchilar/:id", async (req, res): Promise<void> =>
   const { id } = req.params;
   const body = req.body as { ism?: string; fan?: string; ball?: number; orin?: number | null };
   try {
-    const { rows } = await pool.query(
+    const row = await queryOne<{ maktab_id: string }>(
       `UPDATE olimpiada_ishtirokchilar SET
         ism  = COALESCE($1, ism),
         fan  = COALESCE($2, fan),
@@ -137,9 +132,9 @@ router.patch("/olimpiada/ishtirokchilar/:id", async (req, res): Promise<void> =>
        body.orin !== undefined ? (body.orin ? Number(body.orin) : null) : null,
        id]
     );
-    if (!rows.length) { res.status(404).json({ error: "Topilmadi" }); return; }
-    await recalcBall((rows[0] as { maktab_id: string }).maktab_id);
-    res.json(rows[0]);
+    if (!row) { res.status(404).json({ error: "Topilmadi" }); return; }
+    await recalcBall(row.maktab_id);
+    res.json(row);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -171,12 +166,12 @@ router.post("/olimpiada/ishtirokchilar/bulk", async (req, res): Promise<void> =>
       continue;
     }
     try {
-      const { rows } = await pool.query(
+      const row = await queryOne(
         `INSERT INTO olimpiada_ishtirokchilar (maktab_id, maktab_nomi, ism, fan, ball, orin, yil)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
         [maktab_id, maktab_nomi ?? "", i.ism.trim(), i.fan.trim(), Number(i.ball), i.orin ?? null, currentYil]
       );
-      inserted.push(rows[0]);
+      inserted.push(row);
     } catch (e) {
       errors.push(`"${i.ism}" — ${(e as Error).message}`);
     }
@@ -192,11 +187,11 @@ router.delete("/olimpiada/ishtirokchilar/:id", async (req, res): Promise<void> =
 
   const { id } = req.params;
   try {
-    const { rows: ex } = await pool.query(
+    const existing = await queryOne<{ maktab_id: string }>(
       "SELECT maktab_id FROM olimpiada_ishtirokchilar WHERE id = $1", [id]
     );
-    await pool.query("DELETE FROM olimpiada_ishtirokchilar WHERE id = $1", [id]);
-    if (ex[0]) await recalcBall((ex[0] as { maktab_id: string }).maktab_id);
+    await query("DELETE FROM olimpiada_ishtirokchilar WHERE id = $1", [id]);
+    if (existing) await recalcBall(existing.maktab_id);
     res.sendStatus(204);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -204,7 +199,7 @@ router.delete("/olimpiada/ishtirokchilar/:id", async (req, res): Promise<void> =
 });
 
 async function recalcBall(maktab_id: string) {
-  await pool.query(
+  await query(
     `UPDATE olimpiada_maktablar SET jami_ball = (
        SELECT COALESCE(SUM(ball), 0) FROM olimpiada_ishtirokchilar WHERE maktab_id = $1
      ) WHERE id = $1`,

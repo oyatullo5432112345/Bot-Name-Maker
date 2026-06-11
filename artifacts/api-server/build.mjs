@@ -32,8 +32,6 @@ async function buildAll() {
       "@resvg/resvg-js",
       "grammy",
       "@grammyjs/*",
-      "@supabase/supabase-js",
-      "@supabase/*",
       "sharp",
       "better-sqlite3",
       "sqlite3",

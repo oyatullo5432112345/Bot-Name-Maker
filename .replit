@@ -83,8 +83,6 @@ externalPort = 3000
 
 [userenv.shared]
 ADMIN_ID = "611665022"
-WEBSITE_URL = "https://bot-name-maker--chnvuvnjj.replit.app"
-TELEGRAM_BOT_TOKEN = "8727402043:AAHtZxYoZ0U7X4sNuh7vzAmGVh1FHSyjvvI"
 
 [userenv.production]
 
