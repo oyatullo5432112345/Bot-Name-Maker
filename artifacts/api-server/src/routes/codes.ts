@@ -136,4 +136,38 @@ router.delete("/admin/codes/:id", async (req, res): Promise<void> => {
   }
 });
 
+// DELETE /api/admin/codes — ommaviy o'chirish (body: {ids?: string[], unused?: boolean, class_id?: string})
+router.delete("/admin/codes", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !["admin", "director", "mudir"].includes(user["role"] as string)) {
+    res.status(403).json({ error: "Ruxsat yo'q" });
+    return;
+  }
+
+  const { ids, unused, class_id } = req.body as { ids?: string[]; unused?: boolean; class_id?: string };
+
+  try {
+    let deleted = 0;
+
+    if (Array.isArray(ids) && ids.length > 0) {
+      const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
+      const result = await query(`DELETE FROM registration_codes WHERE id IN (${placeholders}) RETURNING id`, ids);
+      deleted = result.length;
+    } else if (unused === true) {
+      const params: unknown[] = [];
+      let sql = "DELETE FROM registration_codes WHERE used = false";
+      if (class_id) { params.push(class_id); sql += ` AND class_id = $1`; }
+      const result = await query(sql + " RETURNING id", params);
+      deleted = result.length;
+    } else {
+      res.status(400).json({ error: "ids yoki unused=true parametri kerak" });
+      return;
+    }
+
+    res.json({ deleted });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 export default router;

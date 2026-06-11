@@ -119,12 +119,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-secondary/30">
+      <div className="flex min-h-screen w-full bg-background">
         <Sidebar>
-          <SidebarHeader className="border-b border-sidebar-border/50 py-4 px-4">
-            <div className="flex items-center gap-2 font-semibold text-sidebar-foreground">
-              <ShieldAlert className="w-5 h-5 text-sidebar-primary" />
-              <span>TALIM PLATFORM</span>
+          <SidebarHeader className="border-b border-sidebar-border/40 py-4 px-4">
+            <div className="flex items-center gap-3 font-bold text-sidebar-foreground">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-sm">
+                <ShieldAlert className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <div className="text-sm font-bold tracking-wide">TALIM</div>
+                <div className="text-[10px] text-sidebar-foreground/60 font-normal -mt-0.5 tracking-widest uppercase">Platform</div>
+              </div>
             </div>
           </SidebarHeader>
 
@@ -373,22 +378,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </SidebarGroup>
           </SidebarContent>
 
-          <SidebarFooter className="border-t border-sidebar-border/50 p-4">
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium text-sidebar-foreground">{user.full_name}</span>
-                <span className="text-xs text-sidebar-foreground/70">{roleDisplay[user.role] || user.role}</span>
-                {user.class_name && (
-                  <span className="text-xs text-sidebar-foreground/50 mt-0.5">{user.class_name} sinf</span>
-                )}
+          <SidebarFooter className="border-t border-sidebar-border/40 p-3">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-sidebar-accent/50">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-300 to-indigo-400 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                  {user.full_name?.[0]?.toUpperCase() ?? "U"}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-sidebar-foreground truncate">{user.full_name}</p>
+                  <p className="text-xs text-sidebar-foreground/60 truncate">{roleDisplay[user.role] || user.role}</p>
+                  {user.class_name && (
+                    <p className="text-xs text-sidebar-foreground/50">{user.class_name} sinf</p>
+                  )}
+                </div>
               </div>
               <Button
                 variant="ghost"
-                className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                size="sm"
+                className="w-full justify-start text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                 onClick={handleLogout}
                 disabled={logoutMutation.isPending}
               >
-                <LogOut className="w-4 h-4 mr-2" />
+                <LogOut className="w-3.5 h-3.5 mr-2" />
                 Chiqish
               </Button>
             </div>
@@ -396,15 +407,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </Sidebar>
 
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <header className="h-14 flex items-center px-4 border-b bg-background shadow-sm lg:hidden">
+          <header className="h-14 flex items-center px-4 border-b bg-background/95 backdrop-blur-sm shadow-sm lg:hidden sticky top-0 z-10">
             <SidebarTrigger />
-            <div className="ml-4 font-medium flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-primary" />
-              TALIM PLATFORM
+            <div className="ml-3 font-bold flex items-center gap-2">
+              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                <ShieldAlert className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span className="gradient-text text-base font-extrabold tracking-tight">TALIM</span>
             </div>
           </header>
           <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-            <div className="mx-auto max-w-6xl">
+            <div className="mx-auto max-w-6xl animate-fade-in-up">
               {children}
             </div>
           </main>

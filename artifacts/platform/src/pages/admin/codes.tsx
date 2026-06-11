@@ -8,8 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import {
   KeyRound, Copy, Trash2, CheckCircle2, Clock, Users,
-  GraduationCap, ChevronDown,
+  GraduationCap, ChevronDown, AlertTriangle, RefreshCw, Sparkles,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token") ?? "";
@@ -52,17 +58,19 @@ export default function AdminCodesPage() {
 
   const [tab, setTab] = useState<"generate" | "list">("generate");
 
-  // Generate tab
   const [selectedRole, setSelectedRole] = useState("student");
   const [selectedClassId, setSelectedClassId] = useState("");
   const [namesText, setNamesText] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState<CodeRow[]>([]);
 
-  // List tab
   const [allCodes, setAllCodes] = useState<CodeRow[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [filterClass, setFilterClass] = useState("");
+  const [filterRole, setFilterRole] = useState("");
+
+  const [cleanupDialog, setCleanupDialog] = useState(false);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
 
   if (!user || !["admin", "director", "mudir"].includes(user.role)) {
     return <p className="text-muted-foreground p-4">Ruxsat yo'q.</p>;
@@ -107,6 +115,7 @@ export default function AdminCodesPage() {
     try {
       const params = new URLSearchParams();
       if (filterClass) params.set("class_id", filterClass);
+      if (filterRole) params.set("role", filterRole);
       const res = await fetch(`${API_BASE}/admin/codes?${params}`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
@@ -118,7 +127,7 @@ export default function AdminCodesPage() {
     setListLoading(false);
   };
 
-  useEffect(() => { if (tab === "list") void loadAllCodes(); }, [tab, filterClass]);
+  useEffect(() => { if (tab === "list") void loadAllCodes(); }, [tab, filterClass, filterRole]);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Kodni o'chirasizmi?")) return;
@@ -129,6 +138,26 @@ export default function AdminCodesPage() {
     toast({ title: "O'chirildi" });
     if (tab === "list") void loadAllCodes();
     setGenerated(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleCleanupUnused = async () => {
+    setCleanupLoading(true);
+    try {
+      const params: Record<string, unknown> = { unused: true };
+      if (filterClass) params.class_id = filterClass;
+      const res = await fetch(`${API_BASE}/admin/codes`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify(params),
+      });
+      const data = await res.json() as { deleted: number };
+      toast({ title: `🗑️ ${data.deleted} ta ishlatilmagan kod o'chirildi` });
+      setCleanupDialog(false);
+      void loadAllCodes();
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik yuz berdi" });
+    }
+    setCleanupLoading(false);
   };
 
   const handleCopyOne = (row: CodeRow) => {
@@ -142,6 +171,9 @@ export default function AdminCodesPage() {
     copyText(text, toast);
   };
 
+  const unusedCount = allCodes.filter(r => !r.used).length;
+  const usedCount = allCodes.filter(r => r.used).length;
+
   const CodeTable = ({ rows, showDelete = true }: { rows: CodeRow[]; showDelete?: boolean }) => (
     <div className="space-y-2">
       {rows.length > 1 && (
@@ -152,49 +184,49 @@ export default function AdminCodesPage() {
           </Button>
         </div>
       )}
-      <div className="rounded-lg border overflow-hidden">
+      <div className="rounded-lg border overflow-hidden shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-muted/50">
+          <thead className="bg-muted/60">
             <tr>
-              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Ism Familiya</th>
-              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Mahfiy kod</th>
-              {tab === "list" && <th className="text-left px-3 py-2 font-medium text-muted-foreground">Sinf</th>}
-              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Holat</th>
-              <th className="px-2 py-2" />
+              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Ism Familiya</th>
+              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Mahfiy kod</th>
+              {tab === "list" && <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Sinf / Rol</th>}
+              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Holat</th>
+              <th className="px-2 py-2.5" />
             </tr>
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <tr key={row.id} className={i % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                <td className="px-3 py-2 font-medium">{row.full_name}</td>
-                <td className="px-3 py-2">
-                  <code className="bg-primary/10 text-primary font-bold px-2 py-0.5 rounded tracking-wider text-xs">
+              <tr key={row.id} className={`transition-colors ${i % 2 === 0 ? "bg-background" : "bg-muted/20"} hover:bg-primary/5`}>
+                <td className="px-3 py-2.5 font-medium">{row.full_name}</td>
+                <td className="px-3 py-2.5">
+                  <code className="bg-primary/10 text-primary font-bold px-2.5 py-1 rounded-md tracking-widest text-xs border border-primary/20">
                     {row.code}
                   </code>
                 </td>
                 {tab === "list" && (
-                  <td className="px-3 py-2 text-muted-foreground text-xs">
+                  <td className="px-3 py-2.5 text-muted-foreground text-xs">
                     {row.class_name ?? ROLE_LABELS[row.role] ?? row.role}
                   </td>
                 )}
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   {row.used ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                    <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">
                       <CheckCircle2 className="w-3 h-3" /> Ishlatilgan
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                    <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
                       <Clock className="w-3 h-3" /> Kutilmoqda
                     </span>
                   )}
                 </td>
-                <td className="px-2 py-2">
+                <td className="px-2 py-2.5">
                   <div className="flex items-center gap-1">
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleCopyOne(row)}>
                       <Copy className="w-3.5 h-3.5" />
                     </Button>
                     {showDelete && (
-                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => void handleDelete(row.id)}>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => void handleDelete(row.id)}>
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     )}
@@ -222,11 +254,11 @@ export default function AdminCodesPage() {
 
       {/* Tabs */}
       <div className="flex border-b">
-        {([["generate", "Kod yaratish"], ["list", "Mavjud kodlar"]] as const).map(([key, label]) => (
+        {([["generate", "✨ Kod yaratish"], ["list", "📋 Mavjud kodlar"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               tab === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -242,7 +274,7 @@ export default function AdminCodesPage() {
               <Label>Toifa</Label>
               <div className="relative">
                 <select
-                  className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background appearance-none pr-8"
+                  className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-primary/30"
                   value={selectedRole}
                   onChange={e => setSelectedRole(e.target.value)}
                 >
@@ -257,7 +289,7 @@ export default function AdminCodesPage() {
               <Label>Sinf {selectedRole === "student" || selectedRole === "sinf_rahbari" ? "(majburiy)" : "(ixtiyoriy)"}</Label>
               <div className="relative">
                 <select
-                  className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background appearance-none pr-8"
+                  className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-primary/30"
                   value={selectedClassId}
                   onChange={e => setSelectedClassId(e.target.value)}
                 >
@@ -277,7 +309,7 @@ export default function AdminCodesPage() {
               <span className="text-muted-foreground font-normal ml-1">(har bir ism yangi qatorda)</span>
             </Label>
             <textarea
-              className="w-full border border-input rounded-md px-3 py-2 text-sm font-mono resize-none h-40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="w-full border border-input rounded-md px-3 py-2 text-sm font-mono resize-none h-44 bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
               placeholder={"Valiyev Valijon\nHasanov Xasan\nToshmatova Zulfiya\n..."}
               value={namesText}
               onChange={e => setNamesText(e.target.value)}
@@ -292,12 +324,15 @@ export default function AdminCodesPage() {
             onClick={handleGenerate}
             disabled={generating || !namesText.trim()}
           >
-            <KeyRound className="w-4 h-4 mr-2" />
-            {generating ? "Yaratilmoqda..." : "Mahfiy kodlar yaratish"}
+            {generating ? (
+              <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Yaratilmoqda...</>
+            ) : (
+              <><Sparkles className="w-4 h-4 mr-2" /> Mahfiy kodlar yaratish</>
+            )}
           </Button>
 
           {generated.length > 0 && (
-            <Card>
+            <Card className="border-primary/30 shadow-md">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-green-600" />
@@ -315,49 +350,125 @@ export default function AdminCodesPage() {
 
       {tab === "list" && (
         <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <div className="relative">
-                <select
-                  className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background appearance-none pr-8"
-                  value={filterClass}
-                  onChange={e => setFilterClass(e.target.value)}
-                >
-                  <option value="">Barcha sinflar</option>
-                  {sortedClasses.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
-              </div>
+          {/* Stats banners */}
+          {allCodes.length > 0 && (
+            <div className="grid grid-cols-3 gap-3">
+              <Card className="bg-primary/5 border-primary/20">
+                <CardContent className="pt-4 pb-3 text-center">
+                  <p className="text-2xl font-bold text-primary">{allCodes.length}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Jami kodlar</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-green-50 border-green-200">
+                <CardContent className="pt-4 pb-3 text-center">
+                  <p className="text-2xl font-bold text-green-700">{usedCount}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Ishlatilgan</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-amber-50 border-amber-200">
+                <CardContent className="pt-4 pb-3 text-center">
+                  <p className="text-2xl font-bold text-amber-700">{unusedCount}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Kutilmoqda</p>
+                </CardContent>
+              </Card>
             </div>
-            <Button variant="outline" onClick={() => void loadAllCodes()} disabled={listLoading}>
-              Yangilash
+          )}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[140px]">
+              <select
+                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                value={filterClass}
+                onChange={e => setFilterClass(e.target.value)}
+              >
+                <option value="">Barcha sinflar</option>
+                {sortedClasses.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+            </div>
+            <div className="relative flex-1 min-w-[140px]">
+              <select
+                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                value={filterRole}
+                onChange={e => setFilterRole(e.target.value)}
+              >
+                <option value="">Barcha toifalar</option>
+                {Object.entries(ROLE_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+            </div>
+            <Button variant="outline" size="icon" onClick={() => void loadAllCodes()} disabled={listLoading} title="Yangilash">
+              <RefreshCw className={`w-4 h-4 ${listLoading ? "animate-spin" : ""}`} />
             </Button>
+            {unusedCount > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setCleanupDialog(true)}
+                className="whitespace-nowrap"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                Ishlatilmaganlarni o'chirish ({unusedCount})
+              </Button>
+            )}
           </div>
 
           {listLoading ? (
-            <p className="text-muted-foreground text-sm">Yuklanmoqda...</p>
+            <div className="space-y-2">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />
+              ))}
+            </div>
           ) : allCodes.length === 0 ? (
-            <div className="text-center py-10">
-              <Users className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-              <p className="text-muted-foreground">Hech qanday kod topilmadi</p>
+            <div className="text-center py-12 rounded-xl border border-dashed">
+              <Users className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+              <p className="text-muted-foreground font-medium">Hech qanday kod topilmadi</p>
               <p className="text-sm text-muted-foreground mt-1">Avval "Kod yaratish" bo'limida kodlar yarating</p>
             </div>
           ) : (
-            <>
-              <div className="text-sm text-muted-foreground">
-                Jami: <span className="font-medium text-foreground">{allCodes.length}</span> ta kod
-                {" | "}
-                Ishlatilgan: <span className="font-medium text-green-700">{allCodes.filter(r => r.used).length}</span>
-                {" | "}
-                Kutilmoqda: <span className="font-medium text-amber-700">{allCodes.filter(r => !r.used).length}</span>
-              </div>
-              <CodeTable rows={allCodes} showDelete />
-            </>
+            <CodeTable rows={allCodes} showDelete />
           )}
         </div>
       )}
+
+      {/* Cleanup confirmation dialog */}
+      <Dialog open={cleanupDialog} onOpenChange={setCleanupDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Ishlatilmagan kodlarni o'chirish
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <p className="text-sm text-muted-foreground">
+              {filterClass
+                ? `Tanlangan sinfdagi `
+                : `Barcha `}
+              <span className="font-bold text-foreground">{unusedCount} ta kutilmoqda</span> holatidagi kod o'chiriladi.
+              Bu amal qaytarib bo'lmaydi!
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setCleanupDialog(false)}>
+                Bekor qilish
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                disabled={cleanupLoading}
+                onClick={handleCleanupUnused}
+              >
+                {cleanupLoading ? <RefreshCw className="w-4 h-4 animate-spin mr-1.5" /> : <Trash2 className="w-4 h-4 mr-1.5" />}
+                O'chirish
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
