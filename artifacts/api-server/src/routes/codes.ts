@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
+import { query, queryOne } from "../lib/db.js";
 import { getAuthUser } from "./auth.js";
 
 const CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
@@ -13,15 +13,15 @@ function genCode(): string {
 async function uniqueCode(): Promise<string> {
   for (let i = 0; i < 15; i++) {
     const c = genCode();
-    const { data } = await supabase.from("registration_codes").select("id").eq("code", c).maybeSingle();
-    if (!data) return c;
+    const existing = await queryOne("SELECT id FROM registration_codes WHERE code = $1", [c]);
+    if (!existing) return c;
   }
   return genCode();
 }
 
 const router: IRouter = Router();
 
-// POST /api/auth/verify-code — mahfiy kodni tekshirish (ommaviy)
+// POST /api/auth/verify-code
 router.post("/auth/verify-code", async (req, res): Promise<void> => {
   const { code } = req.body as { code?: string };
   if (!code?.trim()) {
@@ -29,62 +29,66 @@ router.post("/auth/verify-code", async (req, res): Promise<void> => {
     return;
   }
   const upperCode = code.trim().toUpperCase();
-  const { data, error } = await supabase
-    .from("registration_codes")
-    .select("*")
-    .eq("code", upperCode)
-    .eq("used", false)
-    .maybeSingle();
+  const data = await queryOne<{
+    id: string; code: string; full_name: string; first_name: string; last_name: string;
+    role: string; class_id: string | null; class_name: string | null;
+  }>(
+    "SELECT * FROM registration_codes WHERE code = $1 AND used = false",
+    [upperCode]
+  );
 
-  if (error || !data) {
+  if (!data) {
     res.status(404).json({ error: "Kod topilmadi yoki allaqachon ishlatilgan" });
     return;
   }
 
-  const row = data as {
-    id: string; code: string; full_name: string; first_name: string; last_name: string;
-    role: string; class_id: string | null; class_name: string | null;
-  };
-
   res.json({
     valid: true,
-    id: row.id,
-    code: row.code,
-    full_name: row.full_name,
-    first_name: row.first_name,
-    last_name: row.last_name,
-    role: row.role,
-    class_id: row.class_id,
-    class_name: row.class_name,
+    id: data.id, code: data.code, full_name: data.full_name,
+    first_name: data.first_name, last_name: data.last_name,
+    role: data.role, class_id: data.class_id, class_name: data.class_name,
   });
 });
 
-// GET /api/admin/codes — kodlar ro'yxati (admin)
+// GET /api/admin/codes
 router.get("/admin/codes", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user || !["admin", "director", "mudir"].includes(user["role"] as string)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }
+
   const { class_id, role } = req.query as Record<string, string>;
-  let q = supabase.from("registration_codes").select("*").order("created_at", { ascending: false });
-  if (class_id) q = q.eq("class_id", class_id);
-  if (role) q = q.eq("role", role);
-  const { data, error } = await q;
-  if (error) { res.status(500).json({ error: error.message }); return; }
-  res.json(data ?? []);
+  let sql = "SELECT * FROM registration_codes";
+  const params: unknown[] = [];
+  const conditions: string[] = [];
+
+  if (class_id) { conditions.push(`class_id = $${params.length + 1}`); params.push(class_id); }
+  if (role) { conditions.push(`role = $${params.length + 1}`); params.push(role); }
+
+  if (conditions.length > 0) sql += " WHERE " + conditions.join(" AND ");
+  sql += " ORDER BY created_at DESC";
+
+  try {
+    const data = await query(sql, params);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
-// POST /api/admin/codes/generate — ommaviy kod yaratish (admin)
+// POST /api/admin/codes/generate
 router.post("/admin/codes/generate", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user || !["admin", "director", "mudir"].includes(user["role"] as string)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }
+
   const { names, role = "student", class_id, class_name } = req.body as {
     names: string[]; role?: string; class_id?: string; class_name?: string;
   };
+
   if (!names?.length) { res.status(400).json({ error: "Ismlar kiritilmagan" }); return; }
 
   const rows = [];
@@ -100,21 +104,36 @@ router.post("/admin/codes/generate", async (req, res): Promise<void> => {
 
   if (!rows.length) { res.status(400).json({ error: "Hech qanday ism topilmadi" }); return; }
 
-  const { data, error } = await supabase.from("registration_codes").insert(rows).select();
-  if (error) { res.status(500).json({ error: error.message }); return; }
-  res.json({ generated: data ?? [] });
+  try {
+    const inserted = [];
+    for (const r of rows) {
+      const d = await queryOne(
+        `INSERT INTO registration_codes (code, full_name, first_name, last_name, role, class_id, class_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [r.code, r.full_name, r.first_name, r.last_name, r.role, r.class_id, r.class_name]
+      );
+      if (d) inserted.push(d);
+    }
+    res.json({ generated: inserted });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
-// DELETE /api/admin/codes/:id — kodni o'chirish (admin)
+// DELETE /api/admin/codes/:id
 router.delete("/admin/codes/:id", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user || !["admin", "director", "mudir"].includes(user["role"] as string)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }
-  const { error } = await supabase.from("registration_codes").delete().eq("id", req.params["id"]);
-  if (error) { res.status(500).json({ error: error.message }); return; }
-  res.json({ success: true });
+
+  try {
+    await query("DELETE FROM registration_codes WHERE id = $1", [req.params["id"]]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 export default router;

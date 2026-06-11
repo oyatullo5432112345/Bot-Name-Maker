@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
+import { query, queryOne } from "../lib/db.js";
 import { getAuthUser } from "./auth.js";
 import { z } from "zod";
 
@@ -31,33 +31,21 @@ router.get("/lessons", async (req, res): Promise<void> => {
 
   const role = user["role"] as string;
   const class_name = user["class_name"] as string | null;
+  const login = user["login"] as string;
 
-  let query = supabase
-    .from("lessons")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (role === "student" && class_name) {
-    query = supabase
-      .from("lessons")
-      .select("*")
-      .eq("class_name", class_name)
-      .order("created_at", { ascending: false });
-  } else if (role === "teacher" || role === "sinf_rahbari") {
-    const login = user["login"] as string;
-    query = supabase
-      .from("lessons")
-      .select("*")
-      .eq("teacher_login", login)
-      .order("created_at", { ascending: false });
+  try {
+    let rows;
+    if (role === "student" && class_name) {
+      rows = await query("SELECT * FROM lessons WHERE class_name = $1 ORDER BY created_at DESC", [class_name]);
+    } else if (role === "teacher" || role === "sinf_rahbari") {
+      rows = await query("SELECT * FROM lessons WHERE teacher_login = $1 ORDER BY created_at DESC", [login]);
+    } else {
+      rows = await query("SELECT * FROM lessons ORDER BY created_at DESC");
+    }
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: "Darsliklarni yuklashda xatolik", details: (err as Error).message });
   }
-
-  const { data, error } = await query;
-  if (error) {
-    res.status(500).json({ error: "Darsliklarni yuklashda xatolik", details: error.message });
-    return;
-  }
-  res.json(data ?? []);
 });
 
 // POST /api/lessons
@@ -83,26 +71,17 @@ router.post("/lessons", async (req, res): Promise<void> => {
 
   const { title, subject, description, content, class_name } = parsed.data;
 
-  const { data, error } = await supabase
-    .from("lessons")
-    .insert([{
-      title,
-      subject,
-      description: description ?? "",
-      content: content ?? "",
-      class_name,
-      teacher_login: user["login"] as string,
-      teacher_name: user["full_name"] as string,
-      created_at: new Date().toISOString(),
-    }])
-    .select()
-    .single();
-
-  if (error || !data) {
-    res.status(500).json({ error: "Darslik qo'shishda xatolik", details: error?.message });
-    return;
+  try {
+    const data = await queryOne(
+      `INSERT INTO lessons (title, subject, description, content, class_name, teacher_login, teacher_name, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [title, subject, description ?? "", content ?? "", class_name,
+       user["login"] as string, user["full_name"] as string, new Date().toISOString()]
+    );
+    res.status(201).json(data);
+  } catch (err) {
+    res.status(500).json({ error: "Darslik qo'shishda xatolik", details: (err as Error).message });
   }
-  res.status(201).json(data);
 });
 
 // PUT /api/lessons/:id
@@ -127,31 +106,38 @@ router.put("/lessons/:id", async (req, res): Promise<void> => {
   }
 
   const { id } = req.params as { id: string };
-
-  const { data: existing } = await supabase
-    .from("lessons")
-    .select("teacher_login")
-    .eq("id", id)
-    .single();
+  const existing = await queryOne<{ teacher_login: string }>(
+    "SELECT teacher_login FROM lessons WHERE id = $1", [id]
+  );
 
   if (!existing) {
     res.status(404).json({ error: "Darslik topilmadi" });
     return;
   }
 
-  if (role !== "admin" && (existing as { teacher_login: string }).teacher_login !== (user["login"] as string)) {
+  if (role !== "admin" && existing.teacher_login !== (user["login"] as string)) {
     res.status(403).json({ error: "Bu darslikni o'zgartirish uchun ruxsat yo'q" });
     return;
   }
 
-  const { data, error } = await supabase
-    .from("lessons")
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .select()
-    .single();
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
 
-  if (error || !data) {
+  const raw = parsed.data as Record<string, unknown>;
+  for (const [key, val] of Object.entries(raw)) {
+    if (val !== undefined) { setClauses.push(`${key} = $${idx++}`); values.push(val); }
+  }
+  setClauses.push(`updated_at = $${idx++}`);
+  values.push(new Date().toISOString());
+  values.push(id);
+
+  const data = await queryOne(
+    `UPDATE lessons SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING *`,
+    values
+  );
+
+  if (!data) {
     res.status(500).json({ error: "Darslikni yangilashda xatolik" });
     return;
   }
@@ -174,28 +160,21 @@ router.delete("/lessons/:id", async (req, res): Promise<void> => {
   }
 
   const { id } = req.params as { id: string };
-
-  const { data: existing } = await supabase
-    .from("lessons")
-    .select("teacher_login")
-    .eq("id", id)
-    .single();
+  const existing = await queryOne<{ teacher_login: string }>(
+    "SELECT teacher_login FROM lessons WHERE id = $1", [id]
+  );
 
   if (!existing) {
     res.status(404).json({ error: "Darslik topilmadi" });
     return;
   }
 
-  if (role !== "admin" && (existing as { teacher_login: string }).teacher_login !== (user["login"] as string)) {
+  if (role !== "admin" && existing.teacher_login !== (user["login"] as string)) {
     res.status(403).json({ error: "Bu darslikni o'chirish uchun ruxsat yo'q" });
     return;
   }
 
-  const { error } = await supabase.from("lessons").delete().eq("id", id);
-  if (error) {
-    res.status(500).json({ error: "Darslikni o'chirishda xatolik" });
-    return;
-  }
+  await query("DELETE FROM lessons WHERE id = $1", [id]);
   res.json({ ok: true });
 });
 

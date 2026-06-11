@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
+import { query, queryOne } from "../lib/db.js";
 import {
   ListStaffResponse,
   CreateStaffBody,
@@ -21,24 +21,13 @@ function generateStaffCredentials(name: string): { login: string; password: stri
 }
 
 async function enrichStaff(staff: {
-  id: string;
-  full_name: string;
-  role: string;
-  class_id?: string | null;
-  login: string;
-  password: string;
-  telegram_id?: number | null;
-  created_at?: string | null;
-  subjects?: string[] | null;
-  can_teach?: boolean | null;
+  id: string; full_name: string; role: string; class_id?: string | null;
+  login: string; password: string; telegram_id?: number | null;
+  created_at?: string | null; subjects?: string[] | null; can_teach?: boolean | null;
 }) {
   let class_name: string | null = null;
   if (staff.class_id) {
-    const { data: cls } = await supabase
-      .from("classes")
-      .select("name")
-      .eq("id", staff.class_id)
-      .single();
+    const cls = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [staff.class_id]);
     class_name = cls?.name ?? null;
   }
   return { ...staff, class_name, subjects: staff.subjects ?? [], can_teach: staff.can_teach ?? false };
@@ -47,35 +36,24 @@ async function enrichStaff(staff: {
 // GET /api/staff/:id
 router.get("/staff/:id", async (req, res): Promise<void> => {
   const { id } = req.params;
-  const { data, error } = await supabase
-    .from("staff")
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (error || !data) {
+  const data = await queryOne("SELECT * FROM staff WHERE id = $1", [id]);
+  if (!data) {
     res.status(404).json({ error: "Xodim topilmadi" });
     return;
   }
-
   const enriched = await enrichStaff(data as Parameters<typeof enrichStaff>[0]);
   res.json(enriched);
 });
 
 // GET /api/staff
 router.get("/staff", async (_req, res): Promise<void> => {
-  const { data, error } = await supabase
-    .from("staff")
-    .select("*")
-    .order("full_name");
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  try {
+    const data = await query("SELECT * FROM staff ORDER BY full_name");
+    const enriched = await Promise.all(data.map(enrichStaff));
+    res.json(ListStaffResponse.parse(enriched));
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
   }
-
-  const enriched = await Promise.all((data ?? []).map(enrichStaff));
-  res.json(ListStaffResponse.parse(enriched));
 });
 
 // POST /api/staff/bulk
@@ -99,22 +77,15 @@ router.post("/staff/bulk", async (req, res): Promise<void> => {
     const password = Math.floor(10000 + Math.random() * 90000).toString();
     const can_teach = s.can_teach ?? (s.role === "teacher" || s.role === "sinf_rahbari");
 
-    const { error } = await supabase
-      .from("staff")
-      .insert([{
-        full_name: s.full_name,
-        role: s.role,
-        login,
-        password,
-        telegram_id: null,
-        subjects: s.subjects ?? [],
-        can_teach,
-      }]);
-
-    if (error) {
-      errors.push({ full_name: s.full_name, error: error.message });
-    } else {
+    try {
+      await query(
+        `INSERT INTO staff (full_name, role, login, password, telegram_id, subjects, can_teach)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [s.full_name, s.role, login, password, null, s.subjects ?? [], can_teach]
+      );
       created.push({ full_name: s.full_name, login, password, role: s.role });
+    } catch (err) {
+      errors.push({ full_name: s.full_name, error: (err as Error).message });
     }
   }
 
@@ -131,26 +102,17 @@ router.post("/staff", async (req, res): Promise<void> => {
 
   const { login, password } = generateStaffCredentials(parsed.data.full_name);
 
-  const { data, error } = await supabase
-    .from("staff")
-    .insert([{
-      full_name: parsed.data.full_name,
-      role: parsed.data.role,
-      class_id: parsed.data.class_id ?? null,
-      login,
-      password,
-      telegram_id: null,
-    }])
-    .select()
-    .single();
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  try {
+    const data = await queryOne(
+      `INSERT INTO staff (full_name, role, class_id, login, password, telegram_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [parsed.data.full_name, parsed.data.role, parsed.data.class_id ?? null, login, password, null]
+    );
+    const enriched = await enrichStaff(data as Parameters<typeof enrichStaff>[0]);
+    res.status(201).json(enriched);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
   }
-
-  const enriched = await enrichStaff(data as Parameters<typeof enrichStaff>[0]);
-  res.status(201).json(enriched);
 });
 
 // PATCH /api/staff/:id
@@ -167,28 +129,31 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const updates: Record<string, unknown> = {};
-  if (body.data.full_name != null) updates.full_name = body.data.full_name;
-  if (body.data.role != null) updates.role = body.data.role;
-  if (body.data.class_id !== undefined) updates.class_id = body.data.class_id;
-  if (body.data.login != null) updates.login = body.data.login;
-  if (body.data.password != null) updates.password = body.data.password;
-  // can_teach va subjects ni ham yangilash
-  if ((body.data as Record<string, unknown>)["can_teach"] !== undefined) {
-    updates.can_teach = (body.data as Record<string, unknown>)["can_teach"];
-  }
-  if ((body.data as Record<string, unknown>)["subjects"] !== undefined) {
-    updates.subjects = (body.data as Record<string, unknown>)["subjects"];
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+
+  const raw = body.data as Record<string, unknown>;
+  if (raw["full_name"] != null) { setClauses.push(`full_name = $${idx++}`); values.push(raw["full_name"]); }
+  if (raw["role"] != null) { setClauses.push(`role = $${idx++}`); values.push(raw["role"]); }
+  if (raw["class_id"] !== undefined) { setClauses.push(`class_id = $${idx++}`); values.push(raw["class_id"]); }
+  if (raw["login"] != null) { setClauses.push(`login = $${idx++}`); values.push(raw["login"]); }
+  if (raw["password"] != null) { setClauses.push(`password = $${idx++}`); values.push(raw["password"]); }
+  if (raw["can_teach"] !== undefined) { setClauses.push(`can_teach = $${idx++}`); values.push(raw["can_teach"]); }
+  if (raw["subjects"] !== undefined) { setClauses.push(`subjects = $${idx++}`); values.push(raw["subjects"]); }
+
+  if (setClauses.length === 0) {
+    res.status(400).json({ error: "Yangilanadigan maydon yo'q" });
+    return;
   }
 
-  const { data, error } = await supabase
-    .from("staff")
-    .update(updates)
-    .eq("id", params.data.id)
-    .select()
-    .single();
+  values.push(params.data.id);
+  const data = await queryOne(
+    `UPDATE staff SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING *`,
+    values
+  );
 
-  if (error || !data) {
+  if (!data) {
     res.status(404).json({ error: "Xodim topilmadi" });
     return;
   }
@@ -205,27 +170,15 @@ router.delete("/staff/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // 1. teacher_subjects — CASCADE bo'lsa ham, aniq o'chiramiz
-  await supabase.from("teacher_subjects").delete().eq("teacher_id", params.data.id);
-
-  // 2. timetable — teacher_id ni NULL ga o'rnatamiz
-  await supabase.from("timetable").update({ teacher_id: null }).eq("teacher_id", params.data.id);
-
-  // 3. classes — teacher_id ni NULL ga o'rnatamiz (sinf rahbari)
-  await supabase.from("classes").update({ teacher_id: null }).eq("teacher_id", params.data.id);
-
-  // 3. Asosiy yozuvni o'chiramiz
-  const { error } = await supabase
-    .from("staff")
-    .delete()
-    .eq("id", params.data.id);
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  try {
+    await query("DELETE FROM teacher_subjects WHERE teacher_id = $1", [params.data.id]);
+    await query("UPDATE timetable SET teacher_id = NULL WHERE teacher_id = $1", [params.data.id]);
+    await query("UPDATE classes SET teacher_id = NULL WHERE teacher_id = $1", [params.data.id]);
+    await query("DELETE FROM staff WHERE id = $1", [params.data.id]);
+    res.sendStatus(204);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
   }
-
-  res.sendStatus(204);
 });
 
 export default router;

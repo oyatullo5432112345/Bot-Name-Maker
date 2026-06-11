@@ -1,21 +1,19 @@
-import { supabase } from "./database.js";
+import { query, queryOne } from "../lib/db.js";
 import type { Role } from "./roles.js";
 
-// ─── Interfeyslar ────────────────────────────────────────────────────────────
-
 export interface SchoolClass {
-  id: string;           // UUID
-  name: string;         // Masalan: "9-A"
-  teacher_id: string | null;  // Staff UUID (sinf rahbari)
+  id: string;
+  name: string;
+  teacher_id: string | null;
   created_at: string;
 }
 
 export interface Staff {
-  id: string;           // UUID
-  telegram_id: number | null;  // Bot orqali kirganda to'ldiriladi
+  id: string;
+  telegram_id: number | null;
   full_name: string;
   role: Role;
-  class_id: string | null;     // Qaysi sinfga biriktirilgan (o'qituvchi uchun)
+  class_id: string | null;
   login: string;
   password: string;
   created_at: string;
@@ -28,73 +26,41 @@ export interface StaffWithClass extends Staff {
 // ─── SINFLAR (classes) ───────────────────────────────────────────────────────
 
 export async function createClass(name: string): Promise<SchoolClass | null> {
-  const { data, error } = await supabase
-    .from("classes")
-    .insert([{ name }])
-    .select()
-    .single();
-  if (error || !data) return null;
-  return data as SchoolClass;
+  return queryOne<SchoolClass>(
+    "INSERT INTO classes (name) VALUES ($1) RETURNING *", [name]
+  );
 }
 
 export async function getAllClasses(): Promise<SchoolClass[]> {
-  const { data, error } = await supabase
-    .from("classes")
-    .select("*")
-    .order("name");
-  if (error || !data) return [];
-  return data as SchoolClass[];
+  return query<SchoolClass>("SELECT * FROM classes ORDER BY name");
 }
 
 export async function getClassById(id: string): Promise<SchoolClass | null> {
-  const { data, error } = await supabase
-    .from("classes")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (error || !data) return null;
-  return data as SchoolClass;
+  return queryOne<SchoolClass>("SELECT * FROM classes WHERE id = $1", [id]);
 }
 
 export async function getClassByName(name: string): Promise<SchoolClass | null> {
-  const { data, error } = await supabase
-    .from("classes")
-    .select("*")
-    .eq("name", name)
-    .single();
-  if (error || !data) return null;
-  return data as SchoolClass;
+  return queryOne<SchoolClass>("SELECT * FROM classes WHERE name = $1", [name]);
 }
 
 export async function deleteClass(id: string): Promise<boolean> {
-  const { error } = await supabase.from("classes").delete().eq("id", id);
-  return !error;
+  try {
+    await query("DELETE FROM classes WHERE id = $1", [id]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-// Sinfga rahbar tayinlash
-export async function assignTeacher(
-  classId: string,
-  staffId: string
-): Promise<boolean> {
-  // Avvalgi rahbarning class_id ni null qilish
-  await supabase
-    .from("staff")
-    .update({ class_id: null })
-    .eq("class_id", classId)
-    .eq("role", "teacher");
-
-  // Yangi rahbarga class_id berish
-  await supabase
-    .from("staff")
-    .update({ class_id: classId })
-    .eq("id", staffId);
-
-  // classes jadvalini yangilash
-  const { error } = await supabase
-    .from("classes")
-    .update({ teacher_id: staffId })
-    .eq("id", classId);
-  return !error;
+export async function assignTeacher(classId: string, staffId: string): Promise<boolean> {
+  try {
+    await query("UPDATE staff SET class_id = NULL WHERE class_id = $1 AND role = 'teacher'", [classId]);
+    await query("UPDATE staff SET class_id = $1 WHERE id = $2", [classId, staffId]);
+    await query("UPDATE classes SET teacher_id = $1 WHERE id = $2", [staffId, classId]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ─── XODIMLAR (staff) ────────────────────────────────────────────────────────
@@ -107,96 +73,71 @@ export async function createStaff(input: {
   const login = `staff_${Date.now()}`;
   const password = Math.floor(100000 + Math.random() * 900000).toString();
 
-  const { data, error } = await supabase
-    .from("staff")
-    .insert([{
-      full_name: input.full_name,
-      role: input.role,
-      class_id: input.class_id ?? null,
-      login,
-      password,
-      telegram_id: null,
-    }])
-    .select()
-    .single();
-
-  if (error || !data) return null;
-  return data as Staff;
+  return queryOne<Staff>(
+    `INSERT INTO staff (full_name, role, class_id, login, password, telegram_id)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [input.full_name, input.role, input.class_id ?? null, login, password, null]
+  );
 }
 
 export async function getStaffByTelegramId(telegramId: number): Promise<Staff | null> {
-  const { data, error } = await supabase
-    .from("staff")
-    .select("*")
-    .eq("telegram_id", telegramId)
-    .single();
-  if (error || !data) return null;
-  return data as Staff;
+  return queryOne<Staff>("SELECT * FROM staff WHERE telegram_id = $1", [telegramId]);
 }
 
 export async function getStaffByLogin(login: string): Promise<Staff | null> {
-  const { data, error } = await supabase
-    .from("staff")
-    .select("*")
-    .eq("login", login)
-    .single();
-  if (error || !data) return null;
-  return data as Staff;
+  return queryOne<Staff>("SELECT * FROM staff WHERE login = $1", [login]);
 }
 
 export async function getAllStaff(): Promise<Staff[]> {
-  const { data, error } = await supabase
-    .from("staff")
-    .select("*")
-    .order("role");
-  if (error || !data) return [];
-  return data as Staff[];
+  return query<Staff>("SELECT * FROM staff ORDER BY role");
 }
 
 export async function getTeachers(): Promise<Staff[]> {
-  const { data, error } = await supabase
-    .from("staff")
-    .select("*")
-    .eq("role", "teacher")
-    .order("full_name");
-  if (error || !data) return [];
-  return data as Staff[];
+  return query<Staff>("SELECT * FROM staff WHERE role = 'teacher' ORDER BY full_name");
 }
 
 export async function updateStaff(
   id: string,
   updates: Partial<Omit<Staff, "id" | "created_at">>
 ): Promise<boolean> {
-  const { error } = await supabase
-    .from("staff")
-    .update(updates)
-    .eq("id", id);
-  return !error;
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+
+  for (const [key, val] of Object.entries(updates)) {
+    setClauses.push(`${key} = $${idx++}`);
+    values.push(val);
+  }
+
+  if (setClauses.length === 0) return false;
+  values.push(id);
+
+  try {
+    await query(`UPDATE staff SET ${setClauses.join(", ")} WHERE id = $${idx}`, values);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-// Staff telegram_id ni login qilganda biriktirish
-export async function linkStaffTelegram(
-  staffId: string,
-  telegramId: number
-): Promise<boolean> {
-  const { error } = await supabase
-    .from("staff")
-    .update({ telegram_id: telegramId })
-    .eq("id", staffId);
-  return !error;
+export async function linkStaffTelegram(staffId: string, telegramId: number): Promise<boolean> {
+  try {
+    await query("UPDATE staff SET telegram_id = $1 WHERE id = $2", [telegramId, staffId]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function deleteStaff(id: string): Promise<boolean> {
-  const { error } = await supabase.from("staff").delete().eq("id", id);
-  return !error;
+  try {
+    await query("DELETE FROM staff WHERE id = $1", [id]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-// Rol bo'yicha xodimlarni olish
 export async function getStaffByRole(role: Role): Promise<Staff[]> {
-  const { data, error } = await supabase
-    .from("staff")
-    .select("*")
-    .eq("role", role);
-  if (error || !data) return [];
-  return data as Staff[];
+  return query<Staff>("SELECT * FROM staff WHERE role = $1", [role]);
 }

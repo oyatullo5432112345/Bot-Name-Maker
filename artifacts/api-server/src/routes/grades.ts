@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
+import { query, queryOne } from "../lib/db.js";
 import { getAuthUser } from "./auth.js";
 import { z } from "zod";
 
@@ -30,42 +30,25 @@ router.get("/grades", async (req, res): Promise<void> => {
 
   const role = user["role"] as string;
   const login = user["login"] as string;
-  const class_name = user["class_name"] as string | null;
 
-  let query = supabase
-    .from("grades")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (role === "student") {
-    query = supabase
-      .from("grades")
-      .select("*")
-      .eq("student_login", login)
-      .order("created_at", { ascending: false });
-  } else if (role === "teacher" || role === "sinf_rahbari") {
-    query = supabase
-      .from("grades")
-      .select("*")
-      .eq("teacher_login", login)
-      .order("created_at", { ascending: false });
-  } else if ((role === "director" || role === "zavuch" || role === "zam_direktor") && req.query["class_name"]) {
-    query = supabase
-      .from("grades")
-      .select("*")
-      .eq("class_name", req.query["class_name"] as string)
-      .order("created_at", { ascending: false });
+  try {
+    let rows;
+    if (role === "student") {
+      rows = await query("SELECT * FROM grades WHERE student_login = $1 ORDER BY created_at DESC", [login]);
+    } else if (role === "teacher" || role === "sinf_rahbari") {
+      rows = await query("SELECT * FROM grades WHERE teacher_login = $1 ORDER BY created_at DESC", [login]);
+    } else if ((role === "director" || role === "zavuch" || role === "zam_direktor") && req.query["class_name"]) {
+      rows = await query("SELECT * FROM grades WHERE class_name = $1 ORDER BY created_at DESC", [req.query["class_name"]]);
+    } else {
+      rows = await query("SELECT * FROM grades ORDER BY created_at DESC");
+    }
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: "Baholarni yuklashda xatolik", details: (err as Error).message });
   }
-
-  const { data, error } = await query;
-  if (error) {
-    res.status(500).json({ error: "Baholarni yuklashda xatolik", details: error.message });
-    return;
-  }
-  res.json(data ?? []);
 });
 
-// GET /api/grades/class/:class_name - sinf baholarini ko'rish
+// GET /api/grades/class/:class_name
 router.get("/grades/class/:class_name", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user) {
@@ -82,17 +65,12 @@ router.get("/grades/class/:class_name", async (req, res): Promise<void> => {
 
   const { class_name } = req.params as { class_name: string };
 
-  const { data, error } = await supabase
-    .from("grades")
-    .select("*")
-    .eq("class_name", class_name)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    res.status(500).json({ error: "Baholarni yuklashda xatolik", details: error.message });
-    return;
+  try {
+    const rows = await query("SELECT * FROM grades WHERE class_name = $1 ORDER BY created_at DESC", [class_name]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: "Baholarni yuklashda xatolik", details: (err as Error).message });
   }
-  res.json(data ?? []);
 });
 
 // POST /api/grades
@@ -118,27 +96,17 @@ router.post("/grades", async (req, res): Promise<void> => {
 
   const { student_login, student_name, class_name, subject, grade, comment } = parsed.data;
 
-  const { data, error } = await supabase
-    .from("grades")
-    .insert([{
-      student_login,
-      student_name,
-      class_name,
-      subject,
-      grade,
-      comment: comment ?? "",
-      teacher_login: user["login"] as string,
-      teacher_name: user["full_name"] as string,
-      created_at: new Date().toISOString(),
-    }])
-    .select()
-    .single();
-
-  if (error || !data) {
-    res.status(500).json({ error: "Baho qo'shishda xatolik", details: error?.message });
-    return;
+  try {
+    const data = await queryOne(
+      `INSERT INTO grades (student_login, student_name, class_name, subject, grade, comment, teacher_login, teacher_name, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [student_login, student_name, class_name, subject, grade, comment ?? "",
+       user["login"] as string, user["full_name"] as string, new Date().toISOString()]
+    );
+    res.status(201).json(data);
+  } catch (err) {
+    res.status(500).json({ error: "Baho qo'shishda xatolik", details: (err as Error).message });
   }
-  res.status(201).json(data);
 });
 
 // PUT /api/grades/:id
@@ -163,31 +131,37 @@ router.put("/grades/:id", async (req, res): Promise<void> => {
   }
 
   const { id } = req.params as { id: string };
-
-  const { data: existing } = await supabase
-    .from("grades")
-    .select("teacher_login")
-    .eq("id", id)
-    .single();
+  const existing = await queryOne<{ teacher_login: string }>(
+    "SELECT teacher_login FROM grades WHERE id = $1", [id]
+  );
 
   if (!existing) {
     res.status(404).json({ error: "Baho topilmadi" });
     return;
   }
 
-  if (role !== "admin" && (existing as { teacher_login: string }).teacher_login !== (user["login"] as string)) {
+  if (role !== "admin" && existing.teacher_login !== (user["login"] as string)) {
     res.status(403).json({ error: "Bu bahoni o'zgartirish uchun ruxsat yo'q" });
     return;
   }
 
-  const { data, error } = await supabase
-    .from("grades")
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .select()
-    .single();
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
 
-  if (error || !data) {
+  if (parsed.data.grade != null) { setClauses.push(`grade = $${idx++}`); values.push(parsed.data.grade); }
+  if (parsed.data.subject != null) { setClauses.push(`subject = $${idx++}`); values.push(parsed.data.subject); }
+  if (parsed.data.comment != null) { setClauses.push(`comment = $${idx++}`); values.push(parsed.data.comment); }
+  setClauses.push(`updated_at = $${idx++}`);
+  values.push(new Date().toISOString());
+
+  values.push(id);
+  const data = await queryOne(
+    `UPDATE grades SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING *`,
+    values
+  );
+
+  if (!data) {
     res.status(500).json({ error: "Bahoni yangilashda xatolik" });
     return;
   }
@@ -210,28 +184,21 @@ router.delete("/grades/:id", async (req, res): Promise<void> => {
   }
 
   const { id } = req.params as { id: string };
-
-  const { data: existing } = await supabase
-    .from("grades")
-    .select("teacher_login")
-    .eq("id", id)
-    .single();
+  const existing = await queryOne<{ teacher_login: string }>(
+    "SELECT teacher_login FROM grades WHERE id = $1", [id]
+  );
 
   if (!existing) {
     res.status(404).json({ error: "Baho topilmadi" });
     return;
   }
 
-  if (role !== "admin" && (existing as { teacher_login: string }).teacher_login !== (user["login"] as string)) {
+  if (role !== "admin" && existing.teacher_login !== (user["login"] as string)) {
     res.status(403).json({ error: "Bu bahoni o'chirish uchun ruxsat yo'q" });
     return;
   }
 
-  const { error } = await supabase.from("grades").delete().eq("id", id);
-  if (error) {
-    res.status(500).json({ error: "Bahoni o'chirishda xatolik" });
-    return;
-  }
+  await query("DELETE FROM grades WHERE id = $1", [id]);
   res.json({ ok: true });
 });
 

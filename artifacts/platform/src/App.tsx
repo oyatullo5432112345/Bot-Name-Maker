@@ -1,3 +1,4 @@
+import { useState, useCallback } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -8,6 +9,7 @@ import { AuthGuard } from "@/components/auth-guard";
 import { AppLayout } from "@/components/layout";
 import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
+import { SplashScreen } from "@/components/splash-screen";
 
 import Login from "@/pages/login";
 import Register from "@/pages/register";
@@ -188,11 +190,23 @@ function Router() {
   );
 }
 
+const SPLASH_KEY = "splash_shown_v1";
+
 function App() {
+  const [splashDone, setSplashDone] = useState(() => {
+    try { return sessionStorage.getItem(SPLASH_KEY) === "1"; } catch { return false; }
+  });
+
+  const handleSplashDone = useCallback(() => {
+    try { sessionStorage.setItem(SPLASH_KEY, "1"); } catch {}
+    setSplashDone(true);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <TooltipProvider>
+          {!splashDone && <SplashScreen onDone={handleSplashDone} />}
           <div className="flex flex-col min-h-screen">
             <div className="flex-1 min-h-0">
               <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>

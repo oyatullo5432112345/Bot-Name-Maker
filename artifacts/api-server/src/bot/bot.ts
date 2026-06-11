@@ -2,7 +2,7 @@ import { Bot, InlineKeyboard, InputFile, Keyboard } from "grammy";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "../lib/logger.js";
-import { supabase } from "../lib/supabase.js";
+import { query, queryOne } from "../lib/db.js";
 import {
   loadSettings,
   addChannel,
@@ -112,13 +112,10 @@ function buildContactKeyboard(): Keyboard {
 
 async function findStudentByPhone(phone: string) {
   const normalized = normalizePhone(phone);
-  const { data } = await supabase
-    .from("users")
-    .select("full_name, class_name, login, password")
-    .eq("phone_number", normalized)
-    .limit(1)
-    .maybeSingle();
-  return data;
+  return queryOne<{ full_name: string; class_name: string; login: string; password: string }>(
+    "SELECT full_name, class_name, login, password FROM users WHERE phone_number = $1 LIMIT 1",
+    [normalized]
+  );
 }
 
 async function sendWelcome(ctx: { replyWithPhoto: Function; reply: Function }, adminExtra = false): Promise<void> {
@@ -210,30 +207,25 @@ async function getTodayScheduleText(staffId: string, dayOverride?: number): Prom
 
   if (day === 0) return "🎉 Bugun *Yakshanba* — dam olish kuni!";
 
-  const { data: entries } = await supabase
-    .from("timetable")
-    .select("period, subject, class_id")
-    .eq("teacher_id", staffId)
-    .eq("day_of_week", day)
-    .order("period");
+  const entries = await query<{ period: number; subject: string; class_id: string }>(
+    "SELECT period, subject, class_id FROM timetable WHERE teacher_id = $1 AND day_of_week = $2 ORDER BY period",
+    [staffId, day]
+  );
 
-  if (!entries || entries.length === 0) {
+  if (entries.length === 0) {
     return `📭 *${DAY_NAMES_UZ[day]}* kuni sizga dars belgilanmagan.`;
   }
 
-  // Sinf nomlarini olish
-  const classIds = [...new Set(entries.map((e: { class_id: string }) => e.class_id))];
-  const { data: classes } = await supabase
-    .from("classes")
-    .select("id, name")
-    .in("id", classIds);
+  const classIds = [...new Set(entries.map((e) => e.class_id))];
+  const placeholders = classIds.map((_, i) => `$${i + 1}`).join(", ");
+  const classes = await query<{ id: string; name: string }>(
+    `SELECT id, name FROM classes WHERE id IN (${placeholders})`, classIds
+  );
 
   const classMap: Record<string, string> = {};
-  for (const c of (classes ?? []) as { id: string; name: string }[]) {
-    classMap[c.id] = c.name;
-  }
+  for (const c of classes) classMap[c.id] = c.name;
 
-  const lines = (entries as { period: number; subject: string; class_id: string }[]).map(e => {
+  const lines = entries.map(e => {
     const time = PERIOD_TIMES[e.period] ?? "";
     const cls = classMap[e.class_id] ?? "—";
     return `${e.period}\\. *${e.subject}* — ${cls}\n    🕐 ${time}`;
@@ -268,46 +260,30 @@ async function getOnboardUserList(
   const limit = OB_PAGE_SIZE;
 
   if (roleGroup === "student") {
-    const { data } = await supabase
-      .from("users")
-      .select("id, full_name, class_name")
-      .eq("role", "student")
-      .order("full_name")
-      .range(offset, offset + limit - 1);
-    const rows = ((data ?? []) as { id: string; full_name: string; class_name?: string }[]).map(
-      (r) => ({ id: r.id, full_name: r.full_name, extra: r.class_name ?? "" })
+    const data = await query<{ id: string; full_name: string; class_name?: string }>(
+      "SELECT id, full_name, class_name FROM users ORDER BY full_name LIMIT $1 OFFSET $2",
+      [limit, offset]
     );
-    return { rows, table: "users", hasMore: rows.length === limit };
+    const rows = data.map((r) => ({ id: r.id, full_name: r.full_name, extra: r.class_name ?? "" }));
+    return { rows, table: "users" as const, hasMore: rows.length === limit };
   }
 
   if (roleGroup === "teacher") {
-    const { data } = await supabase
-      .from("staff")
-      .select("id, full_name, role")
-      .eq("role", "teacher")
-      .order("full_name")
-      .range(offset, offset + limit - 1);
-    const rows = ((data ?? []) as { id: string; full_name: string; role: string }[]).map((r) => ({
-      id: r.id,
-      full_name: r.full_name,
-      extra: STAFF_ROLE_LABELS[r.role] ?? r.role,
-    }));
-    return { rows, table: "staff", hasMore: rows.length === limit };
+    const data = await query<{ id: string; full_name: string; role: string }>(
+      "SELECT id, full_name, role FROM staff WHERE role = 'teacher' ORDER BY full_name LIMIT $1 OFFSET $2",
+      [limit, offset]
+    );
+    const rows = data.map((r) => ({ id: r.id, full_name: r.full_name, extra: STAFF_ROLE_LABELS[r.role] ?? r.role }));
+    return { rows, table: "staff" as const, hasMore: rows.length === limit };
   }
 
   if (roleGroup === "sinf_rahbari") {
-    const { data } = await supabase
-      .from("staff")
-      .select("id, full_name, role")
-      .eq("role", "sinf_rahbari")
-      .order("full_name")
-      .range(offset, offset + limit - 1);
-    const rows = ((data ?? []) as { id: string; full_name: string; role: string }[]).map((r) => ({
-      id: r.id,
-      full_name: r.full_name,
-      extra: STAFF_ROLE_LABELS[r.role] ?? r.role,
-    }));
-    return { rows, table: "staff", hasMore: rows.length === limit };
+    const data = await query<{ id: string; full_name: string; role: string }>(
+      "SELECT id, full_name, role FROM staff WHERE role = 'sinf_rahbari' ORDER BY full_name LIMIT $1 OFFSET $2",
+      [limit, offset]
+    );
+    const rows = data.map((r) => ({ id: r.id, full_name: r.full_name, extra: STAFF_ROLE_LABELS[r.role] ?? r.role }));
+    return { rows, table: "staff" as const, hasMore: rows.length === limit };
   }
 
   // management or specific role (director/zavuch/zam_direktor)
@@ -315,18 +291,13 @@ async function getOnboardUserList(
     ? ["director", "zam_direktor", "zavuch", "kutubxonachi", "admin"]
     : [roleGroup];
 
-  const { data } = await supabase
-    .from("staff")
-    .select("id, full_name, role")
-    .in("role", mgmtRoles)
-    .order("full_name")
-    .range(offset, offset + limit - 1);
-  const rows = ((data ?? []) as { id: string; full_name: string; role: string }[]).map((r) => ({
-    id: r.id,
-    full_name: r.full_name,
-    extra: STAFF_ROLE_LABELS[r.role] ?? r.role,
-  }));
-  return { rows, table: "staff", hasMore: rows.length === limit };
+  const placeholders = mgmtRoles.map((_, i) => `$${i + 1}`).join(", ");
+  const data = await query<{ id: string; full_name: string; role: string }>(
+    `SELECT id, full_name, role FROM staff WHERE role IN (${placeholders}) ORDER BY full_name LIMIT $${mgmtRoles.length + 1} OFFSET $${mgmtRoles.length + 2}`,
+    [...mgmtRoles, limit, offset]
+  );
+  const rows = data.map((r) => ({ id: r.id, full_name: r.full_name, extra: STAFF_ROLE_LABELS[r.role] ?? r.role }));
+  return { rows, table: "staff" as const, hasMore: rows.length === limit };
 }
 
 function buildOnboardUserKb(
@@ -360,37 +331,22 @@ async function sendAccountInfo(
   dbId: string,
   tgId: number
 ): Promise<void> {
-  // Akkauntni bog'lash
-  await supabase.from(table).update({ telegram_id: tgId }).eq("id", dbId);
+  await query(`UPDATE ${table} SET telegram_id = $1 WHERE id = $2`, [tgId, dbId]);
 
-  // Ma'lumotlarni olish
   if (table === "users") {
-    const { data } = await supabase
-      .from("users")
-      .select("full_name, login, password, class_name")
-      .eq("id", dbId)
-      .maybeSingle();
-    if (!data) return;
-    const u = data as { full_name: string; login: string; password: string; class_name?: string };
+    const u = await queryOne<{ full_name: string; login: string; password: string; class_name?: string }>(
+      "SELECT full_name, login, password, class_name FROM users WHERE id = $1", [dbId]
+    );
+    if (!u) return;
 
-    const payload = {
-      id: dbId,
-      role: "student",
-      full_name: u.full_name,
-      login: u.login,
-      class_name: u.class_name ?? "",
-      class_id: null as null,
-      telegram_id: tgId,
+    const payload: Record<string, unknown> = {
+      id: dbId, role: "student", full_name: u.full_name,
+      login: u.login, class_name: u.class_name ?? "", class_id: null, telegram_id: tgId,
     };
 
-    // class_id ni ham topamiz
     if (u.class_name) {
-      const { data: cls } = await supabase
-        .from("classes")
-        .select("id")
-        .eq("name", u.class_name)
-        .maybeSingle();
-      if (cls) payload.class_id = (cls as { id: string }).id as unknown as null;
+      const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [u.class_name]);
+      if (cls) payload["class_id"] = cls.id;
     }
 
     const magicToken = createMagicToken(payload);
@@ -413,23 +369,15 @@ async function sendAccountInfo(
       { parse_mode: "MarkdownV2", reply_markup: kb }
     );
   } else {
-    // staff
-    const { data } = await supabase
-      .from("staff")
-      .select("full_name, login, role, subjects")
-      .eq("id", dbId)
-      .maybeSingle();
-    if (!data) return;
-    const s = data as { full_name: string; login: string; role: string; subjects?: string[] };
+    const s = await queryOne<{ full_name: string; login: string; role: string; subjects?: string[] }>(
+      "SELECT full_name, login, role, subjects FROM staff WHERE id = $1", [dbId]
+    );
+    if (!s) return;
 
     const roleLabel = STAFF_ROLE_LABELS[s.role] ?? s.role;
     const payload = {
-      id: dbId,
-      role: s.role,
-      full_name: s.full_name,
-      login: s.login,
-      telegram_id: tgId,
-      subjects: s.subjects ?? [],
+      id: dbId, role: s.role, full_name: s.full_name,
+      login: s.login, telegram_id: tgId, subjects: s.subjects ?? [],
     };
     const magicToken = createMagicToken(payload);
     const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
@@ -523,33 +471,25 @@ export function createBot(): Bot {
       return;
     }
 
-    // DB da bog'langanligini tekshirish (String konversiyasi - type xatosidan saqlanish uchun)
-    const { data: staffLinked } = await supabase
-      .from("staff").select("id").eq("telegram_id", userId).maybeSingle();
-    const { data: userLinked } = await supabase
-      .from("users").select("id").eq("telegram_id", userId).maybeSingle();
+    // DB da bog'langanligini tekshirish
+    const staffLinked = await queryOne<{ id: string }>("SELECT id FROM staff WHERE telegram_id = $1", [userId]);
+    const userLinked = await queryOne<{ id: string }>("SELECT id FROM users WHERE telegram_id = $1", [userId]);
 
     if (staffLinked || userLinked) {
       // Allaqachon bog'langan — bevosita kirish
       const magicPayload = staffLinked
         ? await (async () => {
-            const { data: s } = await supabase
-              .from("staff")
-              .select("id, full_name, login, role, subjects")
-              .eq("id", (staffLinked as { id: string }).id)
-              .maybeSingle();
-            if (!s) return null;
-            const st = s as { id: string; full_name: string; login: string; role: string; subjects?: string[] };
+            const st = await queryOne<{ id: string; full_name: string; login: string; role: string; subjects?: string[] }>(
+              "SELECT id, full_name, login, role, subjects FROM staff WHERE id = $1", [staffLinked.id]
+            );
+            if (!st) return null;
             return { id: st.id, role: st.role, full_name: st.full_name, login: st.login, telegram_id: userId, subjects: st.subjects ?? [] };
           })()
         : await (async () => {
-            const { data: u } = await supabase
-              .from("users")
-              .select("id, full_name, login, class_name")
-              .eq("id", (userLinked as { id: string }).id)
-              .maybeSingle();
-            if (!u) return null;
-            const us = u as { id: string; full_name: string; login: string; class_name?: string };
+            const us = await queryOne<{ id: string; full_name: string; login: string; class_name?: string }>(
+              "SELECT id, full_name, login, class_name FROM users WHERE id = $1", [userLinked!.id]
+            );
+            if (!us) return null;
             return { id: us.id, role: "student", full_name: us.full_name, login: us.login, telegram_id: userId, class_name: us.class_name };
           })();
 
@@ -608,12 +548,10 @@ export function createBot(): Bot {
     const userId = ctx.from?.id;
     if (!userId) return;
 
-    const { data: staff } = await supabase
-      .from("staff")
-      .select("id, full_name, role")
-      .eq("telegram_id", userId)
-      .in("role", ["teacher", "sinf_rahbari", "director", "zam_direktor", "zavuch"])
-      .maybeSingle();
+    const staff = await queryOne<{ id: string; full_name: string; role: string }>(
+      "SELECT id, full_name, role FROM staff WHERE telegram_id = $1 AND role IN ('teacher','sinf_rahbari','director','zam_direktor','zavuch')",
+      [userId]
+    );
 
     if (!staff) {
       await ctx.reply(
@@ -624,7 +562,7 @@ export function createBot(): Bot {
       return;
     }
 
-    const s = staff as { id: string; full_name: string; role: string };
+    const s = staff;
     const text = await getTodayScheduleText(s.id);
     const kb = new InlineKeyboard()
       .text("📆 Ertangi jadval", `schedule_tomorrow:${s.id}`)
@@ -642,11 +580,9 @@ export function createBot(): Bot {
     const waitMsg = await ctx.reply("⏳ Sertifikat tayyorlanmoqda...");
 
     // Avval staff dan qidirish
-    const { data: staffData } = await supabase
-      .from("staff")
-      .select("full_name, role, subjects")
-      .eq("telegram_id", userId)
-      .maybeSingle();
+    const staffData = await queryOne<{ full_name: string; role: string; subjects?: string[] | null }>(
+      "SELECT full_name, role, subjects FROM staff WHERE telegram_id = $1", [userId]
+    );
 
     let fullName: string | null = null;
     let role: string | null = null;
@@ -654,21 +590,17 @@ export function createBot(): Bot {
     let subjects: string[] | undefined;
 
     if (staffData) {
-      const s = staffData as { full_name: string; role: string; subjects?: string[] | null };
-      fullName = s.full_name;
-      role = s.role;
-      subjects = s.subjects ?? [];
+      fullName = staffData.full_name;
+      role = staffData.role;
+      subjects = staffData.subjects ?? [];
     } else {
-      const { data: userData } = await supabase
-        .from("users")
-        .select("full_name, role, class_name")
-        .eq("telegram_id", userId)
-        .maybeSingle();
+      const userData = await queryOne<{ full_name: string; class_name?: string }>(
+        "SELECT full_name, class_name FROM users WHERE telegram_id = $1", [userId]
+      );
       if (userData) {
-        const u = userData as { full_name: string; role: string; class_name?: string };
-        fullName = u.full_name;
-        role = u.role;
-        className = u.class_name;
+        fullName = userData.full_name;
+        role = "student";
+        className = userData.class_name;
       }
     }
 
@@ -798,20 +730,10 @@ export function createBot(): Bot {
     const student = await findStudentByPhone(normalized);
 
     if (student) {
-      // Supabase'da telegram_id ni haqiqiy Telegram ID ga yangilash
-      await supabase
-        .from("users")
-        .update({ telegram_id: userId })
-        .eq("phone_number", normalized);
-
+      await query("UPDATE users SET telegram_id = $1 WHERE phone_number = $2", [userId, normalized]);
       linkPhoneToChatId(normalized, userId);
 
-      // Sinf ID sini topish
-      const { data: clsData } = await supabase
-        .from("classes")
-        .select("id")
-        .eq("name", student.class_name)
-        .single();
+      const clsData = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [student.class_name]);
 
       // Magic token yaratish — bir marta bosib kirish uchun
       const payload = {
@@ -1005,10 +927,8 @@ export function createBot(): Bot {
     }
 
     // DB da bog'langanligini tekshirish
-    const { data: slk } = await supabase
-      .from("staff").select("id").eq("telegram_id", userId).maybeSingle();
-    const { data: ulk } = await supabase
-      .from("users").select("id").eq("telegram_id", userId).maybeSingle();
+    const slk = await queryOne("SELECT id FROM staff WHERE telegram_id = $1", [userId]);
+    const ulk = await queryOne("SELECT id FROM users WHERE telegram_id = $1", [userId]);
 
     if (slk || ulk) {
       await ctx.reply(loadSettings().welcomeMessage, {
@@ -1153,11 +1073,13 @@ export function createBot(): Bot {
     await ctx.answerCallbackQuery();
 
     // Ma'lumotni olish
-    const { data } = await supabase
-      .from(table)
-      .select("full_name, role, class_name")
-      .eq("id", dbId)
-      .maybeSingle();
+    const data = table === "users"
+      ? await queryOne<{ full_name: string; role?: string; class_name?: string }>(
+          "SELECT full_name, NULL as role, class_name FROM users WHERE id = $1", [dbId]
+        )
+      : await queryOne<{ full_name: string; role?: string; class_name?: string }>(
+          "SELECT full_name, role, NULL as class_name FROM staff WHERE id = $1", [dbId]
+        );
 
     if (!data) {
       await ctx.editMessageText("❌ Foydalanuvchi topilmadi. Qaytadan urinib ko'ring.", {
@@ -1166,7 +1088,7 @@ export function createBot(): Bot {
       return;
     }
 
-    const d = data as { full_name: string; role?: string; class_name?: string };
+    const d = data;
     const roleLabel = d.role ? (STAFF_ROLE_LABELS[d.role] ?? d.role) : "";
     const extra = d.class_name ? `${d.class_name} sinf` : roleLabel;
 
@@ -1329,34 +1251,23 @@ export function createBot(): Bot {
       const password = ctx.message.text.trim();
       userStates.set(userId, { type: "idle" });
 
-      // Staff da qidirish
-      const { data: staffData } = await supabase
-        .from("staff")
-        .select("id, full_name, login, role, subjects")
-        .eq("login", login)
-        .maybeSingle();
+      // Staff da qidirish (login + password bilan)
+      const staffData = await queryOne<{ id: string; full_name: string; login: string; role: string; subjects?: string[]; password: string }>(
+        "SELECT id, full_name, login, role, subjects, password FROM staff WHERE login = $1", [login]
+      );
 
       // Users da qidirish
-      const { data: userData } = await supabase
-        .from("users")
-        .select("id, full_name, login, password, class_name")
-        .eq("login", login)
-        .maybeSingle();
+      const userData = await queryOne<{ id: string; full_name: string; login: string; password: string; class_name?: string }>(
+        "SELECT id, full_name, login, password, class_name FROM users WHERE login = $1", [login]
+      );
 
       let found = false;
 
       if (staffData) {
-        const s = staffData as { id: string; full_name: string; login: string; role: string; subjects?: string[] };
-        const { data: spass } = await supabase
-          .from("staff")
-          .select("password")
-          .eq("id", s.id)
-          .maybeSingle();
-        const realPass = (spass as { password?: string } | null)?.password ?? "";
-        if (realPass && password === realPass) {
+        if (password === staffData.password) {
           found = true;
-          await supabase.from("staff").update({ telegram_id: userId }).eq("id", s.id);
-          const payload = { id: s.id, role: s.role, full_name: s.full_name, login: s.login, telegram_id: userId, subjects: s.subjects ?? [] };
+          await query("UPDATE staff SET telegram_id = $1 WHERE id = $2", [userId, staffData.id]);
+          const payload = { id: staffData.id, role: staffData.role, full_name: staffData.full_name, login: staffData.login, telegram_id: userId, subjects: staffData.subjects ?? [] };
           const magicToken = createMagicToken(payload);
           const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
           const kb = new InlineKeyboard()
@@ -1364,17 +1275,16 @@ export function createBot(): Bot {
             .row()
             .url("🌐 Oddiy kirish", `${WEBSITE_URL}/login`);
           await ctx.reply(
-            `✅ *Muvaffaqiyatli kirdingiz!*\n\n👤 *${s.full_name}*\n💼 ${STAFF_ROLE_LABELS[s.role] ?? s.role}\n\n📌 Havola 15 daqiqa amal qiladi\\.`,
+            `✅ *Muvaffaqiyatli kirdingiz!*\n\n👤 *${staffData.full_name}*\n💼 ${STAFF_ROLE_LABELS[staffData.role] ?? staffData.role}\n\n📌 Havola 15 daqiqa amal qiladi\\.`,
             { parse_mode: "MarkdownV2", reply_markup: kb }
           );
         }
       } else if (userData) {
-        const u = userData as { id: string; full_name: string; login: string; password: string; class_name?: string };
-        if (password === u.password) {
+        if (password === userData.password) {
           found = true;
-          await supabase.from("users").update({ telegram_id: userId }).eq("id", u.id);
-          const { data: cls } = await supabase.from("classes").select("id").eq("name", u.class_name ?? "").maybeSingle();
-          const payload = { id: u.id, role: "student", full_name: u.full_name, login: u.login, class_name: u.class_name, class_id: (cls as { id?: string } | null)?.id ?? null, telegram_id: userId };
+          await query("UPDATE users SET telegram_id = $1 WHERE id = $2", [userId, userData.id]);
+          const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [userData.class_name ?? ""]);
+          const payload = { id: userData.id, role: "student", full_name: userData.full_name, login: userData.login, class_name: userData.class_name, class_id: cls?.id ?? null, telegram_id: userId };
           const magicToken = createMagicToken(payload);
           const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
           const kb = new InlineKeyboard()
@@ -1382,7 +1292,7 @@ export function createBot(): Bot {
             .row()
             .url("🌐 Oddiy kirish", `${WEBSITE_URL}/login`);
           await ctx.reply(
-            `✅ *Muvaffaqiyatli kirdingiz\\!*\n\n👤 *${u.full_name}*\n🏫 ${(u.class_name ?? "—").replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")} sinf\n\n📌 Havola 15 daqiqa amal qiladi\\.`,
+            `✅ *Muvaffaqiyatli kirdingiz\\!*\n\n👤 *${userData.full_name}*\n🏫 ${(userData.class_name ?? "—").replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")} sinf\n\n📌 Havola 15 daqiqa amal qiladi\\.`,
             { parse_mode: "MarkdownV2", reply_markup: kb }
           );
         }
@@ -1408,21 +1318,16 @@ export function createBot(): Bot {
       const roleGroup = state.roleGroup;
 
       if (roleGroup === "student") {
-        // O'quvchilar jadvalidan password bo'yicha qidirish
-        const { data } = await supabase
-          .from("users")
-          .select("id, full_name, login, password, class_name")
-          .eq("password", entered)
-          .maybeSingle();
-
-        if (!data) {
+        const u = await queryOne<{ id: string }>(
+          "SELECT id FROM users WHERE password = $1 LIMIT 1", [entered]
+        );
+        if (!u) {
           await ctx.reply(
             "❌ *Mahfiy kod noto'g'ri!*\n\nKodingizni qaytadan tekshiring yoki admin bilan bog'laning.",
             { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back") }
           );
           return;
         }
-        const u = data as { id: string; full_name: string; login: string; password: string; class_name?: string };
         userStates.set(userId, { type: "idle" });
         const waitMsg1 = await ctx.reply("⏳ Akkauntingiz bog'lanmoqda...");
         await sendAccountInfo(ctx, "users", u.id, userId);
@@ -1431,15 +1336,11 @@ export function createBot(): Bot {
       }
 
       if (roleGroup === "teacher" || roleGroup === "sinf_rahbari") {
-        const roleFilter = roleGroup === "teacher" ? ["teacher"] : ["sinf_rahbari"];
-        const { data } = await supabase
-          .from("staff")
-          .select("id, full_name, login, role, subjects")
-          .eq("password", entered)
-          .in("role", roleFilter)
-          .maybeSingle();
-
-        if (!data) {
+        const roleFilter = roleGroup === "teacher" ? "teacher" : "sinf_rahbari";
+        const d = await queryOne<{ id: string }>(
+          "SELECT id FROM staff WHERE password = $1 AND role = $2 LIMIT 1", [entered, roleFilter]
+        );
+        if (!d) {
           await ctx.reply(
             "❌ *Mahfiy kod noto'g'ri!*\n\nKodingizni qaytadan tekshiring yoki admin bilan bog'laning.",
             { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back") }
@@ -1448,21 +1349,17 @@ export function createBot(): Bot {
         }
         userStates.set(userId, { type: "idle" });
         const waitMsg2 = await ctx.reply("⏳ Akkauntingiz bog'lanmoqda...");
-        await sendAccountInfo(ctx, "staff", (data as { id: string }).id, userId);
+        await sendAccountInfo(ctx, "staff", d.id, userId);
         await ctx.api.deleteMessage(ctx.chat.id, waitMsg2.message_id).catch(() => {});
         return;
       }
 
       if (roleGroup === "management") {
-        const mgmtRoles = ["director", "zam_direktor", "zavuch", "kutubxonachi"];
-        const { data } = await supabase
-          .from("staff")
-          .select("id, full_name, login, role, subjects")
-          .eq("password", entered)
-          .in("role", mgmtRoles)
-          .maybeSingle();
-
-        if (!data) {
+        const d = await queryOne<{ id: string }>(
+          "SELECT id FROM staff WHERE password = $1 AND role IN ('director','zam_direktor','zavuch','kutubxonachi') LIMIT 1",
+          [entered]
+        );
+        if (!d) {
           await ctx.reply(
             "❌ *Mahfiy kod noto'g'ri!*\n\nKodingizni qaytadan tekshiring yoki admin bilan bog'laning.",
             { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("🔙 Orqaga", "reg_back") }
@@ -1471,7 +1368,7 @@ export function createBot(): Bot {
         }
         userStates.set(userId, { type: "idle" });
         const waitMsg3 = await ctx.reply("⏳ Akkauntingiz bog'lanmoqda...");
-        await sendAccountInfo(ctx, "staff", (data as { id: string }).id, userId);
+        await sendAccountInfo(ctx, "staff", d.id, userId);
         await ctx.api.deleteMessage(ctx.chat.id, waitMsg3.message_id).catch(() => {});
         return;
       }
@@ -1698,14 +1595,11 @@ export function createBot(): Bot {
         lastMorningNotifDay = day;
         logger.info({ day }, "Kundalik jadval xabarlari yuborilmoqda...");
 
-        // Telegram_id bog'langan barcha o'qituvchilarni olish
-        const { data: teachers } = await supabase
-          .from("staff")
-          .select("id, full_name, telegram_id, role")
-          .not("telegram_id", "is", null)
-          .in("role", ["teacher", "sinf_rahbari", "director", "zam_direktor", "zavuch"]);
+        const teachers = await query<{ id: string; full_name: string; telegram_id: number; role: string }>(
+          "SELECT id, full_name, telegram_id, role FROM staff WHERE telegram_id IS NOT NULL AND role IN ('teacher','sinf_rahbari','director','zam_direktor','zavuch')"
+        );
 
-        for (const t of (teachers ?? []) as { id: string; full_name: string; telegram_id: number; role: string }[]) {
+        for (const t of teachers) {
           if (!t.telegram_id) continue;
           try {
             const text = await getTodayScheduleText(t.id);

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
+import { query, queryOne } from "../lib/db.js";
 import { getAuthUser } from "./auth.js";
 import { z } from "zod";
 
@@ -36,36 +36,27 @@ router.get("/library/books", async (req, res): Promise<void> => {
 
   const { category, search } = req.query as Record<string, string>;
 
-  let query = supabase
-    .from("library_books")
-    .select("*")
-    .order("created_at", { ascending: false });
+  try {
+    let rows;
+    if (category && category !== "all") {
+      rows = await query("SELECT * FROM library_books WHERE category = $1 ORDER BY created_at DESC", [category]);
+    } else {
+      rows = await query("SELECT * FROM library_books ORDER BY created_at DESC");
+    }
 
-  if (category && category !== "all") {
-    query = supabase
-      .from("library_books")
-      .select("*")
-      .eq("category", category)
-      .order("created_at", { ascending: false });
+    if (search) {
+      const s = search.toLowerCase();
+      rows = rows.filter((b: Record<string, unknown>) =>
+        String(b["title"] ?? "").toLowerCase().includes(s) ||
+        String(b["author"] ?? "").toLowerCase().includes(s) ||
+        String(b["subject"] ?? "").toLowerCase().includes(s)
+      );
+    }
+
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: "Kitoblarni yuklashda xatolik", details: (err as Error).message });
   }
-
-  const { data, error } = await query;
-  if (error) {
-    res.status(500).json({ error: "Kitoblarni yuklashda xatolik", details: error.message });
-    return;
-  }
-
-  let result = data ?? [];
-  if (search) {
-    const s = search.toLowerCase();
-    result = result.filter((b: Record<string, unknown>) =>
-      String(b["title"] ?? "").toLowerCase().includes(s) ||
-      String(b["author"] ?? "").toLowerCase().includes(s) ||
-      String(b["subject"] ?? "").toLowerCase().includes(s)
-    );
-  }
-
-  res.json(result);
 });
 
 // POST /api/library/books
@@ -88,26 +79,19 @@ router.post("/library/books", async (req, res): Promise<void> => {
     return;
   }
 
-  const { quantity, ...rest } = parsed.data;
+  const { quantity, title, author, category, class_name, subject, isbn, published_year, description } = parsed.data;
 
-  const { data, error } = await supabase
-    .from("library_books")
-    .insert([{
-      ...rest,
-      quantity,
-      available: quantity,
-      added_by: user["login"] as string,
-      created_at: new Date().toISOString(),
-    }])
-    .select()
-    .single();
-
-  if (error || !data) {
-    res.status(500).json({ error: "Kitob qo'shishda xatolik", details: error?.message });
-    return;
+  try {
+    const data = await queryOne(
+      `INSERT INTO library_books (title, author, category, class_name, subject, quantity, available, isbn, published_year, description, added_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      [title, author, category, class_name, subject, quantity, quantity, isbn, published_year ?? null,
+       description, user["login"] as string, new Date().toISOString()]
+    );
+    res.status(201).json(data);
+  } catch (err) {
+    res.status(500).json({ error: "Kitob qo'shishda xatolik", details: (err as Error).message });
   }
-
-  res.status(201).json(data);
 });
 
 // PATCH /api/library/books/:id
@@ -127,18 +111,30 @@ router.patch("/library/books/:id", async (req, res): Promise<void> => {
   const { id } = req.params as { id: string };
   const updates = req.body as Record<string, unknown>;
 
-  const { data, error } = await supabase
-    .from("library_books")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
 
-  if (error || !data) {
-    res.status(404).json({ error: "Kitob topilmadi" });
+  for (const [key, val] of Object.entries(updates)) {
+    setClauses.push(`${key} = $${idx++}`);
+    values.push(val);
+  }
+
+  if (setClauses.length === 0) {
+    res.status(400).json({ error: "Yangilanadigan maydon yo'q" });
     return;
   }
 
+  values.push(id);
+  const data = await queryOne(
+    `UPDATE library_books SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING *`,
+    values
+  );
+
+  if (!data) {
+    res.status(404).json({ error: "Kitob topilmadi" });
+    return;
+  }
   res.json(data);
 });
 
@@ -157,16 +153,13 @@ router.delete("/library/books/:id", async (req, res): Promise<void> => {
   }
 
   const { id } = req.params as { id: string };
-
-  await supabase.from("library_loans").delete().eq("book_id", id);
-  const { error } = await supabase.from("library_books").delete().eq("id", id);
-
-  if (error) {
-    res.status(500).json({ error: "Kitobni o'chirishda xatolik" });
-    return;
+  try {
+    await query("DELETE FROM library_loans WHERE book_id = $1", [id]);
+    await query("DELETE FROM library_books WHERE id = $1", [id]);
+    res.sendStatus(204);
+  } catch (err) {
+    res.status(500).json({ error: "Kitobni o'chirishda xatolik", details: (err as Error).message });
   }
-
-  res.sendStatus(204);
 });
 
 // GET /api/library/loans
@@ -179,49 +172,47 @@ router.get("/library/loans", async (req, res): Promise<void> => {
 
   const { status, book_id } = req.query as Record<string, string>;
 
-  let query = supabase
-    .from("library_loans")
-    .select(`
-      *,
-      library_books (
-        title,
-        author,
-        category
-      )
-    `)
-    .order("created_at", { ascending: false });
+  try {
+    let rows;
+    if (book_id) {
+      rows = await query(
+        `SELECT l.*, b.title as book_title, b.author as book_author, b.category as book_category
+         FROM library_loans l LEFT JOIN library_books b ON l.book_id = b.id
+         WHERE l.book_id = $1 ORDER BY l.created_at DESC`,
+        [book_id]
+      );
+    } else {
+      rows = await query(
+        `SELECT l.*, b.title as book_title, b.author as book_author, b.category as book_category
+         FROM library_loans l LEFT JOIN library_books b ON l.book_id = b.id
+         ORDER BY l.created_at DESC`
+      );
+    }
 
-  if (book_id) {
-    query = supabase
-      .from("library_loans")
-      .select(`*, library_books (title, author, category)`)
-      .eq("book_id", book_id)
-      .order("created_at", { ascending: false });
+    // Transform to match expected shape with library_books nested
+    rows = rows.map((r: Record<string, unknown>) => ({
+      ...r,
+      library_books: { title: r["book_title"], author: r["book_author"], category: r["book_category"] },
+    }));
+
+    if (status === "active") {
+      rows = rows.filter((l: Record<string, unknown>) => !l["returned_date"]);
+    } else if (status === "returned") {
+      rows = rows.filter((l: Record<string, unknown>) => l["returned_date"]);
+    } else if (status === "overdue") {
+      const today = new Date().toISOString().slice(0, 10);
+      rows = rows.filter((l: Record<string, unknown>) =>
+        !l["returned_date"] && l["due_date"] && String(l["due_date"]) < today
+      );
+    }
+
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: "Ijaralarni yuklashda xatolik", details: (err as Error).message });
   }
-
-  const { data, error } = await query;
-  if (error) {
-    res.status(500).json({ error: "Ijaralarni yuklashda xatolik", details: error.message });
-    return;
-  }
-
-  let result = data ?? [];
-
-  if (status === "active") {
-    result = result.filter((l: Record<string, unknown>) => !l["returned_date"]);
-  } else if (status === "returned") {
-    result = result.filter((l: Record<string, unknown>) => l["returned_date"]);
-  } else if (status === "overdue") {
-    const today = new Date().toISOString().slice(0, 10);
-    result = result.filter((l: Record<string, unknown>) =>
-      !l["returned_date"] && l["due_date"] && String(l["due_date"]) < today
-    );
-  }
-
-  res.json(result);
 });
 
-// POST /api/library/loans  — kitob berish
+// POST /api/library/loans
 router.post("/library/loans", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user) {
@@ -241,51 +232,38 @@ router.post("/library/loans", async (req, res): Promise<void> => {
     return;
   }
 
-  // Kitob mavjudligini tekshirish
-  const { data: book, error: bookErr } = await supabase
-    .from("library_books")
-    .select("id, available, title")
-    .eq("id", parsed.data.book_id)
-    .single();
+  const book = await queryOne<{ id: string; available: number; title: string }>(
+    "SELECT id, available, title FROM library_books WHERE id = $1", [parsed.data.book_id]
+  );
 
-  if (bookErr || !book) {
+  if (!book) {
     res.status(404).json({ error: "Kitob topilmadi" });
     return;
   }
 
-  const typedBook = book as { id: string; available: number; title: string };
-  if (typedBook.available < 1) {
-    res.status(400).json({ error: `"${typedBook.title}" kitobining mavjud nusxasi yo'q` });
+  if (book.available < 1) {
+    res.status(400).json({ error: `"${book.title}" kitobining mavjud nusxasi yo'q` });
     return;
   }
 
-  // Ijara yozuvini yaratish
-  const { data: loan, error: loanErr } = await supabase
-    .from("library_loans")
-    .insert([{
-      ...parsed.data,
-      issued_date: new Date().toISOString().slice(0, 10),
-      issued_by: user["login"] as string,
-      created_at: new Date().toISOString(),
-    }])
-    .select()
-    .single();
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const loan = await queryOne(
+      `INSERT INTO library_loans (book_id, student_name, student_class, student_login, due_date, notes, issued_date, issued_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [parsed.data.book_id, parsed.data.student_name, parsed.data.student_class,
+       parsed.data.student_login, parsed.data.due_date, parsed.data.notes,
+       today, user["login"] as string, new Date().toISOString()]
+    );
 
-  if (loanErr || !loan) {
-    res.status(500).json({ error: "Ijara yozuvini yaratishda xatolik" });
-    return;
+    await query("UPDATE library_books SET available = $1 WHERE id = $2", [book.available - 1, parsed.data.book_id]);
+    res.status(201).json(loan);
+  } catch (err) {
+    res.status(500).json({ error: "Ijara yozuvini yaratishda xatolik", details: (err as Error).message });
   }
-
-  // Mavjud nusxalar sonini kamaytirish
-  await supabase
-    .from("library_books")
-    .update({ available: typedBook.available - 1 })
-    .eq("id", parsed.data.book_id);
-
-  res.status(201).json(loan);
 });
 
-// PATCH /api/library/loans/:id/return  — kitob qaytarish
+// PATCH /api/library/loans/:id/return
 router.patch("/library/loans/:id/return", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user) {
@@ -300,53 +278,33 @@ router.patch("/library/loans/:id/return", async (req, res): Promise<void> => {
   }
 
   const { id } = req.params as { id: string };
+  const loan = await queryOne<{ id: string; book_id: string; returned_date: string | null }>(
+    "SELECT id, book_id, returned_date FROM library_loans WHERE id = $1", [id]
+  );
 
-  const { data: loan, error: loanErr } = await supabase
-    .from("library_loans")
-    .select("id, book_id, returned_date")
-    .eq("id", id)
-    .single();
-
-  if (loanErr || !loan) {
+  if (!loan) {
     res.status(404).json({ error: "Ijara topilmadi" });
     return;
   }
 
-  const typedLoan = loan as { id: string; book_id: string; returned_date: string | null };
-
-  if (typedLoan.returned_date) {
+  if (loan.returned_date) {
     res.status(400).json({ error: "Bu kitob allaqachon qaytarilgan" });
     return;
   }
 
   const today = new Date().toISOString().slice(0, 10);
+  const updatedLoan = await queryOne(
+    "UPDATE library_loans SET returned_date = $1 WHERE id = $2 RETURNING *",
+    [today, id]
+  );
 
-  const { data: updatedLoan, error: updateErr } = await supabase
-    .from("library_loans")
-    .update({ returned_date: today })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (updateErr || !updatedLoan) {
-    res.status(500).json({ error: "Qaytarishda xatolik" });
-    return;
-  }
-
-  // Mavjud nusxalar sonini oshirish
-  const { data: bookData } = await supabase
-    .from("library_books")
-    .select("available, quantity")
-    .eq("id", typedLoan.book_id)
-    .single();
+  const bookData = await queryOne<{ available: number; quantity: number }>(
+    "SELECT available, quantity FROM library_books WHERE id = $1", [loan.book_id]
+  );
 
   if (bookData) {
-    const typed = bookData as { available: number; quantity: number };
-    const newAvailable = Math.min(typed.available + 1, typed.quantity);
-    await supabase
-      .from("library_books")
-      .update({ available: newAvailable })
-      .eq("id", typedLoan.book_id);
+    const newAvailable = Math.min(bookData.available + 1, bookData.quantity);
+    await query("UPDATE library_books SET available = $1 WHERE id = $2", [newAvailable, loan.book_id]);
   }
 
   res.json(updatedLoan);
@@ -367,33 +325,20 @@ router.delete("/library/loans/:id", async (req, res): Promise<void> => {
   }
 
   const { id } = req.params as { id: string };
+  const loan = await queryOne<{ book_id: string; returned_date: string | null }>(
+    "SELECT book_id, returned_date FROM library_loans WHERE id = $1", [id]
+  );
 
-  const { data: loan } = await supabase
-    .from("library_loans")
-    .select("book_id, returned_date")
-    .eq("id", id)
-    .single();
+  await query("DELETE FROM library_loans WHERE id = $1", [id]);
 
-  const { error } = await supabase.from("library_loans").delete().eq("id", id);
-  if (error) {
-    res.status(500).json({ error: "O'chirishda xatolik" });
-    return;
-  }
-
-  // Agar qaytarilmagan bo'lsa — available ni tiklash
-  if (loan && !(loan as { returned_date: string | null }).returned_date) {
-    const typedLoan = loan as { book_id: string; returned_date: string | null };
-    const { data: bookData } = await supabase
-      .from("library_books")
-      .select("available, quantity")
-      .eq("id", typedLoan.book_id)
-      .single();
+  if (loan && !loan.returned_date) {
+    const bookData = await queryOne<{ available: number; quantity: number }>(
+      "SELECT available, quantity FROM library_books WHERE id = $1", [loan.book_id]
+    );
     if (bookData) {
-      const typed = bookData as { available: number; quantity: number };
-      await supabase
-        .from("library_books")
-        .update({ available: Math.min(typed.available + 1, typed.quantity) })
-        .eq("id", typedLoan.book_id);
+      await query("UPDATE library_books SET available = $1 WHERE id = $2",
+        [Math.min(bookData.available + 1, bookData.quantity), loan.book_id]
+      );
     }
   }
 

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
+import { queryOne } from "../lib/db.js";
 import { getAuthUser } from "./auth.js";
 import { generateCertificatePNG, generateCertificateSVG, todayUzDate } from "../lib/certificate-generator.js";
 
@@ -13,26 +13,22 @@ async function buildCertParams(role: string, login: string, fullName: string, cl
   if (role === "student") {
     className = classNameFromToken;
     if (!className) {
-      const { data } = await supabase
-        .from("users")
-        .select("class_name")
-        .eq("login", login)
-        .maybeSingle();
-      className = (data as { class_name?: string } | null)?.class_name;
+      const data = await queryOne<{ class_name: string }>(
+        "SELECT class_name FROM users WHERE login = $1", [login]
+      );
+      className = data?.class_name;
     }
   } else {
-    const { data } = await supabase
-      .from("staff")
-      .select("subjects")
-      .eq("login", login)
-      .maybeSingle();
-    subjects = (data as { subjects?: string[] | null } | null)?.subjects ?? [];
+    const data = await queryOne<{ subjects: string[] | null }>(
+      "SELECT subjects FROM staff WHERE login = $1", [login]
+    );
+    subjects = data?.subjects ?? [];
   }
 
   return { fullName, role, className, subjects, date };
 }
 
-// GET /api/certificate — PNG (joriy foydalanuvchi)
+// GET /api/certificate
 router.get("/certificate", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user) {
@@ -65,7 +61,7 @@ router.get("/certificate", async (req, res): Promise<void> => {
   }
 });
 
-// GET /api/certificate/:userId — admin uchun istalgan foydalanuvchi
+// GET /api/certificate/:userId
 router.get("/certificate/:userId", async (req, res): Promise<void> => {
   const admin = getAuthUser(req.headers.authorization);
   if (!admin || !["admin", "director"].includes(admin["role"] as string)) {
@@ -75,12 +71,9 @@ router.get("/certificate/:userId", async (req, res): Promise<void> => {
 
   const { userId } = req.params as { userId: string };
 
-  // Avval staff dan qidirish
-  const { data: staffData } = await supabase
-    .from("staff")
-    .select("full_name, role, login, subjects")
-    .eq("id", userId)
-    .maybeSingle();
+  const staffData = await queryOne<{ full_name: string; role: string; login: string; subjects?: string[] }>(
+    "SELECT full_name, role, login, subjects FROM staff WHERE id = $1", [userId]
+  );
 
   let fullName: string;
   let role: string;
@@ -88,26 +81,22 @@ router.get("/certificate/:userId", async (req, res): Promise<void> => {
   let subjects: string[] | undefined;
 
   if (staffData) {
-    const s = staffData as { full_name: string; role: string; login: string; subjects?: string[] };
-    fullName = s.full_name;
-    role = s.role;
-    subjects = s.subjects ?? [];
+    fullName = staffData.full_name;
+    role = staffData.role;
+    subjects = staffData.subjects ?? [];
   } else {
-    const { data: userData } = await supabase
-      .from("users")
-      .select("full_name, role, class_name, login")
-      .eq("id", userId)
-      .maybeSingle();
+    const userData = await queryOne<{ full_name: string; class_name?: string; login: string }>(
+      "SELECT full_name, class_name, login FROM users WHERE telegram_id::text = $1", [userId]
+    );
 
     if (!userData) {
       res.status(404).json({ error: "Foydalanuvchi topilmadi" });
       return;
     }
 
-    const u = userData as { full_name: string; role: string; class_name?: string; login: string };
-    fullName = u.full_name;
-    role = u.role;
-    className = u.class_name;
+    fullName = userData.full_name;
+    role = "student";
+    className = userData.class_name;
   }
 
   try {
