@@ -83,6 +83,8 @@ externalPort = 3000
 
 [userenv.shared]
 ADMIN_ID = "611665022"
+SUPABASE_URL = "https://saodkjnjskghqqktcxkj.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_Py1MQeKrN2uyz8HUOUmS0Q__nrQQNbp"
 
 [userenv.production]
 

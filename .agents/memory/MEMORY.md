@@ -1,0 +1,3 @@
+- [Supabase on Node.js 20](supabase-nodejs20-ws.md) — must pass `ws` package as transport to createClient; otherwise crashes with WebSocket error.
+- [Supabase credentials](supabase-creds-setup.md) — SUPABASE_URL and SUPABASE_ANON_KEY saved as shared env vars (not secrets) since anon key is publishable.
+- [DataSync preloader pattern](datasync-preloader.md) — startup data prefetch overlay uses sessionStorage key per userId to run once per session; component lives in platform/src/components/data-sync.tsx.

@@ -10,6 +10,7 @@ import { AppLayout } from "@/components/layout";
 import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
 import { SplashScreen } from "@/components/splash-screen";
+import { DataSync } from "@/components/data-sync";
 
 import Login from "@/pages/login";
 import Register from "@/pages/register";
@@ -66,9 +67,11 @@ function ProtectedRoute({ component: Component, roles }: { component: any, roles
 
 function Router() {
   const { user, isLoading } = useAuth();
-  
+
   return (
-    <Switch>
+    <>
+      {user && <DataSync userId={String(user.id)} userRole={user.role} />}
+      <Switch>
       <Route path="/login">
         {isLoading
           ? <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
@@ -192,6 +195,7 @@ function Router() {
 
       <Route component={NotFound} />
     </Switch>
+    </>
   );
 }
 
