@@ -8,7 +8,6 @@ import {
   GraduationCap,
   School,
   LogOut,
-  ShieldAlert,
   Gamepad2,
   Trophy,
   BookOpen,
@@ -61,6 +60,29 @@ const roleDisplay: Record<string, string> = {
   student: "O'quvchi",
   kutubxonachi: "Kutubxonachi",
 };
+
+function TalimBird() {
+  return (
+    <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 20C10 15 17 13 22 16C27 18 29 23 26 27C23 30 18 31 13 28C8 25 5 24 6 20Z" fill="url(#bird1)" />
+      <path d="M22 16C24 11 28 6 32 8C30 11 26 14 22 16Z" fill="url(#bird2)" opacity="0.95" />
+      <path d="M22 16C19 11 17 6 21 4C23 7 23 12 22 16Z" fill="url(#bird2)" opacity="0.75" />
+      <path d="M13 28C11 31 9 33 11 34C13 33 15 31 13 28Z" fill="url(#bird1)" opacity="0.55" />
+      <path d="M26 27C28 30 30 31 30 29C29 27 27 26 26 27Z" fill="url(#bird1)" opacity="0.45" />
+      <path d="M22 16C23 14 25 13 26 14" stroke="#fde68a" strokeWidth="0.8" strokeLinecap="round" opacity="0.6" />
+      <defs>
+        <linearGradient id="bird1" x1="5" y1="18" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#fbbf24" />
+          <stop offset="100%" stopColor="#f59e0b" />
+        </linearGradient>
+        <linearGradient id="bird2" x1="17" y1="4" x2="32" y2="16" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#fef3c7" />
+          <stop offset="100%" stopColor="#fbbf24" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout: authLogout } = useAuth();
@@ -117,35 +139,54 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isStudent = user.role === "student";
   const canManageLibrary = !isMudir && ["admin", "kutubxonachi"].includes(user.role);
 
+  const initials = user.full_name?.[0]?.toUpperCase() ?? "U";
+
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background">
-        <Sidebar>
-          <SidebarHeader className="border-b border-sidebar-border/40 py-4 px-4">
-            <div className="flex items-center gap-3 font-bold text-sidebar-foreground">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-sm">
-                <ShieldAlert className="w-4 h-4 text-white" />
+      <div
+        className="flex min-h-screen w-full relative"
+        style={{
+          backgroundImage: "url(/globe-bg.png)",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundAttachment: "fixed",
+        }}
+      >
+        {/* Dark overlay over entire page */}
+        <div className="absolute inset-0 bg-[#07122a]/80 pointer-events-none z-0" />
+
+        <Sidebar className="border-r border-white/5 relative z-10">
+          {/* Sidebar dark overlay */}
+          <div className="absolute inset-0 bg-[#060f25]/88 backdrop-blur-[2px] pointer-events-none" />
+
+          <SidebarHeader className="relative z-10 border-b border-white/8 py-4 px-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/80 to-indigo-700/80 flex items-center justify-center shadow-lg border border-white/10">
+                  <span className="text-white font-black text-sm">T</span>
+                </div>
+                <div>
+                  <div className="text-sm font-bold tracking-wider text-white">Talim Platform</div>
+                  <div className="text-[9px] text-white/40 tracking-widest uppercase font-medium">3-Maktab</div>
+                </div>
               </div>
-              <div>
-                <div className="text-sm font-bold tracking-wide">TALIM</div>
-                <div className="text-[10px] text-sidebar-foreground/60 font-normal -mt-0.5 tracking-widest uppercase">Platform</div>
-              </div>
+              <TalimBird />
             </div>
           </SidebarHeader>
 
-          <SidebarContent>
+          <SidebarContent className="relative z-10">
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {!isMudir && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={location === "/dashboard" || location === "/"}>
-                      <Link href="/dashboard">
-                        <LayoutDashboard className="w-4 h-4" />
-                        <span>Bosh sahifa</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/dashboard" || location === "/"}>
+                        <Link href="/dashboard">
+                          <LayoutDashboard className="w-4 h-4" />
+                          <span>Bosh sahifa</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
                   )}
 
                   {canViewStudents && (
@@ -185,53 +226,55 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </SidebarGroup>
 
             {!isMudir && (
-            <SidebarGroup>
-              <SidebarGroupLabel>Ta'lim</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={location.startsWith("/darslik")}>
-                      <Link href="/darslik">
-                        <BookOpen className="w-4 h-4" />
-                        <span>Darslik</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={location.startsWith("/baholash")}>
-                      <Link href="/baholash">
-                        <ClipboardList className="w-4 h-4" />
-                        <span>Baholash</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={location.startsWith("/dars-jadvali")}>
-                      <Link href="/dars-jadvali">
-                        <CalendarDays className="w-4 h-4" />
-                        <span>Dars jadvali</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={location.startsWith("/library")}>
-                      <Link href="/library">
-                        <Library className="w-4 h-4" />
-                        <span>Kutubxona</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={location === "/certificate"}>
-                      <Link href="/certificate">
-                        <Award className="w-4 h-4" />
-                        <span>Sertifikat</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+              <SidebarGroup>
+                <SidebarGroupLabel className="text-white/35 text-[10px] tracking-widest uppercase px-3 mb-1">
+                  Ta'lim
+                </SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location.startsWith("/darslik")}>
+                        <Link href="/darslik">
+                          <BookOpen className="w-4 h-4" />
+                          <span>Darslik</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location.startsWith("/baholash")}>
+                        <Link href="/baholash">
+                          <ClipboardList className="w-4 h-4" />
+                          <span>Baholash</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location.startsWith("/dars-jadvali")}>
+                        <Link href="/dars-jadvali">
+                          <CalendarDays className="w-4 h-4" />
+                          <span>Dars jadvali</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location.startsWith("/library")}>
+                        <Link href="/library">
+                          <Library className="w-4 h-4" />
+                          <span>Kutubxona</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/certificate"}>
+                        <Link href="/certificate">
+                          <Award className="w-4 h-4" />
+                          <span>Sertifikat</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
             )}
 
             <SidebarGroup>
@@ -251,7 +294,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
             {!isMudir && ["admin", "director"].includes(user.role) && (
               <SidebarGroup>
-                <SidebarGroupLabel>Sozlamalar</SidebarGroupLabel>
+                <SidebarGroupLabel className="text-white/35 text-[10px] tracking-widest uppercase px-3 mb-1">
+                  Sozlamalar
+                </SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
                     <SidebarMenuItem>
@@ -261,6 +306,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                           <span>Mahfiy kodlar</span>
                         </Link>
                       </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
                       <SidebarMenuButton asChild isActive={location === "/admin/videos"}>
                         <Link href="/admin/videos">
                           <Video className="w-4 h-4" />
@@ -275,7 +322,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
             {canManageLibrary && (
               <SidebarGroup>
-                <SidebarGroupLabel>Kutubxona boshqaruvi</SidebarGroupLabel>
+                <SidebarGroupLabel className="text-white/35 text-[10px] tracking-widest uppercase px-3 mb-1">
+                  Kutubxona boshqaruvi
+                </SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
                     <SidebarMenuItem>
@@ -301,7 +350,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
             {isStudent && (
               <SidebarGroup>
-                <SidebarGroupLabel>O'yinlar</SidebarGroupLabel>
+                <SidebarGroupLabel className="text-white/35 text-[10px] tracking-widest uppercase px-3 mb-1">
+                  O'yinlar
+                </SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
                     <SidebarMenuItem>
@@ -326,27 +377,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             )}
 
             {!isMudir && (
-            <SidebarGroup>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={location === "/qollanmalar"}>
-                      <Link href="/qollanmalar">
-                        <Video className="w-4 h-4" />
-                        <span>Yo'riqnomalar</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-            )}
-
-            {/* E'lonlar */}
-            {!isMudir && (
               <SidebarGroup>
                 <SidebarGroupContent>
                   <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/qollanmalar"}>
+                        <Link href="/qollanmalar">
+                          <Video className="w-4 h-4" />
+                          <span>Yo'riqnomalar</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
                     <SidebarMenuItem>
                       <SidebarMenuButton asChild isActive={location === "/announcements"}>
                         <Link href="/announcements">
@@ -360,14 +401,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </SidebarGroup>
             )}
 
-            {/* Qo'llab-quvvatlash tugmasi */}
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       onClick={() => { setSupportOpen(true); setSupportDone(false); }}
-                      className="text-muted-foreground hover:text-foreground cursor-pointer"
+                      className="text-white/50 hover:text-white cursor-pointer"
                     >
                       <MessageCircleQuestion className="w-4 h-4" />
                       <span>Qo'llab-quvvatlash</span>
@@ -378,24 +418,24 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </SidebarGroup>
           </SidebarContent>
 
-          <SidebarFooter className="border-t border-sidebar-border/40 p-3">
+          <SidebarFooter className="relative z-10 border-t border-white/8 p-3">
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-sidebar-accent/50">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-300 to-indigo-400 flex items-center justify-center text-white font-bold text-sm shrink-0">
-                  {user.full_name?.[0]?.toUpperCase() ?? "U"}
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-blue-400/15 border border-white/10 backdrop-blur-sm">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-300 to-indigo-400 flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-md">
+                  {initials}
                 </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-sidebar-foreground truncate">{user.full_name}</p>
-                  <p className="text-xs text-sidebar-foreground/60 truncate">{roleDisplay[user.role] || user.role}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-white truncate">{user.full_name}</p>
+                  <p className="text-xs text-white/55 truncate">{roleDisplay[user.role] || user.role}</p>
                   {user.class_name && (
-                    <p className="text-xs text-sidebar-foreground/50">{user.class_name} sinf</p>
+                    <p className="text-xs text-white/40">{user.class_name} sinf</p>
                   )}
                 </div>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-start text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                className="w-full justify-start text-white/50 hover:bg-white/8 hover:text-white/90 transition-colors"
                 onClick={handleLogout}
                 disabled={logoutMutation.isPending}
               >
@@ -406,16 +446,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </SidebarFooter>
         </Sidebar>
 
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <header className="h-14 flex items-center px-4 border-b bg-background/95 backdrop-blur-sm shadow-sm lg:hidden sticky top-0 z-10">
-            <SidebarTrigger />
+        {/* Main content */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative z-10">
+          {/* Mobile header */}
+          <header className="h-14 flex items-center px-4 border-b border-white/8 bg-[#060f25]/70 backdrop-blur-md shadow-lg lg:hidden sticky top-0 z-20">
+            <SidebarTrigger className="text-white/70 hover:text-white" />
             <div className="ml-3 font-bold flex items-center gap-2">
-              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                <ShieldAlert className="w-3.5 h-3.5 text-white" />
+              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow">
+                <span className="text-white font-black text-xs">T</span>
               </div>
-              <span className="gradient-text text-base font-extrabold tracking-tight">TALIM</span>
+              <span className="text-white font-extrabold tracking-tight text-base">Talim Platform</span>
             </div>
           </header>
+
           <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
             <div className="mx-auto max-w-6xl animate-fade-in-up">
               {children}

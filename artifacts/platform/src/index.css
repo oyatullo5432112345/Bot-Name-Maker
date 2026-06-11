@@ -105,13 +105,13 @@
   --input: 220 20% 87%;
   --ring: 224 76% 52%;
 
-  /* Sidebar — deep navy gradient */
-  --sidebar: 224 55% 16%;
+  /* Sidebar — transparent so globe bg shows through */
+  --sidebar: 224 55% 8%;
   --sidebar-foreground: 0 0% 100%;
   --sidebar-border: 224 55% 11%;
-  --sidebar-primary: 0 0% 100%;
-  --sidebar-primary-foreground: 224 55% 16%;
-  --sidebar-accent: 224 50% 24%;
+  --sidebar-primary: 38 90% 60%;
+  --sidebar-primary-foreground: 224 55% 8%;
+  --sidebar-accent: 224 50% 20%;
   --sidebar-accent-foreground: 0 0% 100%;
   --sidebar-ring: 224 40% 55%;
 
@@ -229,6 +229,55 @@
   a, button {
     transition: all 0.15s ease;
   }
+}
+
+/* ── Globe sidebar overlay ───────────────────────────────────────────────── */
+[data-sidebar="sidebar"] {
+  background: transparent !important;
+  position: relative;
+}
+
+/* Active sidebar menu item — amber/gold glow */
+[data-sidebar="menu-button"][data-active="true"] {
+  background: rgba(251, 191, 36, 0.18) !important;
+  color: #fbbf24 !important;
+  border-left: 2px solid #fbbf24;
+  padding-left: calc(0.75rem - 2px);
+}
+
+[data-sidebar="menu-button"][data-active="true"] svg {
+  color: #fbbf24 !important;
+}
+
+/* Hover state for sidebar menu items */
+[data-sidebar="menu-button"]:not([data-active="true"]):hover {
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* Sidebar group label */
+[data-sidebar="group-label"] {
+  color: rgba(255, 255, 255, 0.35) !important;
+  font-size: 10px !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+}
+
+/* Content area cards — glass effect on dark bg */
+.content-card {
+  background: rgba(15, 30, 70, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Override card bg for dark globe theme */
+.dark .glass-card,
+.glass-card {
+  background: rgba(10, 20, 55, 0.70);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 /* ── Global animation keyframes ─────────────────────────────────────────── */

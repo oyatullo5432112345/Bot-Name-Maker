@@ -47,8 +47,8 @@ import AnnouncementsPage from "@/pages/announcements/index";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0,
-      refetchOnWindowFocus: true,
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
       retry: 1,
     },
   },
