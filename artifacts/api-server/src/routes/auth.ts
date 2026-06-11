@@ -56,6 +56,18 @@ export function getAuthUser(authHeader: string | undefined): Record<string, unkn
   return parseToken(token);
 }
 
+import type { Request, Response, NextFunction } from "express";
+
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) {
+    res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
+    return;
+  }
+  (req as Request & { user: Record<string, unknown> }).user = user;
+  next();
+}
+
 // POST /api/auth/login
 router.post("/auth/login", async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);

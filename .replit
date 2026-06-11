@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "bash", "postgresql-16"]
+modules = ["nodejs-20", "web", "bash"]
 
 [deployment]
 router = "application"
@@ -82,12 +82,8 @@ externalPort = 3000
 [userenv]
 
 [userenv.shared]
-SUPABASE_URL = "https://saodkjnjskghqqktcxkj.supabase.co"
 ADMIN_ID = "611665022"
 WEBSITE_URL = "https://bot-name-maker--chnvuvnjj.replit.app"
-SUPABASE_ANON_KEY = "sb_publishable_Py1MQeKrN2uyz8HUOUmS0Q__nrQQNbp"
-ADMIN_PASSWORD = "oyatullo"
-TELEGRAM_BOT_TOKEN = "8727402043:AAEE2UNCFUmdcJICSFS2ZLBk6FVZcEclbKs"
 
 [userenv.production]
 

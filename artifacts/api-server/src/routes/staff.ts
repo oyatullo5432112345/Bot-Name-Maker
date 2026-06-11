@@ -8,6 +8,7 @@ import {
   UpdateStaffResponse,
   DeleteStaffParams,
 } from "@workspace/api-zod";
+import { requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -33,10 +34,12 @@ async function enrichStaff(staff: {
   return { ...staff, class_name, subjects: staff.subjects ?? [], can_teach: staff.can_teach ?? false };
 }
 
+const SAFE_STAFF_FIELDS = "id, full_name, role, class_id, login, telegram_id, created_at, subjects, can_teach";
+
 // GET /api/staff/:id
-router.get("/staff/:id", async (req, res): Promise<void> => {
+router.get("/staff/:id", requireAuth, async (req, res): Promise<void> => {
   const { id } = req.params;
-  const data = await queryOne("SELECT * FROM staff WHERE id = $1", [id]);
+  const data = await queryOne(`SELECT ${SAFE_STAFF_FIELDS} FROM staff WHERE id = $1`, [id]);
   if (!data) {
     res.status(404).json({ error: "Xodim topilmadi" });
     return;
@@ -46,18 +49,18 @@ router.get("/staff/:id", async (req, res): Promise<void> => {
 });
 
 // GET /api/staff
-router.get("/staff", async (_req, res): Promise<void> => {
+router.get("/staff", requireAuth, async (_req, res): Promise<void> => {
   try {
-    const data = await query("SELECT * FROM staff ORDER BY full_name");
+    const data = await query(`SELECT ${SAFE_STAFF_FIELDS} FROM staff ORDER BY full_name`);
     const enriched = await Promise.all(data.map(enrichStaff));
     res.json(ListStaffResponse.parse(enriched));
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    res.status(500).json({ error: "Ma'lumotlarni olishda xatolik" });
   }
 });
 
 // POST /api/staff/bulk
-router.post("/staff/bulk", async (req, res): Promise<void> => {
+router.post("/staff/bulk", requireAuth, async (req, res): Promise<void> => {
   const { staff: items } = req.body as {
     staff: { full_name: string; role: string; subjects?: string[]; can_teach?: boolean }[];
   };
@@ -93,7 +96,7 @@ router.post("/staff/bulk", async (req, res): Promise<void> => {
 });
 
 // POST /api/staff
-router.post("/staff", async (req, res): Promise<void> => {
+router.post("/staff", requireAuth, async (req, res): Promise<void> => {
   const parsed = CreateStaffBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -116,7 +119,7 @@ router.post("/staff", async (req, res): Promise<void> => {
 });
 
 // PATCH /api/staff/:id
-router.patch("/staff/:id", async (req, res): Promise<void> => {
+router.patch("/staff/:id", requireAuth, async (req, res): Promise<void> => {
   const params = UpdateStaffParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -163,7 +166,7 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
 });
 
 // DELETE /api/staff/:id
-router.delete("/staff/:id", async (req, res): Promise<void> => {
+router.delete("/staff/:id", requireAuth, async (req, res): Promise<void> => {
   const params = DeleteStaffParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

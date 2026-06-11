@@ -8,11 +8,12 @@ import {
   AssignTeacherBody,
   AssignTeacherResponse,
 } from "@workspace/api-zod";
+import { requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
 
 // GET /api/classes
-router.get("/classes", async (_req, res): Promise<void> => {
+router.get("/classes", requireAuth, async (_req, res): Promise<void> => {
   try {
     const classesRaw = await query<{ id: string; name: string; teacher_id: string | null; created_at: string }>(
       "SELECT * FROM classes"
@@ -48,7 +49,7 @@ router.get("/classes", async (_req, res): Promise<void> => {
 });
 
 // POST /api/classes/bulk
-router.post("/classes/bulk", async (req, res): Promise<void> => {
+router.post("/classes/bulk", requireAuth, async (req, res): Promise<void> => {
   const { names } = req.body as { names: string[] };
   if (!Array.isArray(names) || names.length === 0) {
     res.status(400).json({ error: "names massivi bo'sh" });
@@ -76,7 +77,7 @@ router.post("/classes/bulk", async (req, res): Promise<void> => {
 });
 
 // POST /api/classes
-router.post("/classes", async (req, res): Promise<void> => {
+router.post("/classes", requireAuth, async (req, res): Promise<void> => {
   const parsed = CreateClassBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -98,7 +99,7 @@ router.post("/classes", async (req, res): Promise<void> => {
 });
 
 // DELETE /api/classes/:id
-router.delete("/classes/:id", async (req, res): Promise<void> => {
+router.delete("/classes/:id", requireAuth, async (req, res): Promise<void> => {
   const params = DeleteClassParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -114,7 +115,7 @@ router.delete("/classes/:id", async (req, res): Promise<void> => {
 });
 
 // PATCH /api/classes/:id/assign-teacher
-router.patch("/classes/:id/assign-teacher", async (req, res): Promise<void> => {
+router.patch("/classes/:id/assign-teacher", requireAuth, async (req, res): Promise<void> => {
   const params = AssignTeacherParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

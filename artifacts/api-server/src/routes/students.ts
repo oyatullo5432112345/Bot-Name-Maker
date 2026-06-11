@@ -11,8 +11,11 @@ import {
   UpdateStudentResponse,
   DeleteStudentParams,
 } from "@workspace/api-zod";
+import { requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
+
+const SAFE_STUDENT_FIELDS = "telegram_id, full_name, phone_number, class_name, login, registration_date";
 
 function generateStudentCredentials(name: string): { login: string; password: string } {
   const parts = name.trim().toLowerCase().split(" ");
@@ -24,26 +27,26 @@ function generateStudentCredentials(name: string): { login: string; password: st
 }
 
 // GET /api/students
-router.get("/students", async (req, res): Promise<void> => {
+router.get("/students", requireAuth, async (req, res): Promise<void> => {
   const qp = ListStudentsQueryParams.safeParse(req.query);
   try {
     let rows;
     if (qp.success && qp.data.class_name) {
       rows = await query(
-        "SELECT * FROM users WHERE class_name = $1 ORDER BY registration_date DESC",
+        `SELECT ${SAFE_STUDENT_FIELDS} FROM users WHERE class_name = $1 ORDER BY registration_date DESC`,
         [qp.data.class_name]
       );
     } else {
-      rows = await query("SELECT * FROM users ORDER BY registration_date DESC");
+      rows = await query(`SELECT ${SAFE_STUDENT_FIELDS} FROM users ORDER BY registration_date DESC`);
     }
     res.json(ListStudentsResponse.parse(rows));
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    res.status(500).json({ error: "Ma'lumotlarni olishda xatolik" });
   }
 });
 
 // POST /api/students/bulk
-router.post("/students/bulk", async (req, res): Promise<void> => {
+router.post("/students/bulk", requireAuth, async (req, res): Promise<void> => {
   const { students } = req.body as { students: { full_name: string; phone_number?: string; class_name: string }[] };
   if (!Array.isArray(students) || students.length === 0) {
     res.status(400).json({ error: "students massivi bo'sh" });
@@ -71,7 +74,7 @@ router.post("/students/bulk", async (req, res): Promise<void> => {
       );
       created.push({ full_name: s.full_name, login, password, class_name: s.class_name });
     } catch (err) {
-      errors.push({ full_name: s.full_name, error: (err as Error).message });
+      errors.push({ full_name: s.full_name, error: "Qo'shishda xatolik" });
     }
   }
 
@@ -79,7 +82,7 @@ router.post("/students/bulk", async (req, res): Promise<void> => {
 });
 
 // POST /api/students
-router.post("/students", async (req, res): Promise<void> => {
+router.post("/students", requireAuth, async (req, res): Promise<void> => {
   const parsed = CreateStudentBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -104,14 +107,17 @@ router.post("/students", async (req, res): Promise<void> => {
 });
 
 // GET /api/students/:id
-router.get("/students/:id", async (req, res): Promise<void> => {
+router.get("/students/:id", requireAuth, async (req, res): Promise<void> => {
   const params = GetStudentParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
 
-  const data = await queryOne("SELECT * FROM users WHERE telegram_id = $1", [params.data.id]);
+  const data = await queryOne(
+    `SELECT ${SAFE_STUDENT_FIELDS} FROM users WHERE telegram_id = $1`,
+    [params.data.id]
+  );
   if (!data) {
     res.status(404).json({ error: "O'quvchi topilmadi" });
     return;
@@ -120,7 +126,7 @@ router.get("/students/:id", async (req, res): Promise<void> => {
 });
 
 // PATCH /api/students/:id
-router.patch("/students/:id", async (req, res): Promise<void> => {
+router.patch("/students/:id", requireAuth, async (req, res): Promise<void> => {
   const params = UpdateStudentParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -161,7 +167,7 @@ router.patch("/students/:id", async (req, res): Promise<void> => {
 });
 
 // DELETE /api/students/:id
-router.delete("/students/:id", async (req, res): Promise<void> => {
+router.delete("/students/:id", requireAuth, async (req, res): Promise<void> => {
   const params = DeleteStudentParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

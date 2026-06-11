@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
+import { requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -41,7 +42,7 @@ async function enrichEntry(entry: {
 }
 
 // GET /api/timetable
-router.get("/timetable", async (req, res): Promise<void> => {
+router.get("/timetable", requireAuth, async (req, res): Promise<void> => {
   const class_id = req.query["class_id"] as string | undefined;
   const teacher_id = req.query["teacher_id"] as string | undefined;
 
@@ -65,7 +66,7 @@ router.get("/timetable", async (req, res): Promise<void> => {
 });
 
 // POST /api/timetable
-router.post("/timetable", async (req, res): Promise<void> => {
+router.post("/timetable", requireAuth, async (req, res): Promise<void> => {
   const { class_id, day_of_week, period, subject, teacher_id } = req.body as {
     class_id?: string; day_of_week?: number; period?: number;
     subject?: string; teacher_id?: string | null;
@@ -101,7 +102,7 @@ router.post("/timetable", async (req, res): Promise<void> => {
 });
 
 // PUT /api/timetable/:id
-router.put("/timetable/:id", async (req, res): Promise<void> => {
+router.put("/timetable/:id", requireAuth, async (req, res): Promise<void> => {
   const { id } = req.params;
   const { subject, teacher_id } = req.body as { subject?: string; teacher_id?: string | null };
 
@@ -136,7 +137,7 @@ router.put("/timetable/:id", async (req, res): Promise<void> => {
 });
 
 // DELETE /api/timetable/:id
-router.delete("/timetable/:id", async (req, res): Promise<void> => {
+router.delete("/timetable/:id", requireAuth, async (req, res): Promise<void> => {
   const { id } = req.params;
   try {
     await query("DELETE FROM timetable WHERE id = $1", [id]);

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { query, queryCount } from "../lib/db.js";
 import { GetDashboardStatsResponse, GetMyClassResponse } from "@workspace/api-zod";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -13,7 +13,7 @@ function getDaysUntilSeptember(): number {
 }
 
 // GET /api/dashboard/stats
-router.get("/dashboard/stats", async (_req, res): Promise<void> => {
+router.get("/dashboard/stats", requireAuth, async (_req, res): Promise<void> => {
   try {
     const [total_students, total_classes, total_staff, classnameRows] = await Promise.all([
       queryCount("SELECT COUNT(*) FROM users"),
