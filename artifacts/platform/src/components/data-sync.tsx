@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const SYNC_KEY = "data_sync_v1";
+const MAX_SYNC_MS = 8000;
+const SHOW_SKIP_AFTER_MS = 2500;
 
 function getToken() {
   return localStorage.getItem("talim_auth_token");
@@ -19,7 +21,18 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
   const [visible, setVisible] = useState(false);
   const [progress, setProgress] = useState(0);
   const [label, setLabel] = useState("Ma'lumotlar yuklanmoqda...");
+  const [showSkip, setShowSkip] = useState(false);
   const didSync = useRef(false);
+  const doneRef = useRef(false);
+
+  const finish = (syncKey: string) => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    setProgress(100);
+    setLabel("Tayyor!");
+    sessionStorage.setItem(syncKey, "1");
+    setTimeout(() => setVisible(false), 500);
+  };
 
   useEffect(() => {
     const syncKey = `${SYNC_KEY}_${userId}`;
@@ -29,6 +42,12 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
 
     setVisible(true);
     setProgress(5);
+
+    // Skip tugmasi bir necha soniyadan keyin ko'rinadi
+    const skipTimer = setTimeout(() => setShowSkip(true), SHOW_SKIP_AFTER_MS);
+
+    // Hard timeout — qotib qolsa majburan yopiladi
+    const hardTimer = setTimeout(() => finish(syncKey), MAX_SYNC_MS);
 
     const token = getToken();
     const headers: Record<string, string> = {
@@ -42,7 +61,6 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
     const tasks: { key: string[]; url: string; label: string }[] = [
       { key: ["dashboard-stats"], url: "/dashboard/stats", label: "Dashboard..." },
     ];
-
     if (!isStudent) {
       tasks.push({ key: ["classes", {}], url: "/classes", label: "Sinflar..." });
     }
@@ -55,32 +73,51 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
 
     const fetchAll = async () => {
       for (const task of tasks) {
+        if (doneRef.current) break;
         setLabel(task.label);
         try {
-          const url = `${API_BASE}${task.url}`;
+          const controller = new AbortController();
+          const reqTimer = setTimeout(() => controller.abort(), 5000);
           await queryClient.prefetchQuery({
             queryKey: task.key,
             queryFn: async () => {
-              const r = await fetch(url, { headers });
-              if (!r.ok) return null;
-              return r.json();
+              try {
+                const r = await fetch(`${API_BASE}${task.url}`, {
+                  headers,
+                  signal: controller.signal,
+                });
+                clearTimeout(reqTimer);
+                if (!r.ok) return null;
+                return r.json();
+              } catch {
+                clearTimeout(reqTimer);
+                return null;
+              }
             },
             staleTime: 5 * 60 * 1000,
           });
         } catch {}
         done++;
-        setProgress(Math.round(10 + (done / tasks.length) * 88));
+        setProgress(Math.round(10 + (done / tasks.length) * 85));
       }
 
-      setProgress(100);
-      setLabel("Tayyor!");
-      sessionStorage.setItem(syncKey, "1");
-
-      setTimeout(() => setVisible(false), 600);
+      clearTimeout(hardTimer);
+      clearTimeout(skipTimer);
+      finish(syncKey);
     };
 
     fetchAll();
+
+    return () => {
+      clearTimeout(skipTimer);
+      clearTimeout(hardTimer);
+    };
   }, [userId]);
+
+  const handleSkip = () => {
+    const syncKey = `${SYNC_KEY}_${userId}`;
+    finish(syncKey);
+  };
 
   return (
     <AnimatePresence>
@@ -89,16 +126,11 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
           key="datasync"
           className="fixed inset-0 z-[9997] flex flex-col items-center justify-center"
           style={{
-            backgroundImage: "url(/globe-bg.png), linear-gradient(135deg, #07122a 0%, #0d1f4a 50%, #07122a 100%)",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundBlendMode: "overlay",
+            background: "linear-gradient(135deg, #07122a 0%, #0d1f4a 50%, #07122a 100%)",
           }}
           initial={{ opacity: 1 }}
-          exit={{ opacity: 0, transition: { duration: 0.6, ease: "easeInOut" } }}
+          exit={{ opacity: 0, transition: { duration: 0.5, ease: "easeInOut" } }}
         >
-          <div className="absolute inset-0 bg-[#06102a]/82" />
-
           <div className="relative z-10 flex flex-col items-center gap-7 px-6">
             <motion.div
               className="relative"
@@ -130,6 +162,20 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
               </div>
               <p className="text-center text-white/30 text-xs">{progress}%</p>
             </div>
+
+            <AnimatePresence>
+              {showSkip && (
+                <motion.button
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  onClick={handleSkip}
+                  className="mt-2 px-5 py-1.5 rounded-full text-sm text-white/60 border border-white/15 hover:border-white/40 hover:text-white/90 transition-colors"
+                >
+                  O'tkazib yuborish →
+                </motion.button>
+              )}
+            </AnimatePresence>
           </div>
         </motion.div>
       )}
