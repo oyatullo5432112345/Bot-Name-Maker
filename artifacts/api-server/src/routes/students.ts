@@ -15,7 +15,7 @@ import { requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
 
-const SELECT_FIELDS = "telegram_id, full_name, phone_number, class_name, login, registration_date";
+const SELECT_FIELDS = "telegram_id, full_name, phone_number, class_name, login, password, registration_date";
 
 function generateStudentCredentials(name: string): { login: string; password: string } {
   const parts = name.trim().toLowerCase().split(" ");

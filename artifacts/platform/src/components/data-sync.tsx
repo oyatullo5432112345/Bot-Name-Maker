@@ -4,8 +4,9 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const SYNC_KEY = "data_sync_v1";
-const MAX_SYNC_MS = 8000;
-const SHOW_SKIP_AFTER_MS = 2500;
+const MAX_SYNC_MS = 10000;
+const SHOW_SKIP_AFTER_MS = 3000;
+const GLOBE_URL = "/globe-bg.png";
 
 function getToken() {
   return localStorage.getItem("talim_auth_token");
@@ -20,8 +21,9 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
   const queryClient = useQueryClient();
   const [visible, setVisible] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [label, setLabel] = useState("Ma'lumotlar yuklanmoqda...");
+  const [label, setLabel] = useState("Yuklanmoqda...");
   const [showSkip, setShowSkip] = useState(false);
+  const [globeLoaded, setGlobeLoaded] = useState(false);
   const didSync = useRef(false);
   const doneRef = useRef(false);
 
@@ -31,7 +33,7 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
     setProgress(100);
     setLabel("Tayyor!");
     sessionStorage.setItem(syncKey, "1");
-    setTimeout(() => setVisible(false), 500);
+    setTimeout(() => setVisible(false), 600);
   };
 
   useEffect(() => {
@@ -43,10 +45,13 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
     setVisible(true);
     setProgress(5);
 
-    // Skip tugmasi bir necha soniyadan keyin ko'rinadi
-    const skipTimer = setTimeout(() => setShowSkip(true), SHOW_SKIP_AFTER_MS);
+    // Globe rasmini preload qilish — layout uchun kesh to'ldiriladi
+    const img = new Image();
+    img.onload = () => setGlobeLoaded(true);
+    img.onerror = () => setGlobeLoaded(true);
+    img.src = GLOBE_URL;
 
-    // Hard timeout — qotib qolsa majburan yopiladi
+    const skipTimer = setTimeout(() => setShowSkip(true), SHOW_SKIP_AFTER_MS);
     const hardTimer = setTimeout(() => finish(syncKey), MAX_SYNC_MS);
 
     const token = getToken();
@@ -72,6 +77,14 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
     let done = 0;
 
     const fetchAll = async () => {
+      // Globe rasm tugashini kutamiz (max 3s)
+      await Promise.race([
+        new Promise<void>((res) => { img.complete ? res() : (img.onload = img.onerror = () => res()); }),
+        new Promise<void>((res) => setTimeout(res, 3000)),
+      ]);
+
+      setProgress(15);
+
       for (const task of tasks) {
         if (doneRef.current) break;
         setLabel(task.label);
@@ -98,7 +111,7 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
           });
         } catch {}
         done++;
-        setProgress(Math.round(10 + (done / tasks.length) * 85));
+        setProgress(Math.round(20 + (done / tasks.length) * 78));
       }
 
       clearTimeout(hardTimer);
@@ -126,11 +139,18 @@ export function DataSync({ userId, userRole }: DataSyncProps) {
           key="datasync"
           className="fixed inset-0 z-[9997] flex flex-col items-center justify-center"
           style={{
-            background: "linear-gradient(135deg, #07122a 0%, #0d1f4a 50%, #07122a 100%)",
+            backgroundImage: globeLoaded
+              ? `url(${GLOBE_URL}), linear-gradient(135deg, #07122a 0%, #0d1f4a 50%, #07122a 100%)`
+              : "linear-gradient(135deg, #07122a 0%, #0d1f4a 50%, #07122a 100%)",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundBlendMode: "overlay",
           }}
           initial={{ opacity: 1 }}
-          exit={{ opacity: 0, transition: { duration: 0.5, ease: "easeInOut" } }}
+          exit={{ opacity: 0, transition: { duration: 0.6, ease: "easeInOut" } }}
         >
+          <div className="absolute inset-0 bg-[#06102a]/82" />
+
           <div className="relative z-10 flex flex-col items-center gap-7 px-6">
             <motion.div
               className="relative"

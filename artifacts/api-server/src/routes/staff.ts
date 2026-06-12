@@ -22,12 +22,12 @@ function generateStaffCredentials(name: string): { login: string; password: stri
   };
 }
 
-const SELECT_FIELDS = "id, full_name, role, class_id, login, telegram_id, created_at, subjects, can_teach";
+const SELECT_FIELDS = "id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach";
 
 async function enrichStaff(staff: {
   id: string; full_name: string; role: string; class_id?: string | null;
   login: string; telegram_id?: number | null;
-  created_at?: string | null; subjects?: string[] | null; can_teach?: boolean | null;
+  subjects?: string[] | null; can_teach?: boolean | null;
 }) {
   let class_name: string | null = null;
   if (staff.class_id) {
