@@ -3,7 +3,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "../lib/logger.js";
 import { query, queryOne } from "../lib/db.js";
-import { supabase } from "../lib/supabase.js";
 import {
   loadSettings,
   addChannel,
@@ -113,13 +112,10 @@ function buildContactKeyboard(): Keyboard {
 
 async function findStudentByPhone(phone: string) {
   const normalized = normalizePhone(phone);
-  const { data } = await supabase
-    .from("users")
-    .select("full_name, class_name, login, password")
-    .eq("phone_number", normalized)
-    .limit(1)
-    .maybeSingle();
-  return data as { full_name: string; class_name: string; login: string; password: string } | null;
+  return queryOne<{ full_name: string; class_name: string; login: string; password: string }>(
+    "SELECT full_name, class_name, login, password FROM users WHERE phone_number = $1 LIMIT 1",
+    [normalized]
+  );
 }
 
 async function sendWelcome(ctx: { replyWithPhoto: Function; reply: Function }, adminExtra = false): Promise<void> {
@@ -264,34 +260,29 @@ async function getOnboardUserList(
   const limit = OB_PAGE_SIZE;
 
   if (roleGroup === "student") {
-    const { data } = await supabase
-      .from("users")
-      .select("telegram_id, full_name, class_name")
-      .order("full_name")
-      .range(offset, offset + limit - 1);
-    const rows = (data ?? []).map((r: any) => ({ id: String(r.telegram_id), full_name: r.full_name, extra: r.class_name ?? "" }));
+    const data = await query<{ telegram_id: number; full_name: string; class_name: string }>(
+      "SELECT telegram_id, full_name, class_name FROM users ORDER BY full_name LIMIT $1 OFFSET $2",
+      [limit, offset]
+    );
+    const rows = data.map(r => ({ id: String(r.telegram_id), full_name: r.full_name, extra: r.class_name ?? "" }));
     return { rows, table: "users" as const, hasMore: rows.length === limit };
   }
 
   if (roleGroup === "teacher") {
-    const { data } = await supabase
-      .from("staff")
-      .select("id, full_name, role")
-      .eq("role", "teacher")
-      .order("full_name")
-      .range(offset, offset + limit - 1);
-    const rows = (data ?? []).map((r: any) => ({ id: r.id, full_name: r.full_name, extra: STAFF_ROLE_LABELS[r.role] ?? r.role }));
+    const data = await query<{ id: string; full_name: string; role: string }>(
+      "SELECT id, full_name, role FROM staff WHERE role = 'teacher' ORDER BY full_name LIMIT $1 OFFSET $2",
+      [limit, offset]
+    );
+    const rows = data.map(r => ({ id: r.id, full_name: r.full_name, extra: STAFF_ROLE_LABELS[r.role] ?? r.role }));
     return { rows, table: "staff" as const, hasMore: rows.length === limit };
   }
 
   if (roleGroup === "sinf_rahbari") {
-    const { data } = await supabase
-      .from("staff")
-      .select("id, full_name, role")
-      .eq("role", "sinf_rahbari")
-      .order("full_name")
-      .range(offset, offset + limit - 1);
-    const rows = (data ?? []).map((r: any) => ({ id: r.id, full_name: r.full_name, extra: STAFF_ROLE_LABELS[r.role] ?? r.role }));
+    const data = await query<{ id: string; full_name: string; role: string }>(
+      "SELECT id, full_name, role FROM staff WHERE role = 'sinf_rahbari' ORDER BY full_name LIMIT $1 OFFSET $2",
+      [limit, offset]
+    );
+    const rows = data.map(r => ({ id: r.id, full_name: r.full_name, extra: STAFF_ROLE_LABELS[r.role] ?? r.role }));
     return { rows, table: "staff" as const, hasMore: rows.length === limit };
   }
 
@@ -300,13 +291,12 @@ async function getOnboardUserList(
     ? ["director", "zam_direktor", "zavuch", "kutubxonachi", "admin"]
     : [roleGroup];
 
-  const { data } = await supabase
-    .from("staff")
-    .select("id, full_name, role")
-    .in("role", mgmtRoles)
-    .order("full_name")
-    .range(offset, offset + limit - 1);
-  const rows = (data ?? []).map((r: any) => ({ id: r.id, full_name: r.full_name, extra: STAFF_ROLE_LABELS[r.role] ?? r.role }));
+  const placeholders = mgmtRoles.map((_, i) => `$${i + 1}`).join(", ");
+  const data = await query<{ id: string; full_name: string; role: string }>(
+    `SELECT id, full_name, role FROM staff WHERE role IN (${placeholders}) ORDER BY full_name LIMIT $${mgmtRoles.length + 1} OFFSET $${mgmtRoles.length + 2}`,
+    [...mgmtRoles, limit, offset]
+  );
+  const rows = data.map(r => ({ id: r.id, full_name: r.full_name, extra: STAFF_ROLE_LABELS[r.role] ?? r.role }));
   return { rows, table: "staff" as const, hasMore: rows.length === limit };
 }
 
@@ -342,16 +332,12 @@ async function sendAccountInfo(
   tgId: number
 ): Promise<void> {
   if (table === "users") {
-    // SELECT first (before UPDATE changes the telegram_id key)
-    const { data: uRaw } = await supabase
-      .from("users")
-      .select("full_name, login, password, class_name")
-      .eq("telegram_id", Number(dbId))
-      .maybeSingle();
-    const u2 = uRaw as { full_name: string; login: string; password: string; class_name?: string } | null;
+    const u2 = await queryOne<{ full_name: string; login: string; password: string; class_name?: string }>(
+      "SELECT full_name, login, password, class_name FROM users WHERE telegram_id = $1",
+      [Number(dbId)]
+    );
     if (!u2) return;
-    // Now update telegram_id to the actual Telegram user id
-    await supabase.from("users").update({ telegram_id: tgId }).eq("telegram_id", Number(dbId));
+    await query("UPDATE users SET telegram_id = $1 WHERE telegram_id = $2", [tgId, Number(dbId)]);
 
     const payload: Record<string, unknown> = {
       id: dbId, role: "student", full_name: u2.full_name,
@@ -359,8 +345,8 @@ async function sendAccountInfo(
     };
 
     if (u2.class_name) {
-      const { data: cls } = await supabase.from("classes").select("id").eq("name", u2.class_name).maybeSingle();
-      if (cls) payload["class_id"] = (cls as { id: string }).id;
+      const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [u2.class_name]);
+      if (cls) payload["class_id"] = cls.id;
     }
 
     const magicToken = createMagicToken(payload);
@@ -383,14 +369,12 @@ async function sendAccountInfo(
       { parse_mode: "MarkdownV2", reply_markup: kb }
     );
   } else {
-    const { data: sRaw } = await supabase
-      .from("staff")
-      .select("full_name, login, role, subjects")
-      .eq("id", dbId)
-      .maybeSingle();
-    const s = sRaw as { full_name: string; login: string; role: string; subjects?: string[] } | null;
+    const s = await queryOne<{ full_name: string; login: string; role: string; subjects?: string[] }>(
+      "SELECT full_name, login, role, subjects FROM staff WHERE id = $1",
+      [dbId]
+    );
     if (!s) return;
-    await supabase.from("staff").update({ telegram_id: tgId }).eq("id", dbId);
+    await query("UPDATE staff SET telegram_id = $1 WHERE id = $2", [tgId, dbId]);
 
     const roleLabel = STAFF_ROLE_LABELS[s.role] ?? s.role;
     const payload = {
@@ -490,32 +474,28 @@ export function createBot(): Bot {
     }
 
     // DB da bog'langanligini tekshirish
-    const [{ data: staffLinked }, { data: userLinked }] = await Promise.all([
-      supabase.from("staff").select("id").eq("telegram_id", userId).maybeSingle(),
-      supabase.from("users").select("telegram_id").eq("telegram_id", userId).maybeSingle(),
+    const [staffLinked, userLinked] = await Promise.all([
+      queryOne<{ id: string }>("SELECT id FROM staff WHERE telegram_id = $1", [userId]),
+      queryOne<{ telegram_id: number }>("SELECT telegram_id FROM users WHERE telegram_id = $1", [userId]),
     ]);
 
     if (staffLinked || userLinked) {
       const magicPayload = staffLinked
         ? await (async () => {
-            const { data: st } = await supabase
-              .from("staff")
-              .select("id, full_name, login, role, subjects")
-              .eq("id", (staffLinked as { id: string }).id)
-              .maybeSingle();
+            const st = await queryOne<{ id: string; full_name: string; login: string; role: string; subjects?: string[] }>(
+              "SELECT id, full_name, login, role, subjects FROM staff WHERE id = $1",
+              [staffLinked.id]
+            );
             if (!st) return null;
-            const s = st as { id: string; full_name: string; login: string; role: string; subjects?: string[] };
-            return { id: s.id, role: s.role, full_name: s.full_name, login: s.login, telegram_id: userId, subjects: s.subjects ?? [] };
+            return { id: st.id, role: st.role, full_name: st.full_name, login: st.login, telegram_id: userId, subjects: st.subjects ?? [] };
           })()
         : await (async () => {
-            const { data: us } = await supabase
-              .from("users")
-              .select("telegram_id, full_name, login, class_name")
-              .eq("telegram_id", userId)
-              .maybeSingle();
+            const us = await queryOne<{ telegram_id: number; full_name: string; login: string; class_name?: string }>(
+              "SELECT telegram_id, full_name, login, class_name FROM users WHERE telegram_id = $1",
+              [userId]
+            );
             if (!us) return null;
-            const u = us as { telegram_id: number; full_name: string; login: string; class_name?: string };
-            return { id: String(u.telegram_id), role: "student", full_name: u.full_name, login: u.login, telegram_id: userId, class_name: u.class_name };
+            return { id: String(us.telegram_id), role: "student", full_name: us.full_name, login: us.login, telegram_id: userId, class_name: us.class_name };
           })();
 
       if (magicPayload) {
@@ -573,13 +553,10 @@ export function createBot(): Bot {
     const userId = ctx.from?.id;
     if (!userId) return;
 
-    const { data: staffRaw } = await supabase
-      .from("staff")
-      .select("id, full_name, role")
-      .eq("telegram_id", userId)
-      .in("role", ["teacher", "sinf_rahbari", "director", "zam_direktor", "zavuch"])
-      .maybeSingle();
-    const staff = staffRaw as { id: string; full_name: string; role: string } | null;
+    const staff = await queryOne<{ id: string; full_name: string; role: string }>(
+      "SELECT id, full_name, role FROM staff WHERE telegram_id = $1 AND role IN ('teacher','sinf_rahbari','director','zam_direktor','zavuch')",
+      [userId]
+    );
 
     if (!staff) {
       await ctx.reply(
@@ -607,12 +584,10 @@ export function createBot(): Bot {
 
     const waitMsg = await ctx.reply("⏳ Sertifikat tayyorlanmoqda...");
 
-    const { data: staffDataRaw } = await supabase
-      .from("staff")
-      .select("full_name, role, subjects")
-      .eq("telegram_id", userId)
-      .maybeSingle();
-    const staffData = staffDataRaw as { full_name: string; role: string; subjects?: string[] | null } | null;
+    const staffData = await queryOne<{ full_name: string; role: string; subjects?: string[] | null }>(
+      "SELECT full_name, role, subjects FROM staff WHERE telegram_id = $1",
+      [userId]
+    );
 
     let fullName: string | null = null;
     let role: string | null = null;
@@ -624,12 +599,10 @@ export function createBot(): Bot {
       role = staffData.role;
       subjects = staffData.subjects ?? [];
     } else {
-      const { data: userDataRaw } = await supabase
-        .from("users")
-        .select("full_name, class_name")
-        .eq("telegram_id", userId)
-        .maybeSingle();
-      const userData = userDataRaw as { full_name: string; class_name?: string } | null;
+      const userData = await queryOne<{ full_name: string; class_name?: string }>(
+        "SELECT full_name, class_name FROM users WHERE telegram_id = $1",
+        [userId]
+      );
       if (userData) {
         fullName = userData.full_name;
         role = "student";
@@ -763,11 +736,10 @@ export function createBot(): Bot {
     const student = await findStudentByPhone(normalized);
 
     if (student) {
-      await supabase.from("users").update({ telegram_id: userId }).eq("phone_number", normalized);
+      await query("UPDATE users SET telegram_id = $1 WHERE phone_number = $2", [userId, normalized]);
       linkPhoneToChatId(normalized, userId);
 
-      const { data: clsRaw } = await supabase.from("classes").select("id").eq("name", student.class_name).maybeSingle();
-      const clsData = clsRaw as { id: string } | null;
+      const clsData = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [student.class_name]);
 
       // Magic token yaratish — bir marta bosib kirish uchun
       const payload = {
@@ -960,9 +932,9 @@ export function createBot(): Bot {
       return;
     }
 
-    const [{ data: slk }, { data: ulk }] = await Promise.all([
-      supabase.from("staff").select("id").eq("telegram_id", userId).maybeSingle(),
-      supabase.from("users").select("telegram_id").eq("telegram_id", userId).maybeSingle(),
+    const [slk, ulk] = await Promise.all([
+      queryOne<{ id: string }>("SELECT id FROM staff WHERE telegram_id = $1", [userId]),
+      queryOne<{ telegram_id: number }>("SELECT telegram_id FROM users WHERE telegram_id = $1", [userId]),
     ]);
 
     if (slk || ulk) {
@@ -1109,11 +1081,17 @@ export function createBot(): Bot {
 
     let data: { full_name: string; role?: string; class_name?: string } | null = null;
     if (table === "users") {
-      const { data: r } = await supabase.from("users").select("full_name, class_name").eq("telegram_id", Number(dbId)).maybeSingle();
-      data = r ? { full_name: (r as any).full_name, class_name: (r as any).class_name } : null;
+      const r = await queryOne<{ full_name: string; class_name?: string }>(
+        "SELECT full_name, class_name FROM users WHERE telegram_id = $1",
+        [Number(dbId)]
+      );
+      data = r ?? null;
     } else {
-      const { data: r } = await supabase.from("staff").select("full_name, role").eq("id", dbId).maybeSingle();
-      data = r ? { full_name: (r as any).full_name, role: (r as any).role } : null;
+      const r = await queryOne<{ full_name: string; role: string }>(
+        "SELECT full_name, role FROM staff WHERE id = $1",
+        [dbId]
+      );
+      data = r ?? null;
     }
 
     if (!data) {
@@ -1286,19 +1264,21 @@ export function createBot(): Bot {
       const password = ctx.message.text.trim();
       userStates.set(userId, { type: "idle" });
 
-      const [{ data: staffDataRaw }, { data: userDataRaw }] = await Promise.all([
-        supabase.from("staff").select("id, full_name, login, role, subjects, password").eq("login", login).maybeSingle(),
-        supabase.from("users").select("telegram_id, full_name, login, password, class_name").eq("login", login).maybeSingle(),
+      const [staffData, userData] = await Promise.all([
+        queryOne<{ id: string; full_name: string; login: string; role: string; subjects?: string[]; password: string }>(
+          "SELECT id, full_name, login, role, subjects, password FROM staff WHERE login = $1", [login]
+        ),
+        queryOne<{ telegram_id: number; full_name: string; login: string; password: string; class_name?: string }>(
+          "SELECT telegram_id, full_name, login, password, class_name FROM users WHERE login = $1", [login]
+        ),
       ]);
-      const staffData = staffDataRaw as { id: string; full_name: string; login: string; role: string; subjects?: string[]; password: string } | null;
-      const userData = userDataRaw as { telegram_id: number; full_name: string; login: string; password: string; class_name?: string } | null;
 
       let found = false;
 
       if (staffData) {
         if (password === staffData.password) {
           found = true;
-          await supabase.from("staff").update({ telegram_id: userId }).eq("id", staffData.id);
+          await query("UPDATE staff SET telegram_id = $1 WHERE id = $2", [userId, staffData.id]);
           const payload = { id: staffData.id, role: staffData.role, full_name: staffData.full_name, login: staffData.login, telegram_id: userId, subjects: staffData.subjects ?? [] };
           const magicToken = createMagicToken(payload);
           const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
@@ -1314,9 +1294,10 @@ export function createBot(): Bot {
       } else if (userData) {
         if (password === userData.password) {
           found = true;
-          await supabase.from("users").update({ telegram_id: userId }).eq("telegram_id", userData.telegram_id);
-          const { data: clsRaw } = await supabase.from("classes").select("id").eq("name", userData.class_name ?? "").maybeSingle();
-          const cls = clsRaw as { id: string } | null;
+          await query("UPDATE users SET telegram_id = $1 WHERE telegram_id = $2", [userId, userData.telegram_id]);
+          const cls = userData.class_name
+            ? await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [userData.class_name])
+            : null;
           const payload = { id: String(userData.telegram_id), role: "student", full_name: userData.full_name, login: userData.login, class_name: userData.class_name, class_id: cls?.id ?? null, telegram_id: userId };
           const magicToken = createMagicToken(payload);
           const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
@@ -1351,8 +1332,8 @@ export function createBot(): Bot {
       const roleGroup = state.roleGroup;
 
       if (roleGroup === "student") {
-        const { data: uRaw } = await supabase.from("users").select("telegram_id").eq("password", entered).limit(1).maybeSingle();
-        const u = uRaw ? { id: String((uRaw as { telegram_id: number }).telegram_id) } : null;
+        const uRaw = await queryOne<{ telegram_id: number }>("SELECT telegram_id FROM users WHERE password = $1 LIMIT 1", [entered]);
+        const u = uRaw ? { id: String(uRaw.telegram_id) } : null;
         if (!u) {
           await ctx.reply(
             "❌ *Mahfiy kod noto'g'ri!*\n\nKodingizni qaytadan tekshiring yoki admin bilan bog'laning.",
@@ -1369,8 +1350,10 @@ export function createBot(): Bot {
 
       if (roleGroup === "teacher" || roleGroup === "sinf_rahbari") {
         const roleFilter = roleGroup === "teacher" ? "teacher" : "sinf_rahbari";
-        const { data: dRaw } = await supabase.from("staff").select("id").eq("password", entered).eq("role", roleFilter).limit(1).maybeSingle();
-        const d = dRaw as { id: string } | null;
+        const d = await queryOne<{ id: string }>(
+          "SELECT id FROM staff WHERE password = $1 AND role = $2 LIMIT 1",
+          [entered, roleFilter]
+        );
         if (!d) {
           await ctx.reply(
             "❌ *Mahfiy kod noto'g'ri!*\n\nKodingizni qaytadan tekshiring yoki admin bilan bog'laning.",
@@ -1386,8 +1369,10 @@ export function createBot(): Bot {
       }
 
       if (roleGroup === "management") {
-        const { data: dRaw } = await supabase.from("staff").select("id").eq("password", entered).in("role", ["director", "zam_direktor", "zavuch", "kutubxonachi"]).limit(1).maybeSingle();
-        const d = dRaw as { id: string } | null;
+        const d = await queryOne<{ id: string }>(
+          "SELECT id FROM staff WHERE password = $1 AND role IN ('director','zam_direktor','zavuch','kutubxonachi') LIMIT 1",
+          [entered]
+        );
         if (!d) {
           await ctx.reply(
             "❌ *Mahfiy kod noto'g'ri!*\n\nKodingizni qaytadan tekshiring yoki admin bilan bog'laning.",

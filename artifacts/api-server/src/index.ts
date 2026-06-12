@@ -1,7 +1,5 @@
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
-import { createBot } from "./bot/bot.js";
-import { webhookCallback } from "grammy";
 import { createServer } from "http";
 
 const rawPort = process.env["PORT"];
@@ -44,80 +42,74 @@ async function gracefulShutdown(signal: string, stopBot?: () => Promise<void>) {
   process.exit(0);
 }
 
-try {
-  const bot = createBot();
+const server = createServer(app);
 
-  if (isProduction && WEBSITE_URL) {
-    const webhookPath = "/api/telegram/webhook";
-    const webhookUrl = `${WEBSITE_URL}${webhookPath}`;
+server.listen(port, () => {
+  logger.info({ port }, "Server listening ✅");
+});
 
-    app.use(webhookPath, webhookCallback(bot, "express"));
+server.on("error", (err: NodeJS.ErrnoException) => {
+  logger.error({ err }, "Server xatoligi");
+  process.exit(1);
+});
 
-    const server = createServer(app);
+// Telegram bot — ixtiyoriy (token bo'lmasa ishlamasada server ishlayveradi)
+const BOT_TOKEN = process.env["TELEGRAM_BOT_TOKEN"];
+if (!BOT_TOKEN) {
+  logger.warn("TELEGRAM_BOT_TOKEN yo'q — bot o'chirilgan holda ishlaydi");
+} else {
+  void (async () => {
+    try {
+      const { createBot } = await import("./bot/bot.js");
+      const { webhookCallback } = await import("grammy");
+      const bot = createBot();
 
-    server.listen(port, async () => {
-      logger.info({ port }, "Server listening");
-      try {
-        await bot.api.setWebhook(webhookUrl);
-        logger.info({ webhookUrl }, "Telegram bot webhook o'rnatildi ✅");
-      } catch (err) {
-        logger.error({ err }, "Webhook o'rnatishda xatolik");
-      }
-    });
+      if (isProduction && WEBSITE_URL) {
+        const webhookPath = "/api/telegram/webhook";
+        const webhookUrl = `${WEBSITE_URL}${webhookPath}`;
 
-    server.on("error", (err) => {
-      logger.error({ err }, "Server xatoligi");
-      process.exit(1);
-    });
+        app.use(webhookPath, webhookCallback(bot, "express"));
 
-    const stopProd = async () => {
-      try { await bot.api.deleteWebhook(); } catch { /* ignore */ }
-    };
-    process.once("SIGINT", () => gracefulShutdown("SIGINT", stopProd));
-    process.once("SIGTERM", () => gracefulShutdown("SIGTERM", stopProd));
-  } else {
-    const server = createServer(app);
+        try {
+          await bot.api.setWebhook(webhookUrl);
+          logger.info({ webhookUrl }, "Telegram bot webhook o'rnatildi ✅");
+        } catch (err) {
+          logger.error({ err }, "Webhook o'rnatishda xatolik");
+        }
 
-    server.listen(port, () => {
-      logger.info({ port }, "Server listening");
-    });
-
-    server.on("error", (err: NodeJS.ErrnoException) => {
-      logger.error({ err }, "Error listening on port");
-      process.exit(1);
-    });
-
-    void (async () => {
-      try {
-        const info = await bot.api.getWebhookInfo();
-        if (info.url && info.url.length > 0) {
-          logger.warn(
-            `Dev: eski webhook topildi (${info.url}) — o'chirilmoqda...`
-          );
-          try {
+        const stopProd = async () => {
+          try { await bot.api.deleteWebhook(); } catch { /* ignore */ }
+        };
+        process.once("SIGINT", () => gracefulShutdown("SIGINT", stopProd));
+        process.once("SIGTERM", () => gracefulShutdown("SIGTERM", stopProd));
+      } else {
+        // Dev: polling mode
+        try {
+          const info = await bot.api.getWebhookInfo();
+          if (info.url && info.url.length > 0) {
+            logger.warn(`Dev: eski webhook topildi (${info.url}) — o'chirilmoqda...`);
             await bot.api.deleteWebhook({ drop_pending_updates: true });
-            logger.info("Eski webhook o'chirildi ✅ — polling boshlanmoqda...");
-          } catch (delErr) {
-            logger.error({ err: delErr }, "Webhook o'chirishda xatolik — polling ishlamaydi");
-            return;
+            logger.info("Eski webhook o'chirildi ✅");
           }
+        } catch (err) {
+          logger.warn({ err }, "Webhook info tekshirishda xatolik — polling boshlanmoqda...");
         }
 
         const stopDev = async () => {
           try { await bot.stop(); } catch { /* ignore */ }
         };
-
         process.once("SIGINT", () => gracefulShutdown("SIGINT", stopDev));
         process.once("SIGTERM", () => gracefulShutdown("SIGTERM", stopDev));
 
         await bot.start({
           onStart: () => logger.info("Telegram bot ishga tushdi (polling) ✅"),
         });
-      } catch (err) {
-        logger.error({ err }, "Bot polling xatoligi");
       }
-    })();
-  }
-} catch (err) {
-  logger.error({ err }, "Bot ishga tushmadi");
+    } catch (err) {
+      logger.error({ err }, "Bot xatoligi — server davom etmoqda");
+    }
+  })();
 }
+
+process.once("SIGINT", () => gracefulShutdown("SIGINT"));
+process.once("SIGTERM", () => gracefulShutdown("SIGTERM"));

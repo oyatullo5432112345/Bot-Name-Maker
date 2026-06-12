@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
+import { query, queryOne } from "../lib/db.js";
 import {
   ListStudentsQueryParams,
   ListStudentsResponse,
@@ -15,35 +15,20 @@ import { requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
 
-const SELECT_FIELDS = "telegram_id, full_name, phone_number, class_name, login, password, registration_date";
-
-function generateStudentCredentials(name: string): { login: string; password: string } {
-  const parts = name.trim().toLowerCase().split(" ");
-  const base = parts[0] ?? "user";
-  const num = Math.floor(100 + Math.random() * 900);
-  return {
-    login: `${base}${num}`,
-    password: Math.floor(100000 + Math.random() * 900000).toString(),
-  };
-}
+const SELECT = "telegram_id, full_name, phone_number, class_name, login, password, registration_date";
 
 // GET /api/students
 router.get("/students", requireAuth, async (req, res): Promise<void> => {
   const qp = ListStudentsQueryParams.safeParse(req.query);
   try {
-    let q = supabase
-      .from("users")
-      .select(SELECT_FIELDS)
-      .order("registration_date", { ascending: false });
-
+    let rows;
     if (qp.success && qp.data.class_name) {
-      q = q.eq("class_name", qp.data.class_name);
+      rows = await query(`SELECT ${SELECT} FROM users WHERE class_name = $1 ORDER BY registration_date DESC`, [qp.data.class_name]);
+    } else {
+      rows = await query(`SELECT ${SELECT} FROM users ORDER BY registration_date DESC`);
     }
-
-    const { data, error } = await q;
-    if (error) throw error;
-    res.json(ListStudentsResponse.parse(data ?? []));
-  } catch (err) {
+    res.json(ListStudentsResponse.parse(rows));
+  } catch {
     res.status(500).json({ error: "Ma'lumotlarni olishda xatolik" });
   }
 });
@@ -65,21 +50,14 @@ router.post("/students/bulk", requireAuth, async (req, res): Promise<void> => {
     const login = `${base}${Math.floor(100 + Math.random() * 900)}`;
     const password = Math.floor(10000 + Math.random() * 90000).toString();
     const telegram_id = Date.now() + Math.floor(Math.random() * 10000);
-
-    const { error } = await supabase.from("users").insert({
-      telegram_id,
-      full_name: s.full_name,
-      phone_number: s.phone_number || "",
-      class_name: s.class_name,
-      login,
-      password,
-      registration_date: new Date().toISOString(),
-    });
-
-    if (error) {
-      errors.push({ full_name: s.full_name, error: "Qo'shishda xatolik" });
-    } else {
+    try {
+      await query(
+        "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        [telegram_id, s.full_name, s.phone_number || "", s.class_name, login, password, new Date().toISOString()]
+      );
       created.push({ full_name: s.full_name, login, password, class_name: s.class_name });
+    } catch {
+      errors.push({ full_name: s.full_name, error: "Qo'shishda xatolik" });
     }
   }
 
@@ -95,24 +73,20 @@ router.post("/students", requireAuth, async (req, res): Promise<void> => {
   }
 
   const { full_name, phone_number, class_name } = parsed.data;
-  const { login, password } = generateStudentCredentials(full_name);
+  const parts = full_name.trim().toLowerCase().split(" ");
+  const base = parts[0] ?? "user";
+  const login = `${base}${Math.floor(100 + Math.random() * 900)}`;
+  const password = Math.floor(100000 + Math.random() * 900000).toString();
+  const telegram_id = Date.now();
 
-  const { data, error } = await supabase
-    .from("users")
-    .insert({
-      telegram_id: Date.now(),
-      full_name,
-      phone_number,
-      class_name,
-      login,
-      password,
-      registration_date: new Date().toISOString(),
-    })
-    .select(SELECT_FIELDS)
-    .single();
+  const data = await queryOne(
+    `INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING ${SELECT}`,
+    [telegram_id, full_name, phone_number, class_name, login, password, new Date().toISOString()]
+  );
 
-  if (error) {
-    res.status(500).json({ error: error.message });
+  if (!data) {
+    res.status(500).json({ error: "O'quvchi qo'shishda xatolik" });
     return;
   }
   res.status(201).json(GetStudentResponse.parse(data));
@@ -126,13 +100,8 @@ router.get("/students/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const { data, error } = await supabase
-    .from("users")
-    .select(SELECT_FIELDS)
-    .eq("telegram_id", params.data.id)
-    .single();
-
-  if (error || !data) {
+  const data = await queryOne(`SELECT ${SELECT} FROM users WHERE telegram_id = $1`, [params.data.id]);
+  if (!data) {
     res.status(404).json({ error: "O'quvchi topilmadi" });
     return;
   }
@@ -153,25 +122,26 @@ router.patch("/students/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const updates: Record<string, unknown> = {};
-  if (body.data.full_name != null) updates["full_name"] = body.data.full_name;
-  if (body.data.phone_number != null) updates["phone_number"] = body.data.phone_number;
-  if (body.data.class_name != null) updates["class_name"] = body.data.class_name;
-  if (body.data.password != null) updates["password"] = body.data.password;
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
 
-  if (Object.keys(updates).length === 0) {
+  if (body.data.full_name != null) { setClauses.push(`full_name = $${idx++}`); values.push(body.data.full_name); }
+  if (body.data.phone_number != null) { setClauses.push(`phone_number = $${idx++}`); values.push(body.data.phone_number); }
+  if (body.data.class_name != null) { setClauses.push(`class_name = $${idx++}`); values.push(body.data.class_name); }
+  if (body.data.password != null) { setClauses.push(`password = $${idx++}`); values.push(body.data.password); }
+
+  if (setClauses.length === 0) {
     res.status(400).json({ error: "Yangilanadigan maydon yo'q" });
     return;
   }
+  values.push(params.data.id);
 
-  const { data, error } = await supabase
-    .from("users")
-    .update(updates)
-    .eq("telegram_id", params.data.id)
-    .select(SELECT_FIELDS)
-    .single();
-
-  if (error || !data) {
+  const data = await queryOne(
+    `UPDATE users SET ${setClauses.join(", ")} WHERE telegram_id = $${idx} RETURNING ${SELECT}`,
+    values
+  );
+  if (!data) {
     res.status(404).json({ error: "O'quvchi topilmadi" });
     return;
   }
@@ -185,16 +155,7 @@ router.delete("/students/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const { error } = await supabase
-    .from("users")
-    .delete()
-    .eq("telegram_id", params.data.id);
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
-  }
+  await query("DELETE FROM users WHERE telegram_id = $1", [params.data.id]);
   res.sendStatus(204);
 });
 

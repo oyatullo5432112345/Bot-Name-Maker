@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
+import { query, queryCount } from "../lib/db.js";
 import { GetDashboardStatsResponse, GetMyClassResponse } from "@workspace/api-zod";
 import { getAuthUser } from "./auth.js";
 
@@ -15,20 +15,15 @@ function getDaysUntilSeptember(): number {
 // GET /api/dashboard/stats
 router.get("/dashboard/stats", async (_req, res): Promise<void> => {
   try {
-    const [
-      { count: total_students },
-      { count: total_classes },
-      { count: total_staff },
-      { data: classRows },
-    ] = await Promise.all([
-      supabase.from("users").select("*", { count: "exact", head: true }),
-      supabase.from("classes").select("*", { count: "exact", head: true }),
-      supabase.from("staff").select("*", { count: "exact", head: true }),
-      supabase.from("users").select("class_name"),
+    const [total_students, total_classes, total_staff, classRows] = await Promise.all([
+      queryCount("SELECT COUNT(*) FROM users"),
+      queryCount("SELECT COUNT(*) FROM classes"),
+      queryCount("SELECT COUNT(*) FROM staff"),
+      query<{ class_name: string }>("SELECT class_name FROM users"),
     ]);
 
     const classCounts: Record<string, number> = {};
-    for (const row of (classRows ?? []) as { class_name: string }[]) {
+    for (const row of classRows) {
       classCounts[row.class_name] = (classCounts[row.class_name] ?? 0) + 1;
     }
 
@@ -37,9 +32,9 @@ router.get("/dashboard/stats", async (_req, res): Promise<void> => {
       .sort((a, b) => a.class_name.localeCompare(b.class_name));
 
     res.json(GetDashboardStatsResponse.parse({
-      total_students: total_students ?? 0,
-      total_classes: total_classes ?? 0,
-      total_staff: total_staff ?? 0,
+      total_students,
+      total_classes,
+      total_staff,
       days_until_launch: getDaysUntilSeptember(),
       students_by_class,
     }));
@@ -65,13 +60,8 @@ router.get("/dashboard/my-class", async (req, res): Promise<void> => {
   }
 
   try {
-    const { data: students } = await supabase
-      .from("users")
-      .select("*")
-      .eq("class_name", class_name)
-      .order("full_name");
-
-    res.json(GetMyClassResponse.parse({ class_name, class_id, students: students ?? [] }));
+    const students = await query("SELECT * FROM users WHERE class_name = $1 ORDER BY full_name", [class_name]);
+    res.json(GetMyClassResponse.parse({ class_name, class_id, students }));
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

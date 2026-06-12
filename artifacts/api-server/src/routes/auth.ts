@@ -1,12 +1,10 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
 import { query, queryOne } from "../lib/db.js";
 import {
   LoginBody,
   LoginResponse,
   GetMeResponse,
   LogoutResponse,
-  RegisterBody,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
 import { getChatIdByPhone, normalizePhone } from "../bot/settings.js";
@@ -97,30 +95,21 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const { data: staffList } = await supabase
-    .from("staff")
-    .select("*")
-    .eq("login", trimmedLogin)
-    .eq("password", trimmedPassword)
-    .limit(1);
-
   type StaffRow = { id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean };
 
-  if (staffList && staffList.length > 0) {
-    const staff = staffList[0] as StaffRow;
+  const staff = await queryOne<StaffRow>(
+    "SELECT id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach FROM staff WHERE login = $1 AND password = $2",
+    [trimmedLogin, trimmedPassword]
+  );
+
+  if (staff) {
     let class_name: string | null = null;
     if (staff.class_id) {
-      const { data: cls } = await supabase
-        .from("classes")
-        .select("name")
-        .eq("id", staff.class_id)
-        .single();
-      class_name = (cls as { name: string } | null)?.name ?? null;
+      const cls = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [staff.class_id]);
+      class_name = cls?.name ?? null;
     }
-
     const isTeachingRole = ["teacher", "sinf_rahbari"].includes(staff.role);
     const subjects = isTeachingRole ? (staff.subjects ?? []) : undefined;
-
     const payload = {
       id: staff.id,
       role: staff.role,
@@ -138,30 +127,22 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const { data: studentList } = await supabase
-    .from("users")
-    .select("*")
-    .eq("login", trimmedLogin)
-    .eq("password", trimmedPassword)
-    .limit(1);
+  type StudentRow = { id: string; telegram_id: number; full_name: string; class_name: string; login: string; password: string };
 
-  type StudentRow = { telegram_id: number; full_name: string; class_name: string; login: string; password: string };
+  const student = await queryOne<StudentRow>(
+    "SELECT id, telegram_id, full_name, class_name, login, password FROM users WHERE login = $1 AND password = $2",
+    [trimmedLogin, trimmedPassword]
+  );
 
-  if (studentList && studentList.length > 0) {
-    const student = studentList[0] as StudentRow;
-    const { data: clsData } = await supabase
-      .from("classes")
-      .select("id")
-      .eq("name", student.class_name)
-      .single();
-
+  if (student) {
+    const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [student.class_name]);
     const payload = {
-      id: String(student.telegram_id),
+      id: student.id ?? String(student.telegram_id),
       role: "student",
       full_name: student.full_name,
       login: student.login,
       class_name: student.class_name,
-      class_id: clsData?.id ?? null,
+      class_id: cls?.id ?? null,
       telegram_id: student.telegram_id,
     };
     const token = createToken(payload);
@@ -217,32 +198,24 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   let login = generateStudentLogin(first_name.trim());
   const password = generateStudentPassword(class_name.trim());
 
-  const [{ data: ex1 }, { data: ex2 }] = await Promise.all([
-    supabase.from("staff").select("login").eq("login", login).maybeSingle(),
-    supabase.from("users").select("login").eq("login", login).maybeSingle(),
-  ]);
+  const ex1 = await queryOne("SELECT login FROM staff WHERE login = $1", [login]);
+  const ex2 = await queryOne("SELECT login FROM users WHERE login = $1", [login]);
 
   if (ex1 || ex2) {
     let suffix = 1;
-    let candidate = `${login}${suffix}`;
     while (true) {
-      const [{ data: a }, { data: b }] = await Promise.all([
-        supabase.from("staff").select("login").eq("login", candidate).maybeSingle(),
-        supabase.from("users").select("login").eq("login", candidate).maybeSingle(),
-      ]);
+      const candidate = `${login}${suffix}`;
+      const a = await queryOne("SELECT login FROM staff WHERE login = $1", [candidate]);
+      const b = await queryOne("SELECT login FROM users WHERE login = $1", [candidate]);
       if (!a && !b) { login = candidate; break; }
       suffix++;
-      candidate = `${login}${suffix}`;
     }
   }
 
   const normalizedPhone = normalizePhone(phone_number);
-  const { data: phoneUsers } = await supabase
-    .from("users")
-    .select("login")
-    .eq("phone_number", normalizedPhone);
+  const phoneUsers = await query("SELECT login FROM users WHERE phone_number = $1", [normalizedPhone]);
 
-  if ((phoneUsers ?? []).length >= 2) {
+  if (phoneUsers.length >= 2) {
     res.status(400).json({ error: "Bu telefon raqami bilan maksimal 2 ta foydalanuvchi ro'yxatdan o'ta oladi" });
     return;
   }
@@ -252,24 +225,10 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const registration_date = new Date().toISOString();
 
   try {
-    const { data, error: insertErr } = await supabase
-      .from("users")
-      .insert({
-        telegram_id,
-        full_name,
-        phone_number: normalizedPhone,
-        class_name,
-        login,
-        password,
-        registration_date,
-      })
-      .select("telegram_id, full_name, class_name, login, password")
-      .single();
-
-    if (insertErr || !data) {
-      res.status(500).json({ error: insertErr?.message ?? "Xatolik yuz berdi" });
-      return;
-    }
+    await query(
+      "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+      [telegram_id, full_name, normalizedPhone, class_name, login, password, registration_date]
+    );
 
     if (code_id) {
       await query(
@@ -296,13 +255,12 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
 // POST /api/auth/register-staff
 router.post("/auth/register-staff", async (req, res): Promise<void> => {
-  const { last_name, first_name, full_name: rawFullName, role, class_id, phone_number, subjects, login: customLogin, password: customPassword, code_id } = req.body as {
+  const { last_name, first_name, full_name: rawFullName, role, class_id, subjects, login: customLogin, password: customPassword, code_id } = req.body as {
     last_name?: string;
     first_name?: string;
     full_name?: string;
     role?: string;
     class_id?: string | null;
-    phone_number?: string;
     subjects?: string[];
     login?: string;
     password?: string;
@@ -325,7 +283,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
 
   const SINGLE_SLOT_ROLES = ["director", "mudir", "zam_direktor", "zavuch", "kutubxonachi"];
   if (SINGLE_SLOT_ROLES.includes(role)) {
-    const { data: existingRole } = await supabase.from("staff").select("id").eq("role", role).maybeSingle();
+    const existingRole = await queryOne("SELECT id FROM staff WHERE role = $1", [role]);
     if (existingRole) {
       const roleNames: Record<string, string> = {
         director: "Direktor", mudir: "Obidov Boburjon",
@@ -336,34 +294,20 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     }
   }
 
-  if (role === "sinf_rahbari") {
-    if (!class_id) {
-      res.status(400).json({ error: "Sinf rahbari uchun sinf tanlanishi shart" });
-      return;
-    }
-    const { data: existingRahbar } = await supabase
-      .from("staff")
-      .select("id")
-      .in("role", ["sinf_rahbari", "teacher"])
-      .eq("class_id", class_id)
-      .maybeSingle();
+  if ((role === "sinf_rahbari" || role === "teacher") && class_id) {
+    const existingRahbar = await queryOne(
+      "SELECT id FROM staff WHERE role IN ('sinf_rahbari','teacher') AND class_id = $1",
+      [class_id]
+    );
     if (existingRahbar) {
       res.status(400).json({ error: "Bu sinf uchun sinf rahbari allaqachon tayinlangan" });
       return;
     }
   }
 
-  if (role === "teacher" && class_id) {
-    const { data: existingRahbar } = await supabase
-      .from("staff")
-      .select("id")
-      .in("role", ["sinf_rahbari", "teacher"])
-      .eq("class_id", class_id)
-      .maybeSingle();
-    if (existingRahbar) {
-      res.status(400).json({ error: "Bu sinf uchun sinf rahbari allaqachon tayinlangan" });
-      return;
-    }
+  if (role === "sinf_rahbari" && !class_id) {
+    res.status(400).json({ error: "Sinf rahbari uchun sinf tanlanishi shart" });
+    return;
   }
 
   if (!customLogin || customLogin.trim().length < 3) {
@@ -378,9 +322,9 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
   const login = customLogin.trim();
   const password = customPassword.trim();
 
-  const [{ data: existLoginStaff }, { data: existLoginStudent }] = await Promise.all([
-    supabase.from("staff").select("id").eq("login", login).maybeSingle(),
-    supabase.from("users").select("login").eq("login", login).maybeSingle(),
+  const [existLoginStaff, existLoginStudent] = await Promise.all([
+    queryOne("SELECT id FROM staff WHERE login = $1", [login]),
+    queryOne("SELECT login FROM users WHERE login = $1", [login]),
   ]);
   if (existLoginStaff || existLoginStudent) {
     res.status(400).json({ error: "Bu login band. Boshqa login tanlang." });
@@ -388,28 +332,16 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
   }
 
   try {
-    const { data, error: insertErr } = await supabase
-      .from("staff")
-      .insert({
-        full_name: full_name.trim(),
-        role,
-        class_id: class_id ?? null,
-        login,
-        password,
-        telegram_id: null,
-      })
-      .select("id, full_name, role, class_id, login, password, telegram_id")
-      .single();
+    const newStaff = await queryOne<{ id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null }>(
+      "INSERT INTO staff (full_name, role, class_id, login, password, telegram_id, subjects, can_teach) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7) RETURNING id, full_name, role, class_id, login, password, telegram_id",
+      [full_name.trim(), role, class_id ?? null, login, password,
+       JSON.stringify(subjects ?? []),
+       role === "teacher" || role === "sinf_rahbari"]
+    );
 
-    if (insertErr || !data) {
-      res.status(500).json({ error: insertErr?.message ?? "Xatolik yuz berdi" });
+    if (!newStaff) {
+      res.status(500).json({ error: "Qo'shishda xatolik yuz berdi" });
       return;
-    }
-
-    const d = data as { id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null };
-
-    if ((role === "teacher" || role === "sinf_rahbari") && Array.isArray(subjects) && subjects.length > 0) {
-      await supabase.from("staff").update({ subjects }).eq("id", d.id);
     }
 
     if (code_id) {
@@ -420,22 +352,22 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     }
 
     let class_name: string | null = null;
-    if (d.class_id) {
-      const { data: cls } = await supabase.from("classes").select("name").eq("id", d.class_id).single();
-      class_name = (cls as { name: string } | null)?.name ?? null;
+    if (newStaff.class_id) {
+      const cls = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [newStaff.class_id]);
+      class_name = cls?.name ?? null;
     }
 
     const payload = {
-      id: d.id,
-      role: d.role,
-      full_name: d.full_name,
-      login: d.login,
+      id: newStaff.id,
+      role: newStaff.role,
+      full_name: newStaff.full_name,
+      login: newStaff.login,
       class_name,
-      class_id: d.class_id,
-      telegram_id: d.telegram_id,
+      class_id: newStaff.class_id,
+      telegram_id: newStaff.telegram_id,
     };
     const token = createToken(payload);
-    res.status(201).json({ ...payload, token, password: d.password });
+    res.status(201).json({ ...payload, token, password: newStaff.password });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message ?? "Xatolik yuz berdi" });
   }

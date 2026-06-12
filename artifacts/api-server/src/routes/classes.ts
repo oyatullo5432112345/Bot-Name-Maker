@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { supabase } from "../lib/supabase.js";
+import { query, queryOne, queryCount } from "../lib/db.js";
 import {
   ListClassesResponse,
   CreateClassBody,
@@ -15,44 +15,26 @@ const router: IRouter = Router();
 // GET /api/classes
 router.get("/classes", requireAuth, async (_req, res): Promise<void> => {
   try {
-    const { data: classesRaw, error } = await supabase
-      .from("classes")
-      .select("id, name, teacher_id, created_at");
+    const classesRaw = await query<{ id: string; name: string; teacher_id: string | null; created_at: string }>(
+      "SELECT id, name, teacher_id, created_at FROM classes"
+    );
 
-    if (error) throw error;
-
-    const sorted = (classesRaw ?? []).sort((a, b) => {
-      const numA = parseInt((a as { name: string }).name) || 0;
-      const numB = parseInt((b as { name: string }).name) || 0;
+    const sorted = classesRaw.sort((a, b) => {
+      const numA = parseInt(a.name) || 0;
+      const numB = parseInt(b.name) || 0;
       if (numA !== numB) return numA - numB;
-      return (a as { name: string }).name.localeCompare((b as { name: string }).name);
+      return a.name.localeCompare(b.name);
     });
 
     const classesWithDetails = await Promise.all(
-      sorted.map(async (cls) => {
-        const c = cls as { id: string; name: string; teacher_id: string | null; created_at: string };
+      sorted.map(async (c) => {
         let teacher_name: string | null = null;
         if (c.teacher_id) {
-          const { data: staff } = await supabase
-            .from("staff")
-            .select("full_name")
-            .eq("id", c.teacher_id)
-            .single();
-          teacher_name = (staff as { full_name: string } | null)?.full_name ?? null;
+          const staff = await queryOne<{ full_name: string }>("SELECT full_name FROM staff WHERE id = $1", [c.teacher_id]);
+          teacher_name = staff?.full_name ?? null;
         }
-        const { count } = await supabase
-          .from("users")
-          .select("*", { count: "exact", head: true })
-          .eq("class_name", c.name);
-
-        return {
-          id: c.id,
-          name: c.name,
-          teacher_id: c.teacher_id,
-          teacher_name,
-          student_count: count ?? 0,
-          created_at: c.created_at,
-        };
+        const student_count = await queryCount("SELECT COUNT(*) FROM users WHERE class_name = $1", [c.name]);
+        return { id: c.id, name: c.name, teacher_id: c.teacher_id, teacher_name, student_count, created_at: c.created_at };
       })
     );
 
@@ -76,17 +58,14 @@ router.post("/classes/bulk", requireAuth, async (req, res): Promise<void> => {
   for (const name of names) {
     const trimmed = name.trim();
     if (!trimmed) continue;
-
-    const { data, error } = await supabase
-      .from("classes")
-      .insert({ name: trimmed, created_at: new Date().toISOString() })
-      .select("id, name")
-      .single();
-
-    if (error) {
-      errors.push({ name: trimmed, error: error.message });
-    } else if (data) {
-      created.push({ id: (data as { id: string }).id, name: (data as { name: string }).name });
+    try {
+      const data = await queryOne<{ id: string; name: string }>(
+        "INSERT INTO classes (name, created_at) VALUES ($1, $2) RETURNING id, name",
+        [trimmed, new Date().toISOString()]
+      );
+      if (data) created.push(data);
+    } catch (err) {
+      errors.push({ name: trimmed, error: (err as Error).message });
     }
   }
 
@@ -101,26 +80,16 @@ router.post("/classes", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const { data, error } = await supabase
-    .from("classes")
-    .insert({ name: parsed.data.name, created_at: new Date().toISOString() })
-    .select("id, name, teacher_id, created_at")
-    .single();
+  const data = await queryOne<{ id: string; name: string; teacher_id: string | null; created_at: string }>(
+    "INSERT INTO classes (name, created_at) VALUES ($1, $2) RETURNING id, name, teacher_id, created_at",
+    [parsed.data.name, new Date().toISOString()]
+  );
 
-  if (error) {
-    res.status(500).json({ error: error.message });
+  if (!data) {
+    res.status(500).json({ error: "Sinf qo'shishda xatolik" });
     return;
   }
-
-  const d = data as { id: string; name: string; teacher_id: string | null; created_at: string };
-  res.status(201).json({
-    id: d.id,
-    name: d.name,
-    teacher_id: d.teacher_id ?? null,
-    teacher_name: null,
-    student_count: 0,
-    created_at: d.created_at,
-  });
+  res.status(201).json({ id: data.id, name: data.name, teacher_id: data.teacher_id ?? null, teacher_name: null, student_count: 0, created_at: data.created_at });
 });
 
 // DELETE /api/classes/:id
@@ -130,16 +99,7 @@ router.delete("/classes/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const { error } = await supabase
-    .from("classes")
-    .delete()
-    .eq("id", params.data.id);
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
-  }
+  await query("DELETE FROM classes WHERE id = $1", [params.data.id]);
   res.sendStatus(204);
 });
 
@@ -157,32 +117,28 @@ router.patch("/classes/:id/assign-teacher", requireAuth, async (req, res): Promi
     return;
   }
 
-  const { data, error } = await supabase
-    .from("classes")
-    .update({ teacher_id: body.data.staff_id })
-    .eq("id", params.data.id)
-    .select("id, name, teacher_id, created_at")
-    .single();
+  const data = await queryOne<{ id: string; name: string; teacher_id: string | null; created_at: string }>(
+    "UPDATE classes SET teacher_id = $1 WHERE id = $2 RETURNING id, name, teacher_id, created_at",
+    [body.data.staff_id, params.data.id]
+  );
 
-  if (error || !data) {
+  if (!data) {
     res.status(404).json({ error: "Sinf topilmadi" });
     return;
   }
 
-  const d = data as { id: string; name: string; teacher_id: string | null; created_at: string };
-
-  const [{ data: staffRow }, { count }] = await Promise.all([
-    supabase.from("staff").select("full_name").eq("id", body.data.staff_id).single(),
-    supabase.from("users").select("*", { count: "exact", head: true }).eq("class_name", d.name),
+  const [staffRow, student_count] = await Promise.all([
+    queryOne<{ full_name: string }>("SELECT full_name FROM staff WHERE id = $1", [body.data.staff_id]),
+    queryCount("SELECT COUNT(*) FROM users WHERE class_name = $1", [data.name]),
   ]);
 
   res.json(AssignTeacherResponse.parse({
-    id: d.id,
-    name: d.name,
-    teacher_id: d.teacher_id,
-    teacher_name: (staffRow as { full_name: string } | null)?.full_name ?? null,
-    student_count: count ?? 0,
-    created_at: d.created_at,
+    id: data.id,
+    name: data.name,
+    teacher_id: data.teacher_id,
+    teacher_name: staffRow?.full_name ?? null,
+    student_count,
+    created_at: data.created_at,
   }));
 });
 
