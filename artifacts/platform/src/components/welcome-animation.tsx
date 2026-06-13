@@ -103,14 +103,18 @@ const EMOJIS = ["🎉","✨","🌟","🎊","🏫","📚","🎓"];
 export function WelcomeAnimation({ name, role, onDone }: WelcomeAnimationProps) {
   const [phase, setPhase] = useState<"enter" | "show" | "exit">("enter");
   const particles = useParticles(phase !== "exit");
+  const spokenRef = useRef(false);
 
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
+  const roleLabel = role ? ROLE_GREETINGS[role] : "";
+  const emoji = useRef(EMOJIS[Math.floor(Math.random() * EMOJIS.length)]).current;
+
   useEffect(() => {
     const t1 = setTimeout(() => setPhase("show"), 300);
-    const t2 = setTimeout(() => setPhase("exit"), 2600);
-    const t3 = setTimeout(() => onDoneRef.current(), 3200);
+    const t2 = setTimeout(() => setPhase("exit"), 2800);
+    const t3 = setTimeout(() => onDoneRef.current(), 3400);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
@@ -118,8 +122,47 @@ export function WelcomeAnimation({ name, role, onDone }: WelcomeAnimationProps) 
     };
   }, []);
 
-  const roleLabel = role ? ROLE_GREETINGS[role] : "";
-  const emoji = useRef(EMOJIS[Math.floor(Math.random() * EMOJIS.length)]).current;
+  // O'zbekcha ovozli salom
+  useEffect(() => {
+    if (phase !== "show" || spokenRef.current) return;
+    spokenRef.current = true;
+    if (!("speechSynthesis" in window)) return;
+
+    const text = roleLabel
+      ? `Xush kelibsiz, ${name}! ${roleLabel} sifatida tizimga kirdingiz.`
+      : `Xush kelibsiz, ${name}!`;
+
+    const speak = () => {
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = "uz-UZ";
+      utt.rate = 0.9;
+      utt.pitch = 1.05;
+      utt.volume = 1;
+
+      const voices = window.speechSynthesis.getVoices();
+      const uzVoice = voices.find(v => v.lang.startsWith("uz"));
+      const ruVoice = voices.find(v => v.lang.startsWith("ru"));
+      const trVoice = voices.find(v => v.lang.startsWith("tr"));
+      if (uzVoice) utt.voice = uzVoice;
+      else if (trVoice) utt.voice = trVoice;
+      else if (ruVoice) { utt.voice = ruVoice; utt.lang = "ru-RU"; }
+
+      window.speechSynthesis.speak(utt);
+    };
+
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      speak();
+    } else {
+      window.speechSynthesis.onvoiceschanged = () => {
+        speak();
+        window.speechSynthesis.onvoiceschanged = null;
+      };
+    }
+
+    return () => { window.speechSynthesis.cancel(); };
+  }, [phase, name, roleLabel]);
 
   return (
     <div
