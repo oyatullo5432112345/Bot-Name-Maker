@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { query, queryOne } from "../lib/db.js";
+import { query, queryOne, queryCount } from "../lib/db.js";
 import { getAuthUser } from "./auth.js";
 
 const router: IRouter = Router();
@@ -73,19 +73,128 @@ router.delete("/olimpiada/maktablar/:id", async (req, res): Promise<void> => {
 });
 
 // ─── ISHTIROKCHILAR ───────────────────────────────────────────────────────────
+// holat: 'royhatdan_otgan'   — olimpiadagacha ro'yxatga olingan (ball/orin yo'q)
+//        'natija_kiritilgan' — olimpiadadan keyin ball/orin kiritilgan
 
 router.get("/olimpiada/ishtirokchilar", async (req, res): Promise<void> => {
   const maktab_id = req.query["maktab_id"] as string | undefined;
+  const holat = req.query["holat"] as string | undefined;
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (maktab_id) { params.push(maktab_id); conditions.push(`maktab_id = $${params.length}`); }
+  if (holat) { params.push(holat); conditions.push(`holat = $${params.length}`); }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   try {
-    const rows = maktab_id
-      ? await query("SELECT * FROM olimpiada_ishtirokchilar WHERE maktab_id = $1 ORDER BY ball DESC", [maktab_id])
-      : await query("SELECT * FROM olimpiada_ishtirokchilar ORDER BY ball DESC");
+    const rows = await query(
+      `SELECT * FROM olimpiada_ishtirokchilar ${where} ORDER BY ball DESC NULLS LAST, ism ASC`,
+      params
+    );
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
 });
 
+// Ro'yxatdan o'tish: ball/orin kerak emas, holat = 'royhatdan_otgan'
+router.post("/olimpiada/royhatdan-otish", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+
+  const { maktab_id, maktab_nomi, ism, fan, yil } = req.body as {
+    maktab_id?: string; maktab_nomi?: string; ism?: string; fan?: string; yil?: number;
+  };
+
+  if (!maktab_id) { res.status(400).json({ error: "Maktab tanlanmagan" }); return; }
+  if (!ism?.trim()) { res.status(400).json({ error: "Ism kiriting" }); return; }
+  if (!fan?.trim()) { res.status(400).json({ error: "Fan kiriting" }); return; }
+
+  try {
+    const currentYil = yil ?? new Date().getFullYear();
+    const mavjud = await queryCount(
+      `SELECT COUNT(*) as count FROM olimpiada_ishtirokchilar
+       WHERE maktab_id = $1 AND fan = $2 AND yil = $3`,
+      [maktab_id, fan.trim(), currentYil]
+    );
+
+    const row = await queryOne(
+      `INSERT INTO olimpiada_ishtirokchilar (maktab_id, maktab_nomi, ism, fan, ball, orin, yil, holat)
+       VALUES ($1, $2, $3, $4, NULL, NULL, $5, 'royhatdan_otgan') RETURNING *`,
+      [maktab_id, maktab_nomi ?? "", ism.trim(), fan.trim(), currentYil]
+    );
+    res.status(201).json({ ...(row as object), ogohlantirish: mavjud >= 3 ? `Diqqat: bu maktabdan "${fan.trim()}" fani bo'yicha allaqachon ${mavjud} ta o'quvchi ro'yxatdan o'tgan` : null });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// Omaviy ro'yxatdan o'tish (bir maktab uchun, bir nechta fan/ism)
+router.post("/olimpiada/royhatdan-otish/bulk", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+
+  const { maktab_id, maktab_nomi, royhat, yil } = req.body as {
+    maktab_id?: string;
+    maktab_nomi?: string;
+    royhat?: { ism: string; fan: string }[];
+    yil?: number;
+  };
+
+  if (!maktab_id) { res.status(400).json({ error: "Maktab tanlanmagan" }); return; }
+  if (!Array.isArray(royhat) || !royhat.length) {
+    res.status(400).json({ error: "Ro'yxat bo'sh" }); return;
+  }
+
+  const currentYil = yil ?? new Date().getFullYear();
+  const inserted: unknown[] = [];
+  const errors: string[] = [];
+  const ogohlantirishlar: string[] = [];
+
+  // shu so'rovdan oldingi fan bo'yicha sonlarni ham hisobga olish uchun
+  const fanCounts = new Map<string, number>();
+
+  for (const i of royhat) {
+    if (!i.ism?.trim() || !i.fan?.trim()) {
+      errors.push(`"${i.ism}" — to'liq to'ldirilmagan`);
+      continue;
+    }
+    const fan = i.fan.trim();
+    try {
+      if (!fanCounts.has(fan)) {
+        const cnt = await queryCount(
+          `SELECT COUNT(*) as count FROM olimpiada_ishtirokchilar
+           WHERE maktab_id = $1 AND fan = $2 AND yil = $3`,
+          [maktab_id, fan, currentYil]
+        );
+        fanCounts.set(fan, cnt);
+      }
+
+      const row = await queryOne(
+        `INSERT INTO olimpiada_ishtirokchilar (maktab_id, maktab_nomi, ism, fan, ball, orin, yil, holat)
+         VALUES ($1, $2, $3, $4, NULL, NULL, $5, 'royhatdan_otgan') RETURNING *`,
+        [maktab_id, maktab_nomi ?? "", i.ism.trim(), fan, currentYil]
+      );
+      inserted.push(row);
+      fanCounts.set(fan, (fanCounts.get(fan) ?? 0) + 1);
+
+      if (fanCounts.get(fan)! > 3) {
+        ogohlantirishlar.push(`"${fan}" fani bo'yicha 3 tadan ortiq o'quvchi ro'yxatdan o'tgan (${fanCounts.get(fan)} ta)`);
+      }
+    } catch (e) {
+      errors.push(`"${i.ism}" — ${(e as Error).message}`);
+    }
+  }
+
+  res.status(201).json({
+    inserted: inserted.length,
+    errors,
+    ogohlantirishlar: [...new Set(ogohlantirishlar)],
+  });
+});
+
+// Eski endpoint — to'g'ridan-to'g'ri natija (ball/orin) bilan ishtirokchi qo'shish.
+// Hozir ham ishlaydi: holat avtomatik 'natija_kiritilgan' bo'ladi.
 router.post("/olimpiada/ishtirokchilar", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
@@ -102,8 +211,8 @@ router.post("/olimpiada/ishtirokchilar", async (req, res): Promise<void> => {
 
   try {
     const row = await queryOne(
-      `INSERT INTO olimpiada_ishtirokchilar (maktab_id, maktab_nomi, ism, fan, ball, orin, yil)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      `INSERT INTO olimpiada_ishtirokchilar (maktab_id, maktab_nomi, ism, fan, ball, orin, yil, holat)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'natija_kiritilgan') RETURNING *`,
       [maktab_id, maktab_nomi ?? "", ism.trim(), fan.trim(), Number(ball), orin ?? null, yil ?? new Date().getFullYear()]
     );
     await recalcBall(maktab_id);
@@ -113,24 +222,32 @@ router.post("/olimpiada/ishtirokchilar", async (req, res): Promise<void> => {
   }
 });
 
+// Tahrirlash: ism/fan/ball/orin yangilash. Ball kiritilsa, holat avtomatik
+// 'natija_kiritilgan' ga o'tadi (ro'yxatdan o'tgan ishtirokchiga natija qo'yish).
 router.patch("/olimpiada/ishtirokchilar/:id", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
   const { id } = req.params;
-  const body = req.body as { ism?: string; fan?: string; ball?: number; orin?: number | null };
+  const body = req.body as { ism?: string; fan?: string; ball?: number | null; orin?: number | null };
   try {
+    const ballProvided = body.ball !== undefined && body.ball !== null && !isNaN(Number(body.ball));
     const row = await queryOne<{ maktab_id: string }>(
       `UPDATE olimpiada_ishtirokchilar SET
-        ism  = COALESCE($1, ism),
-        fan  = COALESCE($2, fan),
-        ball = COALESCE($3, ball),
-        orin = $4
-       WHERE id = $5 RETURNING *`,
-      [body.ism?.trim() ?? null, body.fan?.trim() ?? null,
-       body.ball !== undefined ? Number(body.ball) : null,
-       body.orin !== undefined ? (body.orin ? Number(body.orin) : null) : null,
-       id]
+        ism   = COALESCE($1, ism),
+        fan   = COALESCE($2, fan),
+        ball  = CASE WHEN $3 THEN $4 ELSE ball END,
+        orin  = $5,
+        holat = CASE WHEN $3 THEN 'natija_kiritilgan' ELSE holat END
+       WHERE id = $6 RETURNING *`,
+      [
+        body.ism?.trim() ?? null,
+        body.fan?.trim() ?? null,
+        ballProvided,
+        ballProvided ? Number(body.ball) : null,
+        body.orin !== undefined ? (body.orin ? Number(body.orin) : null) : null,
+        id,
+      ]
     );
     if (!row) { res.status(404).json({ error: "Topilmadi" }); return; }
     await recalcBall(row.maktab_id);
@@ -167,8 +284,8 @@ router.post("/olimpiada/ishtirokchilar/bulk", async (req, res): Promise<void> =>
     }
     try {
       const row = await queryOne(
-        `INSERT INTO olimpiada_ishtirokchilar (maktab_id, maktab_nomi, ism, fan, ball, orin, yil)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        `INSERT INTO olimpiada_ishtirokchilar (maktab_id, maktab_nomi, ism, fan, ball, orin, yil, holat)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'natija_kiritilgan') RETURNING *`,
         [maktab_id, maktab_nomi ?? "", i.ism.trim(), i.fan.trim(), Number(i.ball), i.orin ?? null, currentYil]
       );
       inserted.push(row);
@@ -201,7 +318,8 @@ router.delete("/olimpiada/ishtirokchilar/:id", async (req, res): Promise<void> =
 async function recalcBall(maktab_id: string) {
   await query(
     `UPDATE olimpiada_maktablar SET jami_ball = (
-       SELECT COALESCE(SUM(ball), 0) FROM olimpiada_ishtirokchilar WHERE maktab_id = $1
+       SELECT COALESCE(SUM(ball), 0) FROM olimpiada_ishtirokchilar
+       WHERE maktab_id = $1 AND holat = 'natija_kiritilgan'
      ) WHERE id = $1`,
     [maktab_id]
   );
