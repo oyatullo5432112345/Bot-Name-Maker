@@ -163,22 +163,21 @@ function AdminDashboard() {
     query: { queryKey: getGetDashboardStatsQueryKey(), retry: 2 }
   });
 
+  const chartData = useMemo(
+    () => (stats?.students_by_class ?? []).map((s, i) => ({
+      name: s.class_name,
+      count: Number(s.count),
+      fill: BAR_COLORS[i % BAR_COLORS.length],
+    })),
+    [stats?.students_by_class]
+  );
+
   if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   if (isError || !stats) return (
     <div className="flex flex-col items-center py-12 gap-4 text-muted-foreground">
       <p>Statistikani yuklashda xatolik yuz berdi.</p>
       <button onClick={() => refetch()} className="text-primary underline text-sm">Qayta urinish</button>
     </div>
-  );
-
-  const chartData = useMemo(
-    () => stats.students_by_class.map((s, i) => ({
-      name: s.class_name,
-      count: Number(s.count),
-      fill: BAR_COLORS[i % BAR_COLORS.length],
-    })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stats.students_by_class]
   );
 
   return (
