@@ -325,4 +325,381 @@ async function recalcBall(maktab_id: string) {
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  YANGI OLIMPIADA TIZIMI — EVENTLAR, RO'YXAT, NATIJALAR, ZAKOVAT
+// ════════════════════════════════════════════════════════════════════════════
+
+// ─── OLIMPIADA EVENTLAR ───────────────────────────────────────────────────
+
+router.get("/olimpiada/events", async (req, res): Promise<void> => {
+  const { fan, bosqich, yil, holat } = req.query as Record<string, string | undefined>;
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  if (fan)     { params.push(fan);     conds.push(`fan = $${params.length}`); }
+  if (bosqich) { params.push(bosqich); conds.push(`bosqich = $${params.length}`); }
+  if (yil)     { params.push(Number(yil)); conds.push(`yil = $${params.length}`); }
+  if (holat)   { params.push(holat);   conds.push(`holat = $${params.length}`); }
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  try {
+    const rows = await query(
+      `SELECT e.*,
+         (SELECT COUNT(*) FROM olimpiad_registrations WHERE event_id = e.id) AS qatnashchi_soni
+       FROM olimpiad_events e ${where} ORDER BY e.created_at DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.get("/olimpiada/events/:id", async (req, res): Promise<void> => {
+  try {
+    const row = await queryOne(
+      `SELECT e.*,
+         (SELECT COUNT(*) FROM olimpiad_registrations WHERE event_id = e.id) AS qatnashchi_soni
+       FROM olimpiad_events e WHERE e.id = $1`,
+      [req.params.id]
+    );
+    if (!row) { res.status(404).json({ error: "Topilmadi" }); return; }
+    res.json(row);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.post("/olimpiada/events", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const { nomi, fan, bosqich, sana_boshlanish, sana_tugash, roy_tugash, joy, max_qatnashchi, sinf_from, sinf_to, tavsif, yil } = req.body as Record<string, unknown>;
+  if (!nomi || !fan) { res.status(400).json({ error: "Nomi va fan majburiy" }); return; }
+  try {
+    const row = await queryOne(
+      `INSERT INTO olimpiad_events (nomi,fan,bosqich,sana_boshlanish,sana_tugash,roy_tugash,joy,max_qatnashchi,sinf_from,sinf_to,tavsif,yil,created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [nomi, fan, bosqich??'maktab', sana_boshlanish??null, sana_tugash??null, roy_tugash??null,
+       joy??'', Number(max_qatnashchi??0), Number(sinf_from??1), Number(sinf_to??11),
+       tavsif??'', Number(yil??new Date().getFullYear()), String(user.login??'admin')]
+    );
+    res.status(201).json(row);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.patch("/olimpiada/events/:id", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const b = req.body as Record<string, unknown>;
+  try {
+    const row = await queryOne(
+      `UPDATE olimpiad_events SET
+        nomi = COALESCE($1, nomi), fan = COALESCE($2, fan), bosqich = COALESCE($3, bosqich),
+        holat = COALESCE($4, holat), sana_boshlanish = COALESCE($5, sana_boshlanish),
+        sana_tugash = COALESCE($6, sana_tugash), roy_tugash = COALESCE($7, roy_tugash),
+        joy = COALESCE($8, joy), max_qatnashchi = COALESCE($9, max_qatnashchi),
+        sinf_from = COALESCE($10, sinf_from), sinf_to = COALESCE($11, sinf_to),
+        tavsif = COALESCE($12, tavsif)
+       WHERE id = $13 RETURNING *`,
+      [b.nomi??null,b.fan??null,b.bosqich??null,b.holat??null,b.sana_boshlanish??null,
+       b.sana_tugash??null,b.roy_tugash??null,b.joy??null,
+       b.max_qatnashchi!=null?Number(b.max_qatnashchi):null,
+       b.sinf_from!=null?Number(b.sinf_from):null,b.sinf_to!=null?Number(b.sinf_to):null,
+       b.tavsif??null, req.params.id]
+    );
+    if (!row) { res.status(404).json({ error: "Topilmadi" }); return; }
+    res.json(row);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.delete("/olimpiada/events/:id", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  try {
+    await query("DELETE FROM olimpiad_events WHERE id = $1", [req.params.id]);
+    res.sendStatus(204);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+// ─── RO'YXATDAN O'TISH ────────────────────────────────────────────────────
+
+router.get("/olimpiada/events/:id/registrations", async (req, res): Promise<void> => {
+  try {
+    const rows = await query(
+      "SELECT * FROM olimpiad_registrations WHERE event_id = $1 ORDER BY created_at ASC",
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.post("/olimpiada/events/:id/register", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Kirish talab etiladi" }); return; }
+
+  const event = await queryOne<{ id: string; holat: string; max_qatnashchi: number; roy_tugash: string | null }>(
+    "SELECT id, holat, max_qatnashchi, roy_tugash FROM olimpiad_events WHERE id = $1",
+    [req.params.id]
+  );
+  if (!event) { res.status(404).json({ error: "Tanlov topilmadi" }); return; }
+  if (event.holat !== "royhat_ochiq") { res.status(400).json({ error: "Ro'yxat yopilgan" }); return; }
+  if (event.roy_tugash && new Date(event.roy_tugash) < new Date()) {
+    res.status(400).json({ error: "Ro'yxat muddati tugagan" }); return;
+  }
+
+  if (event.max_qatnashchi > 0) {
+    const cnt = await queryCount("SELECT COUNT(*) as count FROM olimpiad_registrations WHERE event_id = $1", [req.params.id]);
+    if (cnt >= event.max_qatnashchi) { res.status(400).json({ error: "Ro'yxat to'ldi" }); return; }
+  }
+
+  const { student_name, sinf } = req.body as { student_name?: string; sinf?: string };
+  const studentId = String(user.id ?? user.telegram_id ?? user.login);
+  const name = (student_name ?? String(user.full_name ?? user.login ?? "")).trim();
+  if (!name) { res.status(400).json({ error: "Ism talab etiladi" }); return; }
+
+  try {
+    const row = await queryOne(
+      `INSERT INTO olimpiad_registrations (event_id, student_id, student_name, sinf)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.params.id, studentId, name, sinf ?? String(user.class_name ?? "")]
+    );
+    res.status(201).json(row);
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (msg.includes("unique")) { res.status(400).json({ error: "Siz allaqachon ro'yxatdansiz" }); return; }
+    res.status(500).json({ error: msg });
+  }
+});
+
+router.delete("/olimpiada/events/:id/unregister/:studentId", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  try {
+    await query("DELETE FROM olimpiad_registrations WHERE event_id = $1 AND student_id = $2",
+      [req.params.id, req.params.studentId]);
+    res.sendStatus(204);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.get("/olimpiada/events/:id/my-registration", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) { res.json({ registered: false }); return; }
+  const studentId = String(user.id ?? user.telegram_id ?? user.login);
+  try {
+    const row = await queryOne(
+      "SELECT * FROM olimpiad_registrations WHERE event_id = $1 AND student_id = $2",
+      [req.params.id, studentId]
+    );
+    res.json({ registered: !!row, registration: row ?? null });
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+// ─── NATIJALAR ────────────────────────────────────────────────────────────
+
+router.get("/olimpiada/events/:id/results", async (req, res): Promise<void> => {
+  try {
+    const rows = await query(
+      "SELECT * FROM olimpiad_results WHERE event_id = $1 ORDER BY orin ASC NULLS LAST, ball DESC",
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.post("/olimpiada/events/:id/results", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const { natijalar } = req.body as { natijalar?: { student_id?: string; student_name: string; sinf?: string; maktab?: string; ball: number; orin?: number }[] };
+  if (!Array.isArray(natijalar) || !natijalar.length) { res.status(400).json({ error: "Natijalar bo'sh" }); return; }
+  try {
+    await query("DELETE FROM olimpiad_results WHERE event_id = $1", [req.params.id]);
+    for (let i = 0; i < natijalar.length; i++) {
+      const n = natijalar[i];
+      await queryOne(
+        `INSERT INTO olimpiad_results (event_id,student_id,student_name,sinf,maktab,ball,orin)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [req.params.id, n.student_id??`manual_${i}`, n.student_name, n.sinf??'', n.maktab??'', Number(n.ball), n.orin??null]
+      );
+    }
+    await query("UPDATE olimpiad_events SET holat='natijalar_ellon' WHERE id=$1", [req.params.id]);
+    res.json({ ok: true, inserted: natijalar.length });
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+// ─── G'OLIBLAR ZALI ───────────────────────────────────────────────────────
+
+router.get("/olimpiada/goliblar", async (req, res): Promise<void> => {
+  const { fan, yil, bosqich } = req.query as Record<string, string | undefined>;
+  const conds: string[] = ["r.orin IS NOT NULL AND r.orin <= 3"];
+  const params: unknown[] = [];
+  if (fan)     { params.push(fan);           conds.push(`e.fan = $${params.length}`); }
+  if (yil)     { params.push(Number(yil));   conds.push(`e.yil = $${params.length}`); }
+  if (bosqich) { params.push(bosqich);       conds.push(`e.bosqich = $${params.length}`); }
+  const where = `WHERE ${conds.join(" AND ")}`;
+  try {
+    const rows = await query(
+      `SELECT r.*, e.nomi AS event_nomi, e.fan AS event_fan, e.bosqich, e.yil
+       FROM olimpiad_results r
+       JOIN olimpiad_events e ON e.id = r.event_id
+       ${where}
+       ORDER BY e.yil DESC, r.orin ASC, r.ball DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+// ─── STATISTIKA ───────────────────────────────────────────────────────────
+
+router.get("/olimpiada/stats", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  try {
+    const [events, fanStats, sinfStats, yilStats] = await Promise.all([
+      queryOne<{ jami: string; royhat_ochiq: string; natijalar: string }>(
+        `SELECT COUNT(*) AS jami,
+           SUM(CASE WHEN holat='royhat_ochiq' THEN 1 ELSE 0 END) AS royhat_ochiq,
+           SUM(CASE WHEN holat='natijalar_ellon' THEN 1 ELSE 0 END) AS natijalar
+         FROM olimpiad_events`
+      ),
+      query(
+        `SELECT e.fan, COUNT(DISTINCT r.id) AS qatnashchilar, COUNT(DISTINCT res.id) AS g_oliblar
+         FROM olimpiad_events e
+         LEFT JOIN olimpiad_registrations r ON r.event_id = e.id
+         LEFT JOIN olimpiad_results res ON res.event_id = e.id AND res.orin IS NOT NULL
+         GROUP BY e.fan ORDER BY qatnashchilar DESC`
+      ),
+      query(
+        `SELECT r.sinf, COUNT(*) AS soni
+         FROM olimpiad_registrations r GROUP BY r.sinf ORDER BY soni DESC LIMIT 15`
+      ),
+      query(
+        `SELECT e.yil, COUNT(DISTINCT e.id) AS eventlar, COUNT(DISTINCT r.id) AS qatnashchilar
+         FROM olimpiad_events e
+         LEFT JOIN olimpiad_registrations r ON r.event_id = e.id
+         GROUP BY e.yil ORDER BY e.yil DESC LIMIT 5`
+      ),
+    ]);
+    res.json({ events, fanStats, sinfStats, yilStats });
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+// ─── ZAKOVAT ──────────────────────────────────────────────────────────────
+
+router.get("/olimpiada/zakovat", async (_req, res): Promise<void> => {
+  try {
+    const rows = await query(
+      `SELECT s.*, COUNT(t.id)::int AS jamoalar
+       FROM zakovat_sessions s
+       LEFT JOIN zakovat_teams t ON t.session_id = s.id
+       GROUP BY s.id ORDER BY s.created_at DESC`
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.post("/olimpiada/zakovat", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const { nomi, sana, raundlar_soni, savollar_soni } = req.body as Record<string, unknown>;
+  if (!nomi) { res.status(400).json({ error: "Nomi majburiy" }); return; }
+  try {
+    const row = await queryOne(
+      `INSERT INTO zakovat_sessions (nomi, sana, raundlar_soni, savollar_soni)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [nomi, sana??null, Number(raundlar_soni??3), Number(savollar_soni??5)]
+    );
+    res.status(201).json(row);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.get("/olimpiada/zakovat/:id", async (req, res): Promise<void> => {
+  try {
+    const session = await queryOne("SELECT * FROM zakovat_sessions WHERE id=$1", [req.params.id]);
+    if (!session) { res.status(404).json({ error: "Topilmadi" }); return; }
+    const teams = await query("SELECT * FROM zakovat_teams WHERE session_id=$1 ORDER BY jamoa_nomi", [req.params.id]);
+    const scores = await query("SELECT * FROM zakovat_scores WHERE session_id=$1", [req.params.id]);
+    res.json({ session, teams, scores });
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.patch("/olimpiada/zakovat/:id", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const b = req.body as Record<string, unknown>;
+  try {
+    const row = await queryOne(
+      `UPDATE zakovat_sessions SET
+        nomi = COALESCE($1,nomi), sana = COALESCE($2,sana),
+        holat = COALESCE($3,holat), raundlar_soni = COALESCE($4,raundlar_soni),
+        savollar_soni = COALESCE($5,savollar_soni)
+       WHERE id=$6 RETURNING *`,
+      [b.nomi??null,b.sana??null,b.holat??null,
+       b.raundlar_soni!=null?Number(b.raundlar_soni):null,
+       b.savollar_soni!=null?Number(b.savollar_soni):null, req.params.id]
+    );
+    if (!row) { res.status(404).json({ error: "Topilmadi" }); return; }
+    res.json(row);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.delete("/olimpiada/zakovat/:id", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  try {
+    await query("DELETE FROM zakovat_sessions WHERE id=$1", [req.params.id]);
+    res.sendStatus(204);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.post("/olimpiada/zakovat/:id/teams", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const { jamoa_nomi, azolar } = req.body as { jamoa_nomi?: string; azolar?: string[] };
+  if (!jamoa_nomi?.trim()) { res.status(400).json({ error: "Jamoa nomi majburiy" }); return; }
+  try {
+    const row = await queryOne(
+      "INSERT INTO zakovat_teams (session_id, jamoa_nomi, azolar) VALUES ($1,$2,$3) RETURNING *",
+      [req.params.id, jamoa_nomi.trim(), azolar ?? []]
+    );
+    res.status(201).json(row);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.patch("/olimpiada/zakovat/teams/:id", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const { jamoa_nomi, azolar } = req.body as { jamoa_nomi?: string; azolar?: string[] };
+  try {
+    const row = await queryOne(
+      "UPDATE zakovat_teams SET jamoa_nomi=COALESCE($1,jamoa_nomi), azolar=COALESCE($2,azolar) WHERE id=$3 RETURNING *",
+      [jamoa_nomi??null, azolar??null, req.params.id]
+    );
+    if (!row) { res.status(404).json({ error: "Topilmadi" }); return; }
+    res.json(row);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.delete("/olimpiada/zakovat/teams/:id", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  try {
+    await query("DELETE FROM zakovat_teams WHERE id=$1", [req.params.id]);
+    res.sendStatus(204);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+router.post("/olimpiada/zakovat/:id/score", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !isAdmin(String(user.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const { team_id, raund, ball } = req.body as { team_id?: string; raund?: number; ball?: number };
+  if (!team_id || raund === undefined || ball === undefined) {
+    res.status(400).json({ error: "team_id, raund, ball majburiy" }); return;
+  }
+  try {
+    const row = await queryOne(
+      `INSERT INTO zakovat_scores (session_id, team_id, raund, ball)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (session_id, team_id, raund) DO UPDATE SET ball=EXCLUDED.ball
+       RETURNING *`,
+      [req.params.id, team_id, Number(raund), Number(ball)]
+    );
+    res.json(row);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
 export default router;
