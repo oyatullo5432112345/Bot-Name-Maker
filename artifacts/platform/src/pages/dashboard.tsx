@@ -6,10 +6,11 @@ import {
   getGetDashboardStatsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User, Megaphone, Pin, ChevronRight } from "lucide-react";
+import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User, Megaphone, Pin, ChevronRight, TrendingUp } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -168,28 +169,65 @@ function AdminDashboard() {
     </div>
   );
 
+  const chartData = stats.students_by_class.map(s => ({
+    name: s.class_name,
+    count: Number(s.count),
+  }));
+
+  const COLORS = ["#3b82f6","#6366f1","#8b5cf6","#a855f7","#ec4899","#f97316","#eab308","#22c55e","#14b8a6","#0ea5e9"];
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {[
-          { title: "Jami O'quvchilar", value: stats.total_students, icon: GraduationCap },
-          { title: "Jami Sinflar", value: stats.total_classes, icon: School },
-          { title: "Xodimlar", value: stats.total_staff, icon: Users },
-          { title: "O'quv yiliga qoldi", value: `${stats.days_until_launch} kun`, icon: CalendarDays },
-        ].map(({ title, value, icon: Icon }) => (
-          <Card key={title}>
+          { title: "Jami O'quvchilar", value: stats.total_students, icon: GraduationCap, color: "text-blue-400" },
+          { title: "Jami Sinflar", value: stats.total_classes, icon: School, color: "text-indigo-400" },
+          { title: "Xodimlar", value: stats.total_staff, icon: Users, color: "text-purple-400" },
+          { title: "O'quv yiliga qoldi", value: `${stats.days_until_launch} kun`, icon: CalendarDays, color: "text-emerald-400" },
+        ].map(({ title, value, icon: Icon, color }) => (
+          <Card key={title} className="relative overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{title}</CardTitle>
-              <Icon className="h-4 w-4 text-muted-foreground" />
+              <Icon className={`h-4 w-4 ${color}`} />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{value}</div>
+              <div className={`text-3xl font-bold ${color}`}>{value}</div>
             </CardContent>
           </Card>
         ))}
       </div>
+
+      {chartData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-primary" />
+              Sinflar bo'yicha o'quvchilar soni
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                  cursor={{ fill: "hsl(var(--muted))" }}
+                  formatter={(value: number) => [`${value} o'quvchi`, ""]}
+                />
+                <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                  {chartData.map((_, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
-        <CardHeader><CardTitle>Sinflar bo'yicha statistika</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Sinflar jadvali</CardTitle></CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -202,7 +240,7 @@ function AdminDashboard() {
               {stats.students_by_class.map((stat, i) => (
                 <TableRow key={i}>
                   <TableCell className="font-medium">{stat.class_name}</TableCell>
-                  <TableCell className="text-right">{stat.count}</TableCell>
+                  <TableCell className="text-right font-bold">{stat.count}</TableCell>
                 </TableRow>
               ))}
               {stats.students_by_class.length === 0 && (

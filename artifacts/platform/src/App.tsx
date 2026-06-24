@@ -1,65 +1,77 @@
-import { useState, useCallback } from "react";
+import { lazy, Suspense, useState, useCallback } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
+import { ThemeProvider } from "@/lib/theme";
 import { useAuth } from "@/lib/use-auth";
 import { AuthGuard } from "@/components/auth-guard";
 import { AppLayout } from "@/components/layout";
-import NotFound from "@/pages/not-found";
 import { SplashScreen } from "@/components/splash-screen";
 import { LoadingScreen } from "@/components/loading-screen";
 import { DataSync } from "@/components/data-sync";
+import { SkeletonPage } from "@/components/skeleton-page";
 
-import Login from "@/pages/login";
-import Register from "@/pages/register";
-import Dashboard from "@/pages/dashboard";
-import StudentsList from "@/pages/students/index";
-import NewStudent from "@/pages/students/new";
-import BulkNewStudents from "@/pages/students/bulk-new";
-import ClassesList from "@/pages/classes/index";
-import StaffList from "@/pages/staff/index";
-import NewStaff from "@/pages/staff/new";
-import BulkNewStaff from "@/pages/staff/bulk-new";
-import StaffSubjectsPage from "@/pages/staff/subjects";
-
-import GamesPage from "@/pages/games/index";
-import SozOyini from "@/pages/games/sozoyini";
-import Jumboq from "@/pages/games/jumboq";
-import Arqon from "@/pages/games/arqon";
-import Poyga from "@/pages/games/poyga";
-import Reyting from "@/pages/games/reyting";
-
-import DarslikPage from "@/pages/darslik/index";
-import NewDarslikPage from "@/pages/darslik/new";
-import BaholashPage from "@/pages/baholash/index";
-import DarsJadvaliPage from "@/pages/dars-jadvali/index";
-import LibraryPage from "@/pages/library/index";
-import NewBookPage from "@/pages/library/new";
-import LibraryLoansPage from "@/pages/library/loans";
-import CertificatePage from "@/pages/certificate";
-import AdminVideosPage from "@/pages/admin/videos";
-import AdminCodesPage from "@/pages/admin/codes";
-import QollanmalarPage from "@/pages/qollanmalar";
-import OlimpiyadaPage from "@/pages/olimpiada/index";
-import AnnouncementsPage from "@/pages/announcements/index";
+const Login = lazy(() => import("@/pages/login"));
+const Register = lazy(() => import("@/pages/register"));
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const StudentsList = lazy(() => import("@/pages/students/index"));
+const NewStudent = lazy(() => import("@/pages/students/new"));
+const BulkNewStudents = lazy(() => import("@/pages/students/bulk-new"));
+const ClassesList = lazy(() => import("@/pages/classes/index"));
+const StaffList = lazy(() => import("@/pages/staff/index"));
+const NewStaff = lazy(() => import("@/pages/staff/new"));
+const BulkNewStaff = lazy(() => import("@/pages/staff/bulk-new"));
+const StaffSubjectsPage = lazy(() => import("@/pages/staff/subjects"));
+const GamesPage = lazy(() => import("@/pages/games/index"));
+const SozOyini = lazy(() => import("@/pages/games/sozoyini"));
+const Jumboq = lazy(() => import("@/pages/games/jumboq"));
+const Arqon = lazy(() => import("@/pages/games/arqon"));
+const Poyga = lazy(() => import("@/pages/games/poyga"));
+const Reyting = lazy(() => import("@/pages/games/reyting"));
+const DarslikPage = lazy(() => import("@/pages/darslik/index"));
+const NewDarslikPage = lazy(() => import("@/pages/darslik/new"));
+const BaholashPage = lazy(() => import("@/pages/baholash/index"));
+const DarsJadvaliPage = lazy(() => import("@/pages/dars-jadvali/index"));
+const LibraryPage = lazy(() => import("@/pages/library/index"));
+const NewBookPage = lazy(() => import("@/pages/library/new"));
+const LibraryLoansPage = lazy(() => import("@/pages/library/loans"));
+const CertificatePage = lazy(() => import("@/pages/certificate"));
+const AdminVideosPage = lazy(() => import("@/pages/admin/videos"));
+const AdminCodesPage = lazy(() => import("@/pages/admin/codes"));
+const QollanmalarPage = lazy(() => import("@/pages/qollanmalar"));
+const OlimpiyadaPage = lazy(() => import("@/pages/olimpiada/index"));
+const AnnouncementsPage = lazy(() => import("@/pages/announcements/index"));
+const DavomatPage = lazy(() => import("@/pages/davomat/index"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
       refetchOnWindowFocus: false,
       retry: 1,
     },
   },
 });
 
-function ProtectedRoute({ component: Component, roles }: { component: any, roles?: string[] }) {
+function PageFallback() {
+  return (
+    <AppLayout>
+      <SkeletonPage />
+    </AppLayout>
+  );
+}
+
+function ProtectedRoute({ component: Component, roles }: { component: React.ComponentType; roles?: string[] }) {
   return (
     <AuthGuard roles={roles}>
       <AppLayout>
-        <Component />
+        <Suspense fallback={<SkeletonPage />}>
+          <Component />
+        </Suspense>
       </AppLayout>
     </AuthGuard>
   );
@@ -76,125 +88,132 @@ function Router() {
     <>
       {user && <DataSync userId={String(user.id)} userRole={user.role} />}
       <Switch>
-      <Route path="/login">
-        {user ? <Redirect to="/dashboard" /> : <Login />}
-      </Route>
-      <Route path="/register">
-        {user ? <Redirect to="/dashboard" /> : <Register />}
-      </Route>
-      <Route path="/">
-        {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <Redirect to="/dashboard" />}
-      </Route>
+        <Route path="/login">
+          {user ? <Redirect to="/dashboard" /> : (
+            <Suspense fallback={<LoadingScreen />}>
+              <Login />
+            </Suspense>
+          )}
+        </Route>
+        <Route path="/register">
+          {user ? <Redirect to="/dashboard" /> : (
+            <Suspense fallback={<LoadingScreen />}>
+              <Register />
+            </Suspense>
+          )}
+        </Route>
+        <Route path="/">
+          {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <Redirect to="/dashboard" />}
+        </Route>
 
-      <Route path="/dashboard">
-        {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <ProtectedRoute component={Dashboard} />}
-      </Route>
+        <Route path="/dashboard">
+          {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <ProtectedRoute component={Dashboard} />}
+        </Route>
 
-      <Route path="/students">
-        <ProtectedRoute 
-          component={StudentsList} 
-          roles={["admin", "director", "mudir", "zam_direktor", "zavuch", "sinf_rahbari"]} 
-        />
-      </Route>
-      <Route path="/students/new">
-        <ProtectedRoute component={NewStudent} roles={["admin"]} />
-      </Route>
-      <Route path="/students/bulk-new">
-        <ProtectedRoute component={BulkNewStudents} roles={["admin"]} />
-      </Route>
+        <Route path="/students">
+          <ProtectedRoute component={StudentsList} roles={["admin","director","mudir","zam_direktor","zavuch","sinf_rahbari"]} />
+        </Route>
+        <Route path="/students/new">
+          <ProtectedRoute component={NewStudent} roles={["admin"]} />
+        </Route>
+        <Route path="/students/bulk-new">
+          <ProtectedRoute component={BulkNewStudents} roles={["admin"]} />
+        </Route>
 
-      <Route path="/classes">
-        <ProtectedRoute 
-          component={ClassesList} 
-          roles={["admin", "director", "mudir", "zam_direktor", "zavuch"]} 
-        />
-      </Route>
+        <Route path="/classes">
+          <ProtectedRoute component={ClassesList} roles={["admin","director","mudir","zam_direktor","zavuch"]} />
+        </Route>
 
-      <Route path="/staff">
-        <ProtectedRoute component={StaffList} roles={["admin"]} />
-      </Route>
-      <Route path="/staff/new">
-        <ProtectedRoute component={NewStaff} roles={["admin"]} />
-      </Route>
-      <Route path="/staff/bulk-new">
-        <ProtectedRoute component={BulkNewStaff} roles={["admin"]} />
-      </Route>
-      <Route path="/staff/:id/subjects">
-        <ProtectedRoute component={StaffSubjectsPage} roles={["admin"]} />
-      </Route>
+        <Route path="/staff">
+          <ProtectedRoute component={StaffList} roles={["admin"]} />
+        </Route>
+        <Route path="/staff/new">
+          <ProtectedRoute component={NewStaff} roles={["admin"]} />
+        </Route>
+        <Route path="/staff/bulk-new">
+          <ProtectedRoute component={BulkNewStaff} roles={["admin"]} />
+        </Route>
+        <Route path="/staff/:id/subjects">
+          <ProtectedRoute component={StaffSubjectsPage} roles={["admin"]} />
+        </Route>
 
-      <Route path="/darslik/new">
-        <ProtectedRoute
-          component={NewDarslikPage}
-          roles={["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"]}
-        />
-      </Route>
-      <Route path="/darslik">
-        <ProtectedRoute component={DarslikPage} />
-      </Route>
+        <Route path="/darslik/new">
+          <ProtectedRoute component={NewDarslikPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} />
+        </Route>
+        <Route path="/darslik">
+          <ProtectedRoute component={DarslikPage} />
+        </Route>
 
-      <Route path="/baholash">
-        <ProtectedRoute component={BaholashPage} />
-      </Route>
+        <Route path="/baholash">
+          <ProtectedRoute component={BaholashPage} />
+        </Route>
 
-      <Route path="/dars-jadvali">
-        <ProtectedRoute component={DarsJadvaliPage} />
-      </Route>
+        <Route path="/dars-jadvali">
+          <ProtectedRoute component={DarsJadvaliPage} />
+        </Route>
 
-      <Route path="/library/new">
-        <ProtectedRoute component={NewBookPage} roles={["admin", "kutubxonachi"]} />
-      </Route>
-      <Route path="/library/loans">
-        <ProtectedRoute component={LibraryLoansPage} roles={["admin", "kutubxonachi"]} />
-      </Route>
-      <Route path="/library">
-        <ProtectedRoute component={LibraryPage} />
-      </Route>
+        <Route path="/davomat">
+          <ProtectedRoute component={DavomatPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} />
+        </Route>
 
-      <Route path="/certificate">
-        <ProtectedRoute component={CertificatePage} />
-      </Route>
+        <Route path="/library/new">
+          <ProtectedRoute component={NewBookPage} roles={["admin","kutubxonachi"]} />
+        </Route>
+        <Route path="/library/loans">
+          <ProtectedRoute component={LibraryLoansPage} roles={["admin","kutubxonachi"]} />
+        </Route>
+        <Route path="/library">
+          <ProtectedRoute component={LibraryPage} />
+        </Route>
 
-      <Route path="/olimpiada">
-        <ProtectedRoute component={OlimpiyadaPage} />
-      </Route>
+        <Route path="/certificate">
+          <ProtectedRoute component={CertificatePage} />
+        </Route>
 
-      <Route path="/admin/videos">
-        <ProtectedRoute component={AdminVideosPage} roles={["admin", "director", "mudir"]} />
-      </Route>
-      <Route path="/admin/codes">
-        <ProtectedRoute component={AdminCodesPage} roles={["admin", "director", "mudir"]} />
-      </Route>
+        <Route path="/olimpiada">
+          <ProtectedRoute component={OlimpiyadaPage} />
+        </Route>
 
-      <Route path="/qollanmalar">
-        <ProtectedRoute component={QollanmalarPage} />
-      </Route>
+        <Route path="/admin/videos">
+          <ProtectedRoute component={AdminVideosPage} roles={["admin","director","mudir"]} />
+        </Route>
+        <Route path="/admin/codes">
+          <ProtectedRoute component={AdminCodesPage} roles={["admin","director","mudir"]} />
+        </Route>
 
-      <Route path="/announcements">
-        <ProtectedRoute component={AnnouncementsPage} />
-      </Route>
+        <Route path="/qollanmalar">
+          <ProtectedRoute component={QollanmalarPage} />
+        </Route>
 
-      <Route path="/games/sozoyini">
-        <ProtectedRoute component={SozOyini} roles={["student"]} />
-      </Route>
-      <Route path="/games/jumboq">
-        <ProtectedRoute component={Jumboq} roles={["student"]} />
-      </Route>
-      <Route path="/games/arqon">
-        <ProtectedRoute component={Arqon} roles={["student"]} />
-      </Route>
-      <Route path="/games/poyga">
-        <ProtectedRoute component={Poyga} roles={["student"]} />
-      </Route>
-      <Route path="/games/reyting">
-        <ProtectedRoute component={Reyting} roles={["student"]} />
-      </Route>
-      <Route path="/games">
-        <ProtectedRoute component={GamesPage} roles={["student"]} />
-      </Route>
+        <Route path="/announcements">
+          <ProtectedRoute component={AnnouncementsPage} />
+        </Route>
 
-      <Route component={NotFound} />
-    </Switch>
+        <Route path="/games/sozoyini">
+          <ProtectedRoute component={SozOyini} roles={["student"]} />
+        </Route>
+        <Route path="/games/jumboq">
+          <ProtectedRoute component={Jumboq} roles={["student"]} />
+        </Route>
+        <Route path="/games/arqon">
+          <ProtectedRoute component={Arqon} roles={["student"]} />
+        </Route>
+        <Route path="/games/poyga">
+          <ProtectedRoute component={Poyga} roles={["student"]} />
+        </Route>
+        <Route path="/games/reyting">
+          <ProtectedRoute component={Reyting} roles={["student"]} />
+        </Route>
+        <Route path="/games">
+          <ProtectedRoute component={GamesPage} roles={["student"]} />
+        </Route>
+
+        <Route>
+          <Suspense fallback={<LoadingScreen />}>
+            <NotFound />
+          </Suspense>
+        </Route>
+      </Switch>
     </>
   );
 }
@@ -213,19 +232,21 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          {!splashDone && <SplashScreen onDone={handleSplashDone} />}
-          <div className="flex flex-col min-h-screen">
-            <div className="flex-1 min-h-0">
-              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                <Router />
-              </WouterRouter>
+      <ThemeProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            {!splashDone && <SplashScreen onDone={handleSplashDone} />}
+            <div className="flex flex-col min-h-screen">
+              <div className="flex-1 min-h-0">
+                <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                  <Router />
+                </WouterRouter>
+              </div>
             </div>
-          </div>
-          <Toaster />
-        </TooltipProvider>
-      </AuthProvider>
+            <Toaster />
+          </TooltipProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

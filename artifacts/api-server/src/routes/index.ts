@@ -17,6 +17,7 @@ import settingsRouter from "./settings.js";
 import codesRouter from "./codes.js";
 import olimpiadaRouter from "./olimpiada.js";
 import announcementsRouter from "./announcements.js";
+import attendanceRouter from "./attendance.js";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(gradesRouter);
 router.use(timetableRouter);
 router.use(olimpiadaRouter);
 router.use(announcementsRouter);
+router.use(attendanceRouter);
 
 export default router;
