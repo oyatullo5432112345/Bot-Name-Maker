@@ -1,5 +1,5 @@
 import { useAuth } from "@/lib/use-auth";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   useGetDashboardStats,
@@ -10,7 +10,9 @@ import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, U
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+
+const BAR_COLORS = ["#3b82f6","#6366f1","#8b5cf6","#a855f7","#ec4899","#f97316","#eab308","#22c55e","#14b8a6","#0ea5e9"];
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -169,12 +171,15 @@ function AdminDashboard() {
     </div>
   );
 
-  const chartData = stats.students_by_class.map(s => ({
-    name: s.class_name,
-    count: Number(s.count),
-  }));
-
-  const COLORS = ["#3b82f6","#6366f1","#8b5cf6","#a855f7","#ec4899","#f97316","#eab308","#22c55e","#14b8a6","#0ea5e9"];
+  const chartData = useMemo(
+    () => stats.students_by_class.map((s, i) => ({
+      name: s.class_name,
+      count: Number(s.count),
+      fill: BAR_COLORS[i % BAR_COLORS.length],
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stats.students_by_class]
+  );
 
   return (
     <div className="space-y-6">
@@ -215,11 +220,7 @@ function AdminDashboard() {
                   cursor={{ fill: "hsl(var(--muted))" }}
                   formatter={(value: number) => [`${value} o'quvchi`, ""]}
                 />
-                <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                  {chartData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Bar>
+                <Bar dataKey="count" radius={[6, 6, 0, 0]} fill="#3b82f6" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
