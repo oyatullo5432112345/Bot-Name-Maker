@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useCallback } from "react";
+import { lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -8,9 +8,6 @@ import { ThemeProvider } from "@/lib/theme";
 import { useAuth } from "@/lib/use-auth";
 import { AuthGuard } from "@/components/auth-guard";
 import { AppLayout } from "@/components/layout";
-import { SplashScreen } from "@/components/splash-screen";
-import { LoadingScreen } from "@/components/loading-screen";
-import { DataSync } from "@/components/data-sync";
 import { SkeletonPage } from "@/components/skeleton-page";
 
 const Login = lazy(() => import("@/pages/login"));
@@ -57,14 +54,6 @@ const queryClient = new QueryClient({
   },
 });
 
-function PageFallback() {
-  return (
-    <AppLayout>
-      <SkeletonPage />
-    </AppLayout>
-  );
-}
-
 function ProtectedRoute({ component: Component, roles }: { component: React.ComponentType; roles?: string[] }) {
   return (
     <AuthGuard roles={roles}>
@@ -77,172 +66,91 @@ function ProtectedRoute({ component: Component, roles }: { component: React.Comp
   );
 }
 
-function Router() {
-  const { user, isLoading } = useAuth();
-
-  if (isLoading) {
-    return <LoadingScreen />;
-  }
-
+function LoadingSpinner() {
   return (
-    <>
-      {user && <DataSync userId={String(user.id)} userRole={user.role} />}
-      <Switch>
-        <Route path="/login">
-          {user ? <Redirect to="/dashboard" /> : (
-            <Suspense fallback={<LoadingScreen />}>
-              <Login />
-            </Suspense>
-          )}
-        </Route>
-        <Route path="/register">
-          {user ? <Redirect to="/dashboard" /> : (
-            <Suspense fallback={<LoadingScreen />}>
-              <Register />
-            </Suspense>
-          )}
-        </Route>
-        <Route path="/">
-          {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <Redirect to="/dashboard" />}
-        </Route>
-
-        <Route path="/dashboard">
-          {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <ProtectedRoute component={Dashboard} />}
-        </Route>
-
-        <Route path="/students">
-          <ProtectedRoute component={StudentsList} roles={["admin","director","mudir","zam_direktor","zavuch","sinf_rahbari"]} />
-        </Route>
-        <Route path="/students/new">
-          <ProtectedRoute component={NewStudent} roles={["admin"]} />
-        </Route>
-        <Route path="/students/bulk-new">
-          <ProtectedRoute component={BulkNewStudents} roles={["admin"]} />
-        </Route>
-
-        <Route path="/classes">
-          <ProtectedRoute component={ClassesList} roles={["admin","director","mudir","zam_direktor","zavuch"]} />
-        </Route>
-
-        <Route path="/staff">
-          <ProtectedRoute component={StaffList} roles={["admin"]} />
-        </Route>
-        <Route path="/staff/new">
-          <ProtectedRoute component={NewStaff} roles={["admin"]} />
-        </Route>
-        <Route path="/staff/bulk-new">
-          <ProtectedRoute component={BulkNewStaff} roles={["admin"]} />
-        </Route>
-        <Route path="/staff/:id/subjects">
-          <ProtectedRoute component={StaffSubjectsPage} roles={["admin"]} />
-        </Route>
-
-        <Route path="/darslik/new">
-          <ProtectedRoute component={NewDarslikPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} />
-        </Route>
-        <Route path="/darslik">
-          <ProtectedRoute component={DarslikPage} />
-        </Route>
-
-        <Route path="/baholash">
-          <ProtectedRoute component={BaholashPage} />
-        </Route>
-
-        <Route path="/dars-jadvali">
-          <ProtectedRoute component={DarsJadvaliPage} />
-        </Route>
-
-        <Route path="/davomat">
-          <ProtectedRoute component={DavomatPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} />
-        </Route>
-
-        <Route path="/library/new">
-          <ProtectedRoute component={NewBookPage} roles={["admin","kutubxonachi"]} />
-        </Route>
-        <Route path="/library/loans">
-          <ProtectedRoute component={LibraryLoansPage} roles={["admin","kutubxonachi"]} />
-        </Route>
-        <Route path="/library">
-          <ProtectedRoute component={LibraryPage} />
-        </Route>
-
-        <Route path="/certificate">
-          <ProtectedRoute component={CertificatePage} />
-        </Route>
-
-        <Route path="/olimpiada">
-          <ProtectedRoute component={OlimpiyadaPage} />
-        </Route>
-
-        <Route path="/admin/videos">
-          <ProtectedRoute component={AdminVideosPage} roles={["admin","director","mudir"]} />
-        </Route>
-        <Route path="/admin/codes">
-          <ProtectedRoute component={AdminCodesPage} roles={["admin","director","mudir"]} />
-        </Route>
-
-        <Route path="/qollanmalar">
-          <ProtectedRoute component={QollanmalarPage} />
-        </Route>
-
-        <Route path="/announcements">
-          <ProtectedRoute component={AnnouncementsPage} />
-        </Route>
-
-        <Route path="/games/sozoyini">
-          <ProtectedRoute component={SozOyini} roles={["student"]} />
-        </Route>
-        <Route path="/games/jumboq">
-          <ProtectedRoute component={Jumboq} roles={["student"]} />
-        </Route>
-        <Route path="/games/arqon">
-          <ProtectedRoute component={Arqon} roles={["student"]} />
-        </Route>
-        <Route path="/games/poyga">
-          <ProtectedRoute component={Poyga} roles={["student"]} />
-        </Route>
-        <Route path="/games/reyting">
-          <ProtectedRoute component={Reyting} roles={["student"]} />
-        </Route>
-        <Route path="/games">
-          <ProtectedRoute component={GamesPage} roles={["student"]} />
-        </Route>
-
-        <Route>
-          <Suspense fallback={<LoadingScreen />}>
-            <NotFound />
-          </Suspense>
-        </Route>
-      </Switch>
-    </>
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
   );
 }
 
-const SPLASH_KEY = "splash_shown_v1";
+function Router() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) return <LoadingSpinner />;
+
+  return (
+    <Switch>
+      <Route path="/login">
+        {user ? <Redirect to="/dashboard" /> : (
+          <Suspense fallback={<LoadingSpinner />}><Login /></Suspense>
+        )}
+      </Route>
+      <Route path="/register">
+        {user ? <Redirect to="/dashboard" /> : (
+          <Suspense fallback={<LoadingSpinner />}><Register /></Suspense>
+        )}
+      </Route>
+      <Route path="/">
+        {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <Redirect to="/dashboard" />}
+      </Route>
+
+      <Route path="/dashboard">
+        {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <ProtectedRoute component={Dashboard} />}
+      </Route>
+
+      <Route path="/students"><ProtectedRoute component={StudentsList} roles={["admin","director","mudir","zam_direktor","zavuch","sinf_rahbari"]} /></Route>
+      <Route path="/students/new"><ProtectedRoute component={NewStudent} roles={["admin"]} /></Route>
+      <Route path="/students/bulk-new"><ProtectedRoute component={BulkNewStudents} roles={["admin"]} /></Route>
+
+      <Route path="/classes"><ProtectedRoute component={ClassesList} roles={["admin","director","mudir","zam_direktor","zavuch"]} /></Route>
+
+      <Route path="/staff"><ProtectedRoute component={StaffList} roles={["admin"]} /></Route>
+      <Route path="/staff/new"><ProtectedRoute component={NewStaff} roles={["admin"]} /></Route>
+      <Route path="/staff/bulk-new"><ProtectedRoute component={BulkNewStaff} roles={["admin"]} /></Route>
+      <Route path="/staff/:id/subjects"><ProtectedRoute component={StaffSubjectsPage} roles={["admin"]} /></Route>
+
+      <Route path="/darslik/new"><ProtectedRoute component={NewDarslikPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/darslik"><ProtectedRoute component={DarslikPage} /></Route>
+
+      <Route path="/baholash"><ProtectedRoute component={BaholashPage} /></Route>
+      <Route path="/dars-jadvali"><ProtectedRoute component={DarsJadvaliPage} /></Route>
+      <Route path="/davomat"><ProtectedRoute component={DavomatPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+
+      <Route path="/library/new"><ProtectedRoute component={NewBookPage} roles={["admin","kutubxonachi"]} /></Route>
+      <Route path="/library/loans"><ProtectedRoute component={LibraryLoansPage} roles={["admin","kutubxonachi"]} /></Route>
+      <Route path="/library"><ProtectedRoute component={LibraryPage} /></Route>
+
+      <Route path="/certificate"><ProtectedRoute component={CertificatePage} /></Route>
+      <Route path="/olimpiada"><ProtectedRoute component={OlimpiyadaPage} /></Route>
+
+      <Route path="/admin/videos"><ProtectedRoute component={AdminVideosPage} roles={["admin","director","mudir"]} /></Route>
+      <Route path="/admin/codes"><ProtectedRoute component={AdminCodesPage} roles={["admin","director","mudir"]} /></Route>
+
+      <Route path="/qollanmalar"><ProtectedRoute component={QollanmalarPage} /></Route>
+      <Route path="/announcements"><ProtectedRoute component={AnnouncementsPage} /></Route>
+
+      <Route path="/games/sozoyini"><ProtectedRoute component={SozOyini} roles={["student"]} /></Route>
+      <Route path="/games/jumboq"><ProtectedRoute component={Jumboq} roles={["student"]} /></Route>
+      <Route path="/games/arqon"><ProtectedRoute component={Arqon} roles={["student"]} /></Route>
+      <Route path="/games/poyga"><ProtectedRoute component={Poyga} roles={["student"]} /></Route>
+      <Route path="/games/reyting"><ProtectedRoute component={Reyting} roles={["student"]} /></Route>
+      <Route path="/games"><ProtectedRoute component={GamesPage} roles={["student"]} /></Route>
+
+      <Route><Suspense fallback={<LoadingSpinner />}><NotFound /></Suspense></Route>
+    </Switch>
+  );
+}
 
 function App() {
-  const [splashDone, setSplashDone] = useState(() => {
-    try { return sessionStorage.getItem(SPLASH_KEY) === "1"; } catch { return false; }
-  });
-
-  const handleSplashDone = useCallback(() => {
-    try { sessionStorage.setItem(SPLASH_KEY, "1"); } catch {}
-    setSplashDone(true);
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
           <TooltipProvider>
-            {!splashDone && <SplashScreen onDone={handleSplashDone} />}
-            <div className="flex flex-col min-h-screen">
-              <div className="flex-1 min-h-0">
-                <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                  <Router />
-                </WouterRouter>
-              </div>
-            </div>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
             <Toaster />
           </TooltipProvider>
         </AuthProvider>
