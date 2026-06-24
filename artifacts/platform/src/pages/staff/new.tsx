@@ -236,11 +236,11 @@ export default function NewStaff() {
             {showSubjects && (
               <div className="space-y-3">
                 <div>
-                  <FormLabel>
+                  <p className="text-sm font-medium leading-none">
                     {isManagerRole ? "O'qitiladigan fanlar (rahbar)" : roleValue === StaffInputRole.sinf_rahbari
                       ? "O'qitiladigan fanlar (sinf rahbari)"
                       : "O'qitiladigan fanlar (ixtiyoriy, keyinroq ham belgilash mumkin)"}
-                  </FormLabel>
+                  </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Qo'shgandan so'ng har bir fanga sinflar biriktirasiz
                   </p>
