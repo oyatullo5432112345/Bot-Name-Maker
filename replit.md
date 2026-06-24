@@ -7,13 +7,14 @@ Toshloq tuman 3-maktab uchun to'liq ta'lim boshqaruvi platformasi — Telegram b
 - `pnpm --filter @workspace/api-server run dev` — API server + Telegram bot (port 8080)
 - `pnpm --filter @workspace/platform run dev` — React veb-sayt (port 23633)
 - `pnpm run typecheck` — to'liq typecheck
-- Required env secrets: `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `ADMIN_ID`, `SESSION_SECRET`
+- Required env secrets: `ADMIN_ID`, `SESSION_SECRET`, `DATABASE_URL` (Replit PostgreSQL — avtomatik sozlangan)
+- Optional: `TELEGRAM_BOT_TOKEN` — bot ishlashi uchun
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
+- pnpm workspaces, Node.js 20, TypeScript 5.9
 - Telegram bot: Grammy.js (polling mode)
-- DB: Supabase (PostgreSQL)
+- DB: Replit PostgreSQL (`pg` pool, `DATABASE_URL` secret orqali)
 - API: Express 5, OpenAPI spec → Orval codegen
 - Frontend: React + Vite + Tailwind CSS + shadcn/ui + TanStack Query
 - Build: esbuild (API server)
@@ -21,13 +22,14 @@ Toshloq tuman 3-maktab uchun to'liq ta'lim boshqaruvi platformasi — Telegram b
 ## Where things live
 
 ### API Server (`artifacts/api-server/src/`)
-- `bot/bot.ts` — Telegram bot (kanal a'zoligini tekshirish + veb-sayt havolasi)
+- `bot/bot.ts` — Telegram bot
 - `routes/auth.ts` — Login/me/logout API
 - `routes/students.ts` — O'quvchilar CRUD
 - `routes/classes.ts` — Sinflar CRUD
 - `routes/staff.ts` — Xodimlar CRUD
 - `routes/dashboard.ts` — Dashboard statistikasi
-- `lib/supabase.ts` — Supabase client
+- `lib/db.ts` — PostgreSQL pool (pg)
+- `lib/supabase.ts` — stub (bo'sh, olib tashlangan)
 
 ### Frontend (`artifacts/platform/src/`)
 - `pages/login.tsx` — Login sahifasi
@@ -46,11 +48,19 @@ Toshloq tuman 3-maktab uchun to'liq ta'lim boshqaruvi platformasi — Telegram b
 - `lib/api-client-react/` — Generated React Query hooks (codegen)
 - `lib/api-zod/` — Generated Zod validation schemas (codegen)
 
-## Supabase jadvallari
+## Ma'lumotlar bazasi jadvallari
 
 - `users` — O'quvchilar (telegram_id, full_name, phone_number, class_name, login, password, registration_date)
 - `classes` — Sinflar (id, name, teacher_id, created_at)
 - `staff` — Xodimlar (id, telegram_id, full_name, role, class_id, login, password, created_at)
+- `grades` — Baholar
+- `library_books` / `library_loans` — Kutubxona
+- `game_scores` — O'yin ballari
+- `lessons` — Darsliklar
+- `registration_codes` — Ro'yxatdan o'tish kodlari
+- `timetable` — Dars jadvali
+- `teacher_subjects` — O'qituvchi fanlari
+- `olimpiada_maktablar` / `olimpiada_ishtirokchilar` — Olimpiada
 
 ## Rollar
 
@@ -65,10 +75,17 @@ Toshloq tuman 3-maktab uchun to'liq ta'lim boshqaruvi platformasi — Telegram b
 
 ## Auth oqimi
 
-- Login: `POST /api/auth/login` → `{ login, password }` → JWT token (base64 payload)
+- Login: `POST /api/auth/login` → `{ login, password }` → base64 token
 - Token: `localStorage.getItem("talim_auth_token")` orqali saqlanadi
-- Admin: `login="admin"`, `password=ADMIN_ID` secret
-- Staff/Student: Supabase'dagi login/password
+- Admin: `login="admin"`, `password=ADMIN_ID` (611665022)
+- Staff/Student: DB'dagi login/password
+
+## Ko'p foydalanuvchilik
+
+- Token localStorage'da saqlanadi — server sessiyasiz
+- Bir vaqtda cheksiz foydalanuvchi kira oladi
+- Yangi foydalanuvchilar: `/register` sahifasi orqali yoki admin tomonidan ro'yxatdan o'tkaziladi
+- Xodimlar: `/register` → rol tanlash orqali
 
 ## Bot oqimi
 
@@ -86,4 +103,4 @@ pnpm --filter @workspace/api-spec run codegen
 ## User preferences
 
 - Uzbek tilida javob berish
-- Grammy.js ishlatiladi (Node.js 24 bilan mos)
+- Grammy.js ishlatiladi (Node.js 20 bilan mos)
