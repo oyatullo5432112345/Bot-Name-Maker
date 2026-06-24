@@ -1,6 +1,12 @@
 import pg from "pg";
 
-const { Pool } = pg;
+const { Pool, types } = pg;
+
+// TIMESTAMPTZ (1184), TIMESTAMP (1114), DATE (1082) larni string sifatida qaytarish
+// Zod sxemasi string kutadi, lekin pg default Date ob'ekt qaytaradi
+types.setTypeParser(1184, (val: string) => val);
+types.setTypeParser(1114, (val: string) => val);
+types.setTypeParser(1082, (val: string) => val);
 
 if (!process.env["DATABASE_URL"]) {
   throw new Error("DATABASE_URL environment variable is required");
