@@ -12,8 +12,8 @@ import { requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
 
-// GET /api/classes
-router.get("/classes", requireAuth, async (_req, res): Promise<void> => {
+// GET /api/classes — public (ro'yxatdan o'tish sahifasida ham kerak)
+router.get("/classes", async (_req, res): Promise<void> => {
   try {
     const classesRaw = await query<{ id: string; name: string; teacher_id: string | null; created_at: string }>(
       "SELECT id, name, teacher_id, created_at FROM classes"
