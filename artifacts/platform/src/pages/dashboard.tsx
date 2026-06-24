@@ -1,6 +1,7 @@
 import { useAuth } from "@/lib/use-auth";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { WorldCupBanner } from "@/components/world-cup-banner";
 import {
   useGetDashboardStats,
   getGetDashboardStatsQueryKey,
@@ -145,6 +146,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <WorldCupBanner />
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Bosh sahifa</h1>
         <p className="text-muted-foreground mt-1">{getMorningGreeting(user.full_name ?? "")}</p>
