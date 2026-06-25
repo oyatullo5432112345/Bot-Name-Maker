@@ -100,7 +100,7 @@ function buildSubscribeKeyboard(missingChannels: string[]): InlineKeyboard {
 }
 
 function buildWelcomeKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().url("🌐 Platformaga kirish", `${WEBSITE_URL}/login`);
+  return new InlineKeyboard().url("🌐 Toshloq tuman platformasi", `${WEBSITE_URL}/login`);
 }
 
 function buildContactKeyboard(): Keyboard {
@@ -457,16 +457,16 @@ export function createBot(): Bot {
       try {
         await ctx.replyWithPhoto(new InputFile(LOGO_PATH), {
           caption:
-            "🌟 *Birlashgan Maktab Platformasiga xush kelibsiz!*\n\n" +
-            "Toshloq tuman 3-maktab — *TALIM PLATFORM*\n\n" +
-            "Botdan foydalanish uchun avval quyidagi kanallarga a'zo bo'ling 👇\n\n" +
+            "🌟 *Toshloq tuman platformasiga xush kelibsiz!*\n\n" +
+            "Toshloq tuman 3-maktab\n\n" +
+            "Platformadan foydalanish uchun avval quyidagi kanallarga a'zo bo'ling 👇\n\n" +
             names,
           parse_mode: "Markdown",
           reply_markup: kb,
         });
       } catch {
         await ctx.reply(
-          "🌟 *TALIM PLATFORM*\n\nKanallarga a'zo bo'ling 👇\n\n" + names,
+          "🌟 *Toshloq tuman platformasi*\n\nKanallarga a'zo bo'ling 👇\n\n" + names,
           { parse_mode: "Markdown", reply_markup: kb }
         );
       }
@@ -522,7 +522,7 @@ export function createBot(): Bot {
     const regKb = new InlineKeyboard()
       .url("📝 Ro'yxatdan o'tish", `${WEBSITE_URL}/register`);
     await ctx.reply(
-      "📱 *TALIM Platform*\n\n" +
+      "🌐 *Toshloq tuman platformasi*\n\n" +
       "Platformaga kirish uchun *mahfiy kod* kerak bo'ladi\\.\n" +
       "Kodni admindan oling va quyidagi tugma orqali ro'yxatdan o'ting 👇",
       { parse_mode: "MarkdownV2", reply_markup: regKb }

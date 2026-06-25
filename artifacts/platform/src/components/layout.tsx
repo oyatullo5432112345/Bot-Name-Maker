@@ -7,14 +7,10 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, Users, GraduationCap, School, LogOut,
   Gamepad2, Trophy, BookOpen, ClipboardList, CalendarDays,
-  MessageCircleQuestion, Library, Award, Video,
+  MessageSquare, Library, Award, Video,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, Menu, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -96,40 +92,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { theme, toggleTheme } = useTheme();
   const logoutMutation = useLogout();
-  const { toast } = useToast();
   const unreadCount = useUnreadAnnouncements();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const [supportOpen, setSupportOpen] = useState(false);
-  const [supportMsg, setSupportMsg] = useState("");
-  const [supportName, setSupportName] = useState("");
-  const [supportLoading, setSupportLoading] = useState(false);
-  const [supportDone, setSupportDone] = useState(false);
-
   // Close drawer on route change
   useEffect(() => { setDrawerOpen(false); }, [location]);
-
-  const handleSupportSubmit = async () => {
-    if (supportMsg.trim().length < 5) return;
-    setSupportLoading(true);
-    try {
-      await fetch(`${API_BASE}/support`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
-        },
-        body: JSON.stringify({ message: supportMsg.trim(), name: supportName.trim() || user?.full_name, contact: user?.login }),
-      });
-      setSupportDone(true);
-      setSupportMsg("");
-      setSupportName("");
-    } catch {
-      toast({ variant: "destructive", title: "Xatolik", description: "Xabar yuborishda xatolik" });
-    } finally {
-      setSupportLoading(false);
-    }
-  };
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, { onSuccess: () => authLogout() });
@@ -250,15 +217,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </NavSection>
         )}
 
-        <NavSection>
-          <button
-            onClick={() => { setSupportOpen(true); setSupportDone(false); }}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          >
-            <MessageCircleQuestion className="w-4 h-4 shrink-0" />
-            <span>Qo'llab-quvvatlash</span>
-          </button>
-        </NavSection>
+        {!isMudir && (
+          <NavSection>
+            <NavLink href="/chat" icon={MessageSquare} label="Qo'llab-quvvatlash" active={isActive("/chat")} />
+          </NavSection>
+        )}
       </div>
 
       {/* Footer: user info + logout */}
@@ -372,33 +335,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </nav>
       </div>
 
-      {/* Support dialog */}
-      <Dialog open={supportOpen} onOpenChange={o => { setSupportOpen(o); if (!o) setSupportDone(false); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <MessageCircleQuestion className="w-5 h-5 text-primary" />
-              Qo'llab-quvvatlash
-            </DialogTitle>
-          </DialogHeader>
-          {supportDone ? (
-            <div className="text-center py-4 space-y-2">
-              <p className="text-2xl">✅</p>
-              <p className="font-semibold">Xabaringiz yuborildi!</p>
-              <p className="text-sm text-muted-foreground">Admin tez orada javob beradi.</p>
-              <Button className="w-full mt-2" onClick={() => { setSupportOpen(false); setSupportDone(false); }}>Yopish</Button>
-            </div>
-          ) : (
-            <div className="space-y-3 mt-1">
-              <Input placeholder="Ismingiz (ixtiyoriy)" value={supportName} onChange={e => setSupportName(e.target.value)} />
-              <Textarea placeholder="Savolingiz yoki muammongizni yozing..." rows={4} value={supportMsg} onChange={e => setSupportMsg(e.target.value)} />
-              <Button className="w-full" disabled={supportMsg.trim().length < 5 || supportLoading} onClick={handleSupportSubmit}>
-                {supportLoading ? "Yuborilmoqda..." : "Yuborish"}
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

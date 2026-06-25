@@ -41,6 +41,7 @@ const QollanmalarPage = lazy(() => import("@/pages/qollanmalar"));
 const OlimpiyadaPage = lazy(() => import("@/pages/olimpiada/index"));
 const AnnouncementsPage = lazy(() => import("@/pages/announcements/index"));
 const DavomatPage = lazy(() => import("@/pages/davomat/index"));
+const ChatPage = lazy(() => import("@/pages/chat/index"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -129,6 +130,7 @@ function Router() {
 
       <Route path="/qollanmalar"><ProtectedRoute component={QollanmalarPage} /></Route>
       <Route path="/announcements"><ProtectedRoute component={AnnouncementsPage} /></Route>
+      <Route path="/chat"><ProtectedRoute component={ChatPage} /></Route>
 
       <Route path="/games/sozoyini"><ProtectedRoute component={SozOyini} roles={["student"]} /></Route>
       <Route path="/games/jumboq"><ProtectedRoute component={Jumboq} roles={["student"]} /></Route>
