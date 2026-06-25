@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
+import { MusicProvider } from "@/components/music-player";
 import { useAuth } from "@/lib/use-auth";
 import { AuthGuard } from "@/components/auth-guard";
 import { AppLayout } from "@/components/layout";
@@ -151,12 +152,14 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <TooltipProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <Router />
-            </WouterRouter>
-            <Toaster />
-          </TooltipProvider>
+          <MusicProvider>
+            <TooltipProvider>
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <Router />
+              </WouterRouter>
+              <Toaster />
+            </TooltipProvider>
+          </MusicProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
