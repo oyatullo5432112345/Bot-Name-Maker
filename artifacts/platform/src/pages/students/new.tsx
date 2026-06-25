@@ -21,6 +21,7 @@ const studentSchema = z.object({
   full_name: z.string().min(2, "F.I.O ni kiriting"),
   phone_number: z.string().min(5, "Telefon raqamni kiriting"),
   class_name: z.string().min(1, "Sinf nomini kiriting"),
+  birthday: z.string().optional(),
 });
 
 type StudentFormValues = z.infer<typeof studentSchema>;
@@ -120,6 +121,20 @@ export default function NewStudent() {
                 )}
               />
             </div>
+
+            <FormField
+              control={form.control}
+              name="birthday"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tug'ilgan sana (ixtiyoriy)</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <div className="flex justify-end gap-3 pt-4 border-t">
               <Button 

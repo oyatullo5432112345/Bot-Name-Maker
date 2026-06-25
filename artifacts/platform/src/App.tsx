@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { MusicProvider } from "@/components/music-player";
+import { BirthdayBanner } from "@/components/birthday-banner";
 import { useAuth } from "@/lib/use-auth";
 import { AuthGuard } from "@/components/auth-guard";
 import { AppLayout } from "@/components/layout";
@@ -39,6 +40,8 @@ const CertificatePage = lazy(() => import("@/pages/certificate"));
 const AdminVideosPage = lazy(() => import("@/pages/admin/videos"));
 const AdminCodesPage = lazy(() => import("@/pages/admin/codes"));
 const AdminMusicPage = lazy(() => import("@/pages/admin/music"));
+const AdminExportPage = lazy(() => import("@/pages/admin/export"));
+const ReytingPage = lazy(() => import("@/pages/reyting/index"));
 const QollanmalarPage = lazy(() => import("@/pages/qollanmalar"));
 const OlimpiyadaPage = lazy(() => import("@/pages/olimpiada/index"));
 const AnnouncementsPage = lazy(() => import("@/pages/announcements/index"));
@@ -132,6 +135,8 @@ function Router() {
       <Route path="/admin/videos"><ProtectedRoute component={AdminVideosPage} roles={["admin","director","mudir"]} /></Route>
       <Route path="/admin/codes"><ProtectedRoute component={AdminCodesPage} roles={["admin","director","mudir"]} /></Route>
       <Route path="/admin/music"><ProtectedRoute component={AdminMusicPage} roles={["admin"]} /></Route>
+      <Route path="/admin/export"><ProtectedRoute component={AdminExportPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
+      <Route path="/reyting"><ProtectedRoute component={ReytingPage} /></Route>
 
       <Route path="/qollanmalar"><ProtectedRoute component={QollanmalarPage} /></Route>
       <Route path="/announcements"><ProtectedRoute component={AnnouncementsPage} /></Route>
@@ -158,6 +163,7 @@ function App() {
             <TooltipProvider>
               <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
                 <Router />
+                <BirthdayBanner />
               </WouterRouter>
               <Toaster />
             </TooltipProvider>

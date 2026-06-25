@@ -1,6 +1,8 @@
 import { useAuth } from "@/lib/use-auth";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { AchievementsWidget } from "@/components/achievements-widget";
+import { GrowthChart } from "@/components/growth-chart";
 import { WorldCupBanner } from "@/components/world-cup-banner";
 import {
   useGetDashboardStats,
@@ -727,6 +729,8 @@ function StudentDashboard() {
       </Card>
 
       {user.login && <StudentGradesWidget login={user.login} />}
+      {user.login && <GrowthChart />}
+      {user.login && <AchievementsWidget login={user.login} />}
     </div>
   );
 }

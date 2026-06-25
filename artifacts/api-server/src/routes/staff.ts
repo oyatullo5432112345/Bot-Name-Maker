@@ -136,6 +136,7 @@ router.patch("/staff/:id", requireAuth, async (req, res): Promise<void> => {
   if (raw["password"] != null) { setClauses.push(`password = $${idx++}`); values.push(raw["password"]); }
   if (raw["can_teach"] !== undefined) { setClauses.push(`can_teach = $${idx++}`); values.push(raw["can_teach"]); }
   if (raw["subjects"] !== undefined) { setClauses.push(`subjects = $${idx++}`); values.push(JSON.stringify(raw["subjects"])); }
+  if (raw["birthday"] !== undefined) { setClauses.push(`birthday = $${idx++}`); values.push(raw["birthday"] || null); }
 
   if (setClauses.length === 0) {
     res.status(400).json({ error: "Yangilanadigan maydon yo'q" });

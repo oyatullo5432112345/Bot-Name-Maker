@@ -130,6 +130,8 @@ router.patch("/students/:id", requireAuth, async (req, res): Promise<void> => {
   if (body.data.phone_number != null) { setClauses.push(`phone_number = $${idx++}`); values.push(body.data.phone_number); }
   if (body.data.class_name != null) { setClauses.push(`class_name = $${idx++}`); values.push(body.data.class_name); }
   if (body.data.password != null) { setClauses.push(`password = $${idx++}`); values.push(body.data.password); }
+  const raw = body.data as Record<string, unknown>;
+  if (raw["birthday"] !== undefined) { setClauses.push(`birthday = $${idx++}`); values.push(raw["birthday"] || null); }
 
   if (setClauses.length === 0) {
     res.status(400).json({ error: "Yangilanadigan maydon yo'q" });

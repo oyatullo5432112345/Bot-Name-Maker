@@ -233,35 +233,38 @@ function EditStaffDialog({
   const [fullName, setFullName] = useState(member.full_name);
   const [login, setLogin] = useState(member.login);
   const [password, setPassword] = useState(member.password);
+  const [birthday, setBirthday] = useState((member as StaffMember & { birthday?: string }).birthday ?? "");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!fullName.trim() || !login.trim() || !password.trim()) {
       toast({ variant: "destructive", title: "Xatolik", description: "Barcha maydonlarni to'ldiring" });
       return;
     }
     setIsLoading(true);
-    updateMutation.mutate(
-      {
-        id: member.id,
-        data: {
+    try {
+      const res = await fetch(`${API_BASE_URL}/staff/${member.id}`, {
+        method: "PATCH",
+        headers: buildAuthHeaders(),
+        body: JSON.stringify({
           full_name: fullName.trim(),
           login: login.trim(),
           password: password.trim(),
-        },
-      },
-      {
-        onSuccess: () => {
-          toast({ title: "Saqlandi", description: `${fullName} ma'lumotlari yangilandi` });
-          onSaved();
-          onClose();
-        },
-        onError: () => {
-          toast({ variant: "destructive", title: "Xatolik", description: "Saqlashda xatolik yuz berdi" });
-        },
-        onSettled: () => setIsLoading(false),
+          birthday: birthday || null,
+        }),
+      });
+      if (res.ok) {
+        toast({ title: "Saqlandi", description: `${fullName} ma'lumotlari yangilandi` });
+        onSaved();
+        onClose();
+      } else {
+        const d = await res.json() as { error?: string };
+        toast({ variant: "destructive", title: "Xatolik", description: d.error ?? "Saqlashda xatolik" });
       }
-    );
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanib bo'lmadi" });
+    }
+    setIsLoading(false);
   };
 
   return (
@@ -282,6 +285,10 @@ function EditStaffDialog({
           <div className="space-y-1.5">
             <Label>Parol</Label>
             <Input value={password} onChange={e => setPassword(e.target.value)} placeholder="Parol" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Tug'ilgan sana</Label>
+            <Input type="date" value={birthday} onChange={e => setBirthday(e.target.value)} />
           </div>
         </div>
         <DialogFooter>

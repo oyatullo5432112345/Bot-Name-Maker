@@ -9,6 +9,7 @@ import {
   Gamepad2, Trophy, BookOpen, ClipboardList, CalendarDays,
   MessageSquare, Library, Award, Video,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, Menu, X, CreditCard, Music2,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -195,10 +196,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <NavLink href="/olimpiada" icon={Trophy} label="Olimpiada.Uz" active={isActive("/olimpiada")} />
         </NavSection>
 
+        <NavSection>
+          <NavLink href="/reyting" icon={Trophy} label="Haftalik Reyting" active={isActive("/reyting")} />
+        </NavSection>
+
         {!isMudir && ["admin","director"].includes(user.role) && (
           <NavSection label="Sozlamalar">
             <NavLink href="/admin/codes" icon={KeyRound} label="Mahfiy kodlar" active={isActive("/admin/codes")} />
             <NavLink href="/admin/videos" icon={Video} label="Onboarding videolari" active={isActive("/admin/videos")} />
+            <NavLink href="/admin/export" icon={FileSpreadsheet} label="Hujjat Generator" active={isActive("/admin/export")} />
             {user.role === "admin" && (
               <NavLink href="/admin/music" icon={Music2} label="Musiqa sozlamalari" active={isActive("/admin/music")} />
             )}
