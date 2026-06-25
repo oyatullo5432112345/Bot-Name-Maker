@@ -22,6 +22,16 @@ export interface Song {
 }
 
 const MUSIC_URLS_KEY = "talim_music_urls_v1";
+export const CUSTOM_SONGS_KEY = "talim_custom_songs_v1";
+
+const PULSE_PALETTE: Array<[string, string]> = [
+  ["#1C6CA8", "#1DB954"],
+  ["#e63946", "#f4a261"],
+  ["#9b5de5", "#f15bb5"],
+  ["#00b4d8", "#90e0ef"],
+  ["#f77f00", "#d62828"],
+  ["#2dc653", "#3a86ff"],
+];
 
 function getSongSrc(id: string, defaultSrc: string): string {
   try {
@@ -40,12 +50,36 @@ export function saveMusicUrl(id: string, url: string) {
   localStorage.setItem(MUSIC_URLS_KEY, JSON.stringify(current));
 }
 
+/* ── Custom songs (admin-added) ──────────────────────────────── */
+export interface CustomSong {
+  id: string;
+  title: string;
+  subtitle: string;
+  emoji: string;
+  src: string;
+}
+
+export function getCustomSongs(): CustomSong[] {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_SONGS_KEY) ?? "[]"); } catch { return []; }
+}
+
+export function saveCustomSong(song: CustomSong) {
+  const list = getCustomSongs().filter(s => s.id !== song.id);
+  list.push(song);
+  localStorage.setItem(CUSTOM_SONGS_KEY, JSON.stringify(list));
+}
+
+export function deleteCustomSong(id: string) {
+  const list = getCustomSongs().filter(s => s.id !== id);
+  localStorage.setItem(CUSTOM_SONGS_KEY, JSON.stringify(list));
+}
+
 export const DEFAULT_SONGS_META: Array<Song & { defaultSrc: string }> = [
   {
     id: "madhiya",
     title: "Ulug'imsan Vatanim",
     subtitle: "Vatanparvarlik qo'shig'i",
-    emoji: "🇺🇿",
+    emoji: "🎵",
     src: "/audio/madhiya.mp3",
     defaultSrc: "/audio/madhiya.mp3",
     pulseColors: ["#1C6CA8", "#1DB954"],
@@ -70,10 +104,23 @@ export const DEFAULT_SONGS_META: Array<Song & { defaultSrc: string }> = [
   },
 ];
 
-export const SONGS: Song[] = DEFAULT_SONGS_META.map(s => ({
-  ...s,
-  src: getSongSrc(s.id, s.defaultSrc),
-}));
+function buildAllSongs(): Song[] {
+  const defaults: Song[] = DEFAULT_SONGS_META.map(s => ({
+    ...s,
+    src: getSongSrc(s.id, s.defaultSrc),
+  }));
+  const customs: Song[] = getCustomSongs().map((c, i) => ({
+    id: c.id,
+    title: c.title,
+    subtitle: c.subtitle,
+    emoji: c.emoji,
+    src: c.src,
+    pulseColors: PULSE_PALETTE[i % PULSE_PALETTE.length]!,
+  }));
+  return [...defaults, ...customs];
+}
+
+export const SONGS: Song[] = buildAllSongs();
 
 /* ─── Player state ─────────────────────────────────────────────── */
 interface PlayerState {
