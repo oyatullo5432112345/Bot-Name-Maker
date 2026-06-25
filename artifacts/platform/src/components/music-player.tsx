@@ -3,15 +3,8 @@ import {
   useEffect, useCallback, useReducer,
 } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Pause, X, Music2, Volume2 } from "lucide-react";
+import { Play, Pause, X, Music2, ChevronUp, ChevronDown, Volume2 } from "lucide-react";
 
-/* ─────────────────────────────────────────────────────────────────
-   SONGS CONFIG
-   Audio fayllarni artifacts/platform/public/audio/ papkasiga soling:
-     • madhiya.mp3
-     • mundial.mp3
-     • yoshlar.mp3
-   ──────────────────────────────────────────────────────────────── */
 export interface Song {
   id: string;
   title: string;
@@ -50,7 +43,6 @@ export function saveMusicUrl(id: string, url: string) {
   localStorage.setItem(MUSIC_URLS_KEY, JSON.stringify(current));
 }
 
-/* ── Custom songs (admin-added) ──────────────────────────────── */
 export interface CustomSong {
   id: string;
   title: string;
@@ -120,22 +112,19 @@ function buildAllSongs(): Song[] {
   return [...defaults, ...customs];
 }
 
-export const SONGS: Song[] = buildAllSongs();
-
-/* ─── Player state ─────────────────────────────────────────────── */
 interface PlayerState {
   currentSong: Song | null;
   isPlaying: boolean;
-  progress: number;   // 0-100
-  duration: number;   // seconds
+  progress: number;
+  duration: number;
   currentTime: number;
-  panelVisible: boolean;
+  listOpen: boolean;
   confirmSong: Song | null;
 }
 
 type PlayerAction =
-  | { type: "SHOW_PANEL" }
-  | { type: "HIDE_PANEL" }
+  | { type: "TOGGLE_LIST" }
+  | { type: "CLOSE_LIST" }
   | { type: "CONFIRM_SONG"; song: Song }
   | { type: "CANCEL_CONFIRM" }
   | { type: "PLAY_SONG"; song: Song }
@@ -146,9 +135,9 @@ type PlayerAction =
 
 function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
   switch (action.type) {
-    case "SHOW_PANEL":     return { ...state, panelVisible: true };
-    case "HIDE_PANEL":     return { ...state, panelVisible: false };
-    case "CONFIRM_SONG":   return { ...state, confirmSong: action.song };
+    case "TOGGLE_LIST":    return { ...state, listOpen: !state.listOpen };
+    case "CLOSE_LIST":     return { ...state, listOpen: false };
+    case "CONFIRM_SONG":   return { ...state, confirmSong: action.song, listOpen: false };
     case "CANCEL_CONFIRM": return { ...state, confirmSong: null };
     case "PLAY_SONG":
       return { ...state, confirmSong: null, currentSong: action.song, isPlaying: true, progress: 0, currentTime: 0, duration: 0 };
@@ -161,20 +150,23 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
         duration: action.duration,
         progress: action.duration > 0 ? (action.currentTime / action.duration) * 100 : 0,
       };
-    case "SEEK":           return { ...state, progress: action.progress };
-    default:               return state;
+    case "SEEK": return { ...state, progress: action.progress };
+    default:     return state;
   }
 }
 
-/* ─── Context ──────────────────────────────────────────────────── */
 interface PlayerContextValue {
   state: PlayerState;
+  songs: Song[];
   playSong: (song: Song) => void;
   togglePause: () => void;
   stop: () => void;
   seek: (progress: number) => void;
   confirmSong: (song: Song) => void;
   cancelConfirm: () => void;
+  toggleList: () => void;
+  closeList: () => void;
+  reloadSongs: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -185,43 +177,24 @@ export function usePlayer() {
   return ctx;
 }
 
-/* ─── Provider ─────────────────────────────────────────────────── */
-const SESSION_KEY = "talim_music_panel_v1";
-
 export function MusicProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(playerReducer, {
     currentSong: null, isPlaying: false, progress: 0,
-    duration: 0, currentTime: 0, panelVisible: false, confirmSong: null,
+    duration: 0, currentTime: 0, listOpen: false, confirmSong: null,
   });
-
+  const [songs, setSongs] = useState<Song[]>(() => buildAllSongs());
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* Show panel once per session after 1.5s */
-  useEffect(() => {
-    if (sessionStorage.getItem(SESSION_KEY)) return;
-    const t = setTimeout(() => {
-      dispatch({ type: "SHOW_PANEL" });
-      /* Auto-hide after 10s if no interaction */
-      hideTimerRef.current = setTimeout(() => dispatch({ type: "HIDE_PANEL" }), 10_000);
-    }, 1500);
-    return () => clearTimeout(t);
-  }, []);
+  const reloadSongs = useCallback(() => setSongs(buildAllSongs()), []);
 
-  /* Clear auto-hide timer on panel interaction */
-  const cancelHideTimer = useCallback(() => {
-    if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
-  }, []);
-
-  /* Audio element lifecycle */
   useEffect(() => {
     if (!audioRef.current) {
       audioRef.current = new Audio();
       audioRef.current.preload = "none";
     }
     const audio = audioRef.current;
-
-    const onTimeUpdate = () => dispatch({ type: "TICK", currentTime: audio.currentTime, duration: audio.duration || 0 });
+    const onTimeUpdate = () =>
+      dispatch({ type: "TICK", currentTime: audio.currentTime, duration: audio.duration || 0 });
     const onEnded = () => dispatch({ type: "STOP" });
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("ended", onEnded);
@@ -231,7 +204,6 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  /* React to song/play state changes */
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -243,173 +215,286 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     else { audio.pause(); }
   }, [state.currentSong, state.isPlaying]);
 
-  const playSong = useCallback((song: Song) => {
-    sessionStorage.setItem(SESSION_KEY, "1");
-    dispatch({ type: "HIDE_PANEL" });
-    dispatch({ type: "PLAY_SONG", song });
-  }, []);
-
+  const playSong    = useCallback((song: Song) => dispatch({ type: "PLAY_SONG", song }), []);
   const togglePause = useCallback(() => dispatch({ type: "TOGGLE_PAUSE" }), []);
-  const stop = useCallback(() => dispatch({ type: "STOP" }), []);
-  const seek = useCallback((progress: number) => {
+  const stop        = useCallback(() => dispatch({ type: "STOP" }), []);
+  const seek        = useCallback((progress: number) => {
     const audio = audioRef.current;
     if (audio && audio.duration) {
       audio.currentTime = (progress / 100) * audio.duration;
       dispatch({ type: "SEEK", progress });
     }
   }, []);
-
-  const confirmSong = useCallback((song: Song) => {
-    cancelHideTimer();
-    dispatch({ type: "CONFIRM_SONG", song });
-  }, [cancelHideTimer]);
-
+  const confirmSong  = useCallback((song: Song) => dispatch({ type: "CONFIRM_SONG", song }), []);
   const cancelConfirm = useCallback(() => dispatch({ type: "CANCEL_CONFIRM" }), []);
+  const toggleList   = useCallback(() => dispatch({ type: "TOGGLE_LIST" }), []);
+  const closeList    = useCallback(() => dispatch({ type: "CLOSE_LIST" }), []);
 
-  const handleHidePanel = useCallback(() => {
-    sessionStorage.setItem(SESSION_KEY, "1");
-    cancelHideTimer();
-    dispatch({ type: "HIDE_PANEL" });
-  }, [cancelHideTimer]);
-
-  const handlePanelInteract = useCallback(() => cancelHideTimer(), [cancelHideTimer]);
-
-  const value: PlayerContextValue = { state, playSong, togglePause, stop, seek, confirmSong, cancelConfirm };
-
-  const { currentSong } = state;
+  const value: PlayerContextValue = {
+    state, songs, playSong, togglePause, stop, seek,
+    confirmSong, cancelConfirm, toggleList, closeList, reloadSongs,
+  };
 
   return (
     <PlayerContext.Provider value={value}>
-      {/* Pulsating background overlay when playing */}
-      <AnimatePresence>
-        {currentSong && (
-          <motion.div
-            key="bg-pulse"
-            className="fixed inset-0 pointer-events-none z-0"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{
-              background: `radial-gradient(ellipse at 50% 100%, ${currentSong.pulseColors[0]}18 0%, transparent 70%),
-                           radial-gradient(ellipse at 0% 50%, ${currentSong.pulseColors[1]}12 0%, transparent 60%)`,
-            }}
-          >
-            <motion.div
-              className="absolute inset-0"
-              animate={{ opacity: [0, 0.6, 0] }}
-              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-              style={{
-                background: `radial-gradient(ellipse at 50% 50%, ${currentSong.pulseColors[0]}10 0%, transparent 70%)`,
-              }}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+      <BgPulse song={state.currentSong} />
       {children}
-
-      {/* Slide-up panel */}
-      <MusicPanel
-        visible={state.panelVisible}
-        onHide={handleHidePanel}
-        onInteract={handlePanelInteract}
-      />
-
-      {/* Confirm modal */}
       <ConfirmModal />
-
-      {/* Mini player */}
-      <MiniPlayer />
+      <BottomMusicBar />
     </PlayerContext.Provider>
   );
 }
 
-/* ─── Slide-up panel ───────────────────────────────────────────── */
-function MusicPanel({
-  visible, onHide, onInteract,
-}: {
-  visible: boolean; onHide: () => void; onInteract: () => void;
-}) {
-  const { confirmSong } = usePlayer();
-
+/* ─── Background pulse ──────────────────────────────────────────── */
+function BgPulse({ song }: { song: Song | null }) {
   return (
     <AnimatePresence>
-      {visible && (
+      {song && (
         <motion.div
-          key="music-panel"
-          initial={{ y: 120, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 120, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 260, damping: 26 }}
-          className="fixed bottom-20 lg:bottom-6 left-1/2 z-50 w-full max-w-sm"
-          style={{ transform: "translateX(-50%)" }}
-          onPointerEnter={onInteract}
-          onClick={onInteract}
+          key="bg-pulse"
+          className="fixed inset-0 pointer-events-none z-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{
+            background: `radial-gradient(ellipse at 50% 100%, ${song.pulseColors[0]}18 0%, transparent 70%),
+                         radial-gradient(ellipse at 0% 50%, ${song.pulseColors[1]}12 0%, transparent 60%)`,
+          }}
         >
-          <div
-            className="mx-4 rounded-2xl shadow-2xl overflow-hidden"
+          <motion.div
+            className="absolute inset-0"
+            animate={{ opacity: [0, 0.5, 0] }}
+            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
             style={{
-              background: "linear-gradient(135deg, #0b1f3a 0%, #0e2d50 80%, #0b2a1e 100%)",
-              border: "1px solid rgba(255,255,255,0.12)",
+              background: `radial-gradient(ellipse at 50% 50%, ${song.pulseColors[0]}10 0%, transparent 70%)`,
             }}
-          >
-            {/* Top stripe */}
-            <div className="h-0.5 flex">
-              <div className="flex-1 bg-[#1C6CA8]" />
-              <div className="flex-1 bg-white/50" />
-              <div className="flex-1 bg-[#1DB954]" />
-            </div>
-
-            <div className="px-4 pt-3 pb-4">
-              {/* Header */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center">
-                    <Music2 className="w-3.5 h-3.5 text-white/80" />
-                  </div>
-                  <div>
-                    <p className="text-white text-xs font-bold leading-none">🎵 Musiqa</p>
-                    <p className="text-white/50 text-[10px] mt-0.5">Qo'shiq tanlang</p>
-                  </div>
-                </div>
-                <button
-                  onClick={onHide}
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/10 transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Song buttons */}
-              <div className="space-y-2">
-                {SONGS.map((song) => (
-                  <button
-                    key={song.id}
-                    onClick={() => confirmSong(song)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all hover:scale-[1.01] active:scale-[0.99]"
-                    style={{
-                      background: "rgba(255,255,255,0.07)",
-                      border: "1px solid rgba(255,255,255,0.10)",
-                    }}
-                  >
-                    <span className="text-xl shrink-0">{song.emoji}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-xs font-semibold truncate">{song.title}</p>
-                      <p className="text-white/50 text-[10px] truncate">{song.subtitle}</p>
-                    </div>
-                    <Play className="w-3.5 h-3.5 text-white/50 shrink-0" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          />
         </motion.div>
       )}
     </AnimatePresence>
   );
 }
 
-/* ─── Confirm modal ────────────────────────────────────────────── */
+/* ─── Persistent bottom bar ─────────────────────────────────────── */
+function BottomMusicBar() {
+  const { state, songs, confirmSong, togglePause, stop, seek, toggleList, closeList } = usePlayer();
+  const { currentSong, isPlaying, progress, currentTime, duration, listOpen } = state;
+
+  const fmt = (s: number) => {
+    if (!isFinite(s) || isNaN(s)) return "0:00";
+    return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  };
+
+  const barBg = currentSong
+    ? `linear-gradient(90deg, ${currentSong.pulseColors[0]}ee 0%, ${currentSong.pulseColors[1]}dd 100%)`
+    : "linear-gradient(90deg, #0b1f3a 0%, #0e2d50 100%)";
+
+  return (
+    <>
+      {/* Song list panel */}
+      <AnimatePresence>
+        {listOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              key="list-backdrop"
+              className="fixed inset-0 z-[38]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={closeList}
+            />
+
+            {/* Panel */}
+            <motion.div
+              key="song-list"
+              initial={{ y: 16, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 16, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 320, damping: 28 }}
+              className="fixed left-1/2 -translate-x-1/2 z-[39] px-3 w-full bottom-[162px] lg:bottom-[52px]"
+              style={{ maxWidth: 480 }}
+            >
+              <div
+                className="rounded-2xl shadow-2xl overflow-hidden"
+                style={{
+                  background: "linear-gradient(135deg, #0b1f3a 0%, #0e2d50 80%, #0b2a1e 100%)",
+                  border: "1px solid rgba(255,255,255,0.13)",
+                }}
+              >
+                <div className="h-0.5 flex">
+                  <div className="flex-1 bg-[#1C6CA8]" />
+                  <div className="flex-1 bg-white/40" />
+                  <div className="flex-1 bg-[#1DB954]" />
+                </div>
+
+                <div className="px-4 pt-3 pb-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Music2 className="w-4 h-4 text-white/70" />
+                    <p className="text-white text-sm font-bold">Qo'shiq tanlang</p>
+                    <span className="text-white/40 text-[11px] ml-auto">{songs.length} ta</span>
+                  </div>
+
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {songs.map((song) => {
+                      const isActive = currentSong?.id === song.id;
+                      return (
+                        <button
+                          key={song.id}
+                          onClick={() => confirmSong(song)}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all hover:scale-[1.01] active:scale-[0.99]"
+                          style={{
+                            background: isActive
+                              ? `linear-gradient(90deg, ${song.pulseColors[0]}55, ${song.pulseColors[1]}44)`
+                              : "rgba(255,255,255,0.07)",
+                            border: isActive
+                              ? `1px solid ${song.pulseColors[0]}88`
+                              : "1px solid rgba(255,255,255,0.10)",
+                          }}
+                        >
+                          <motion.span
+                            className="text-xl shrink-0"
+                            animate={isActive && isPlaying ? { scale: [1, 1.15, 1] } : {}}
+                            transition={{ duration: 1.5, repeat: Infinity }}
+                          >
+                            {song.emoji}
+                          </motion.span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white text-xs font-semibold truncate">{song.title}</p>
+                            <p className="text-white/50 text-[10px] truncate">{song.subtitle}</p>
+                          </div>
+                          {isActive && isPlaying
+                            ? <Pause className="w-3.5 h-3.5 text-white/80 shrink-0" />
+                            : <Play  className="w-3.5 h-3.5 text-white/40 shrink-0" />
+                          }
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ── The bar — always visible, sits above mobile nav on mobile ── */}
+      <div className="fixed left-0 right-0 z-40 bottom-14 lg:bottom-0">
+        {/* Clickable progress bar */}
+        {currentSong && (
+          <div
+            className="h-1 w-full cursor-pointer"
+            style={{ background: "rgba(255,255,255,0.20)" }}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              seek(((e.clientX - rect.left) / rect.width) * 100);
+            }}
+          >
+            <div
+              className="h-full"
+              style={{
+                width: `${progress}%`,
+                background: "rgba(255,255,255,0.90)",
+                transition: "width 0.5s linear",
+              }}
+            />
+          </div>
+        )}
+
+        {/* Bar body */}
+        <div
+          className="flex items-center gap-3 px-4 h-[52px]"
+          style={{
+            background: barBg,
+            borderTop: "1px solid rgba(255,255,255,0.12)",
+          }}
+        >
+          {/* Left: emoji + info */}
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            {currentSong ? (
+              <>
+                <motion.span
+                  className="text-lg shrink-0"
+                  animate={isPlaying ? { scale: [1, 1.15, 1] } : {}}
+                  transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+                >
+                  {currentSong.emoji}
+                </motion.span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-xs font-bold truncate leading-tight">
+                    {currentSong.title}
+                  </p>
+                  <p className="text-white/60 text-[10px] truncate">
+                    {fmt(currentTime)} / {fmt(duration)}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: "rgba(255,255,255,0.10)" }}
+                >
+                  <Music2 className="w-3.5 h-3.5 text-white/60" />
+                </div>
+                <div>
+                  <p className="text-white/80 text-xs font-semibold leading-tight">🎵 Musiqa</p>
+                  <p className="text-white/40 text-[10px]">Qo'shiq tanlang ↑</p>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Right: controls */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {currentSong && (
+              <>
+                <button
+                  onClick={togglePause}
+                  className="w-8 h-8 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-95"
+                  style={{
+                    background: "rgba(255,255,255,0.22)",
+                    border: "1px solid rgba(255,255,255,0.30)",
+                  }}
+                >
+                  {isPlaying
+                    ? <Pause className="w-3.5 h-3.5 text-white" />
+                    : <Play  className="w-3.5 h-3.5 text-white ml-0.5" />
+                  }
+                </button>
+                <button
+                  onClick={stop}
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-white/50 hover:text-white transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+
+            {/* Open/close song list */}
+            <button
+              onClick={toggleList}
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-95"
+              style={{
+                background: listOpen
+                  ? "rgba(255,255,255,0.28)"
+                  : "rgba(255,255,255,0.10)",
+                border: "1px solid rgba(255,255,255,0.15)",
+              }}
+            >
+              {listOpen
+                ? <ChevronDown className="w-4 h-4 text-white" />
+                : <ChevronUp   className="w-4 h-4 text-white/70" />
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ─── Confirm modal ─────────────────────────────────────────────── */
 function ConfirmModal() {
   const { state, playSong, cancelConfirm } = usePlayer();
   const song = state.confirmSong;
@@ -418,7 +503,6 @@ function ConfirmModal() {
     <AnimatePresence>
       {song && (
         <>
-          {/* Backdrop */}
           <motion.div
             key="confirm-backdrop"
             className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
@@ -427,7 +511,6 @@ function ConfirmModal() {
             exit={{ opacity: 0 }}
             onClick={cancelConfirm}
           />
-          {/* Modal */}
           <motion.div
             key="confirm-modal"
             className="fixed inset-0 z-[61] flex items-center justify-center px-6"
@@ -448,7 +531,6 @@ function ConfirmModal() {
                 <div className="flex-1 bg-white/40" />
                 <div className="flex-1 bg-[#1DB954]" />
               </div>
-
               <div className="p-5">
                 <div className="text-center mb-4">
                   <motion.div
@@ -464,7 +546,10 @@ function ConfirmModal() {
 
                 <div
                   className="flex items-center gap-2 rounded-lg px-3 py-2 mb-4"
-                  style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
+                  style={{
+                    background: "rgba(255,255,255,0.07)",
+                    border: "1px solid rgba(255,255,255,0.10)",
+                  }}
                 >
                   <Volume2 className="w-3.5 h-3.5 text-yellow-300 shrink-0" />
                   <p className="text-white/70 text-[11px]">Ovoz balandligini tekshiring</p>
@@ -473,14 +558,17 @@ function ConfirmModal() {
                 <div className="flex gap-2">
                   <button
                     onClick={cancelConfirm}
-                    className="flex-1 py-2 rounded-xl text-sm font-medium text-white/60 transition-colors hover:text-white/90"
-                    style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
+                    className="flex-1 py-2 rounded-xl text-sm font-medium text-white/60 hover:text-white/90 transition-colors"
+                    style={{
+                      background: "rgba(255,255,255,0.07)",
+                      border: "1px solid rgba(255,255,255,0.10)",
+                    }}
                   >
                     ❌ Bekor
                   </button>
                   <button
                     onClick={() => playSong(song)}
-                    className="flex-1 py-2 rounded-xl text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    className="flex-1 py-2 rounded-xl text-sm font-bold text-white hover:scale-[1.02] active:scale-[0.98] transition-all"
                     style={{ background: "linear-gradient(90deg, #1C6CA8, #1DB954)" }}
                   >
                     ✅ Ijro et
@@ -490,106 +578,6 @@ function ConfirmModal() {
             </div>
           </motion.div>
         </>
-      )}
-    </AnimatePresence>
-  );
-}
-
-/* ─── Mini player ──────────────────────────────────────────────── */
-function MiniPlayer() {
-  const { state, togglePause, stop, seek } = usePlayer();
-  const { currentSong, isPlaying, progress, currentTime, duration } = state;
-
-  const fmt = (s: number) => {
-    if (!isFinite(s) || isNaN(s)) return "0:00";
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60);
-    return `${m}:${String(sec).padStart(2, "0")}`;
-  };
-
-  return (
-    <AnimatePresence>
-      {currentSong && (
-        <motion.div
-          key="mini-player"
-          initial={{ y: 80, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 80, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 280, damping: 28 }}
-          className="fixed bottom-16 lg:bottom-0 left-0 right-0 z-40 lg:z-50"
-        >
-          <div
-            style={{
-              background: `linear-gradient(90deg, ${currentSong.pulseColors[0]}dd 0%, ${currentSong.pulseColors[1]}cc 100%)`,
-              borderTop: "1px solid rgba(255,255,255,0.15)",
-            }}
-          >
-            {/* Progress bar (clickable) */}
-            <div
-              className="h-1 w-full cursor-pointer group"
-              style={{ background: "rgba(255,255,255,0.2)" }}
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                seek(((e.clientX - rect.left) / rect.width) * 100);
-              }}
-            >
-              <motion.div
-                className="h-full rounded-full"
-                style={{
-                  width: `${progress}%`,
-                  background: "rgba(255,255,255,0.9)",
-                  transition: "width 0.5s linear",
-                }}
-              />
-            </div>
-
-            {/* Controls */}
-            <div className="flex items-center gap-3 px-4 py-2.5">
-              {/* Animated emoji */}
-              <motion.span
-                className="text-xl shrink-0"
-                animate={
-                  currentSong.id === "mundial"
-                    ? { rotate: [0, 360] }
-                    : currentSong.id === "madhiya"
-                    ? { scale: [1, 1.15, 1] }
-                    : { opacity: [1, 0.6, 1] }
-                }
-                transition={{ duration: currentSong.id === "mundial" ? 3 : 2, repeat: Infinity, ease: "linear" }}
-              >
-                {currentSong.emoji}
-              </motion.span>
-
-              {/* Song info */}
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-xs font-bold truncate">{currentSong.title}</p>
-                <p className="text-white/70 text-[10px] truncate">
-                  {fmt(currentTime)} / {fmt(duration)} · {currentSong.subtitle}
-                </p>
-              </div>
-
-              {/* Play/Pause */}
-              <button
-                onClick={togglePause}
-                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all hover:scale-110 active:scale-95"
-                style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)" }}
-              >
-                {isPlaying
-                  ? <Pause className="w-3.5 h-3.5 text-white" />
-                  : <Play className="w-3.5 h-3.5 text-white ml-0.5" />
-                }
-              </button>
-
-              {/* Stop / Close */}
-              <button
-                onClick={stop}
-                className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-all hover:scale-110 active:scale-95 text-white/60 hover:text-white"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </motion.div>
       )}
     </AnimatePresence>
   );
