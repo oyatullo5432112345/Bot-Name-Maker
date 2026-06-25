@@ -40,7 +40,7 @@ router.get("/staff/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 // GET /api/staff
-router.get("/staff", requireAuth, async (_req, res): Promise<void> => {
+router.get("/staff", async (_req, res): Promise<void> => {
   try {
     const rows = await query<Parameters<typeof enrichStaff>[0]>(`SELECT ${SELECT} FROM staff ORDER BY full_name`);
     const enriched = await Promise.all(rows.map(d => enrichStaff(d)));

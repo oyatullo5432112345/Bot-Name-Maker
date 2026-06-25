@@ -388,6 +388,7 @@ function StaffRegisterModal({
   const cfg = ROLE_CONFIG[role];
   const colors = cfg ? COLOR_CLASSES[cfg.color] : null;
   const [customSubject, setCustomSubject] = useState("");
+  const [submitError, setSubmitError] = useState("");
 
   const handlePhoneChange = (val: string) => {
     let digits = val.replace(/\D/g, "");
@@ -428,6 +429,7 @@ function StaffRegisterModal({
 
   const handleSubmit = async () => {
     setIsLoading(true);
+    setSubmitError("");
     try {
       const res = await fetch("/api/auth/register-staff", {
         method: "POST",
@@ -437,7 +439,6 @@ function StaffRegisterModal({
           first_name: (codeData?.first_name ?? firstName).trim(),
           role,
           class_id: classId || null,
-          phone_number: `+998${phone}`,
           login: loginVal.trim(),
           password: passwordVal,
           subjects: isTeacher ? selectedSubjects : undefined,
@@ -446,21 +447,22 @@ function StaffRegisterModal({
       });
       const data = await res.json() as { error?: string; login?: string; password?: string };
       if (!res.ok) {
-        toast({ variant: "destructive", title: "Xatolik", description: data.error ?? "Ro'yxatdan o'tishda xatolik" });
+        setSubmitError(data.error ?? "Ro'yxatdan o'tishda xatolik");
         return;
       }
       setCredentials({ login: data.login ?? "", password: data.password ?? "" });
       setPendingAuthData(data as Parameters<typeof authLogin>[0]);
       onSuccess();
     } catch {
-      toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanishda muammo" });
+      setSubmitError("Server bilan bog'lanishda muammo. Qayta urinib ko'ring.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const canSubmit = lastName.trim().length >= 2 && firstName.trim().length >= 2
-    && phone.replace(/\D/g, "").length >= 9
+  const effectiveLastName = codeData?.last_name ?? lastName;
+  const effectiveFirstName = codeData?.first_name ?? firstName;
+  const canSubmit = effectiveLastName.trim().length >= 2 && effectiveFirstName.trim().length >= 2
     && loginVal.trim().length >= 3 && passwordVal.length >= 4
     && (!isTeacher || selectedSubjects.length > 0);
 
@@ -486,8 +488,12 @@ function StaffRegisterModal({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={(o) => !o && credentials && handleClose()}>
+      <DialogContent
+        className="max-w-lg max-h-[90vh] overflow-y-auto"
+        onInteractOutside={e => { if (!credentials) e.preventDefault(); }}
+        onEscapeKeyDown={e => { if (!credentials) e.preventDefault(); }}
+      >
         <DialogHeader>
           {cfg && (
             <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${colors?.bg} ${colors?.border} border w-fit mb-1`}>
@@ -569,7 +575,7 @@ function StaffRegisterModal({
             </div>
 
             <div className="space-y-1.5">
-              <Label>Telefon raqam</Label>
+              <Label>Telefon raqam <span className="text-muted-foreground font-normal text-xs">(ixtiyoriy)</span></Label>
               <div className="flex">
                 <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground select-none">
                   +998
@@ -692,6 +698,12 @@ function StaffRegisterModal({
               </div>
             )}
 
+            {submitError && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm text-destructive font-medium">
+                ⚠️ {submitError}
+              </div>
+            )}
+
             <Button
               className="w-full"
               disabled={!canSubmit || isLoading}
@@ -701,9 +713,17 @@ function StaffRegisterModal({
               Ro'yxatdan o'tish
             </Button>
 
-            {isTeacher && selectedSubjects.length === 0 && (lastName.length >= 2 || firstName.length >= 2) && (
+            {isTeacher && selectedSubjects.length === 0 && (effectiveLastName.length >= 2 || effectiveFirstName.length >= 2) && (
               <p className="text-xs text-center text-amber-600">⚠️ Davom etish uchun kamida 1 ta fan tanlang</p>
             )}
+
+            <button
+              type="button"
+              onClick={handleClose}
+              className="w-full text-xs text-muted-foreground hover:text-foreground text-center underline underline-offset-2 py-1 transition-colors"
+            >
+              Bekor qilish
+            </button>
           </div>
         )}
       </DialogContent>
