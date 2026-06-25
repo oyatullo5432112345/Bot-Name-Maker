@@ -38,6 +38,7 @@ const LibraryLoansPage = lazy(() => import("@/pages/library/loans"));
 const CertificatePage = lazy(() => import("@/pages/certificate"));
 const AdminVideosPage = lazy(() => import("@/pages/admin/videos"));
 const AdminCodesPage = lazy(() => import("@/pages/admin/codes"));
+const AdminMusicPage = lazy(() => import("@/pages/admin/music"));
 const QollanmalarPage = lazy(() => import("@/pages/qollanmalar"));
 const OlimpiyadaPage = lazy(() => import("@/pages/olimpiada/index"));
 const AnnouncementsPage = lazy(() => import("@/pages/announcements/index"));
@@ -130,6 +131,7 @@ function Router() {
 
       <Route path="/admin/videos"><ProtectedRoute component={AdminVideosPage} roles={["admin","director","mudir"]} /></Route>
       <Route path="/admin/codes"><ProtectedRoute component={AdminCodesPage} roles={["admin","director","mudir"]} /></Route>
+      <Route path="/admin/music"><ProtectedRoute component={AdminMusicPage} roles={["admin"]} /></Route>
 
       <Route path="/qollanmalar"><ProtectedRoute component={QollanmalarPage} /></Route>
       <Route path="/announcements"><ProtectedRoute component={AnnouncementsPage} /></Route>

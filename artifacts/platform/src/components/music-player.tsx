@@ -21,13 +21,33 @@ export interface Song {
   pulseColors: [string, string];
 }
 
-export const SONGS: Song[] = [
+const MUSIC_URLS_KEY = "talim_music_urls_v1";
+
+function getSongSrc(id: string, defaultSrc: string): string {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MUSIC_URLS_KEY) ?? "{}") as Record<string, string>;
+    return saved[id] || defaultSrc;
+  } catch { return defaultSrc; }
+}
+
+export function getSavedMusicUrls(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(MUSIC_URLS_KEY) ?? "{}"); } catch { return {}; }
+}
+
+export function saveMusicUrl(id: string, url: string) {
+  const current = getSavedMusicUrls();
+  current[id] = url;
+  localStorage.setItem(MUSIC_URLS_KEY, JSON.stringify(current));
+}
+
+export const DEFAULT_SONGS_META: Array<Song & { defaultSrc: string }> = [
   {
     id: "madhiya",
     title: "Ulug'imsan Vatanim",
-    subtitle: "O'zbekiston Davlat Madhiyasi",
+    subtitle: "Vatanparvarlik qo'shig'i",
     emoji: "🇺🇿",
     src: "/audio/madhiya.mp3",
+    defaultSrc: "/audio/madhiya.mp3",
     pulseColors: ["#1C6CA8", "#1DB954"],
   },
   {
@@ -36,6 +56,7 @@ export const SONGS: Song[] = [
     subtitle: "Jahongir Foziljonov · JCh 2026",
     emoji: "⚽",
     src: "/audio/mundial.mp3",
+    defaultSrc: "/audio/mundial.mp3",
     pulseColors: ["#1C6CA8", "#e63946"],
   },
   {
@@ -44,9 +65,15 @@ export const SONGS: Song[] = [
     subtitle: "Rasmiy tarannum · 2024",
     emoji: "✨",
     src: "/audio/yoshlar.mp3",
+    defaultSrc: "/audio/yoshlar.mp3",
     pulseColors: ["#1DB954", "#f4a261"],
   },
 ];
+
+export const SONGS: Song[] = DEFAULT_SONGS_META.map(s => ({
+  ...s,
+  src: getSongSrc(s.id, s.defaultSrc),
+}));
 
 /* ─── Player state ─────────────────────────────────────────────── */
 interface PlayerState {

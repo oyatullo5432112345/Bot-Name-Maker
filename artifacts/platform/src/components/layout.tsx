@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, GraduationCap, School, LogOut,
   Gamepad2, Trophy, BookOpen, ClipboardList, CalendarDays,
   MessageSquare, Library, Award, Video,
-  KeyRound, Megaphone, Sun, Moon, CalendarCheck, Menu, X, CreditCard,
+  KeyRound, Megaphone, Sun, Moon, CalendarCheck, Menu, X, CreditCard, Music2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -199,6 +199,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <NavSection label="Sozlamalar">
             <NavLink href="/admin/codes" icon={KeyRound} label="Mahfiy kodlar" active={isActive("/admin/codes")} />
             <NavLink href="/admin/videos" icon={Video} label="Onboarding videolari" active={isActive("/admin/videos")} />
+            {user.role === "admin" && (
+              <NavLink href="/admin/music" icon={Music2} label="Musiqa sozlamalari" active={isActive("/admin/music")} />
+            )}
           </NavSection>
         )}
 
