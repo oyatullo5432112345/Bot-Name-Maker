@@ -42,6 +42,7 @@ const OlimpiyadaPage = lazy(() => import("@/pages/olimpiada/index"));
 const AnnouncementsPage = lazy(() => import("@/pages/announcements/index"));
 const DavomatPage = lazy(() => import("@/pages/davomat/index"));
 const ChatPage = lazy(() => import("@/pages/chat/index"));
+const StudentIdCard = lazy(() => import("@/pages/students/id-card"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -101,6 +102,7 @@ function Router() {
       </Route>
 
       <Route path="/students"><ProtectedRoute component={StudentsList} roles={["admin","director","mudir","zam_direktor","zavuch","sinf_rahbari"]} /></Route>
+      <Route path="/students/id-card"><ProtectedRoute component={StudentIdCard} /></Route>
       <Route path="/students/new"><ProtectedRoute component={NewStudent} roles={["admin"]} /></Route>
       <Route path="/students/bulk-new"><ProtectedRoute component={BulkNewStudents} roles={["admin"]} /></Route>
 

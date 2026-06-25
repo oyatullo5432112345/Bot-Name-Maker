@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Search, Trash2, Users } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, Users, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -130,7 +130,7 @@ export default function StudentsList() {
               <TableHead>Telefon</TableHead>
               <TableHead>Login</TableHead>
               <TableHead>Parol</TableHead>
-              {isAdmin && <TableHead className="w-[80px]"></TableHead>}
+              <TableHead className="w-[100px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -158,34 +158,41 @@ export default function StudentsList() {
                   <TableCell>{student.phone_number}</TableCell>
                   <TableCell className="font-mono text-sm">{student.login}</TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">{student.password}</TableCell>
-                  {isAdmin && (
-                    <TableCell>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Haqiqatan ham o'chirmoqchimisiz?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Bu amalni ortga qaytarib bo'lmaydi. {student.full_name} tizimdan o'chiriladi.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={() => handleDelete(student.telegram_id.toString())}
-                              className="bg-destructive hover:bg-destructive/90"
-                            >
-                              O'chirish
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </TableCell>
-                  )}
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon" title="ID Karta" asChild>
+                        <Link href={`/students/id-card?id=${student.telegram_id}`}>
+                          <CreditCard className="w-4 h-4 text-primary" />
+                        </Link>
+                      </Button>
+                      {isAdmin && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Haqiqatan ham o'chirmoqchimisiz?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Bu amalni ortga qaytarib bo'lmaydi. {student.full_name} tizimdan o'chiriladi.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(student.telegram_id.toString())}
+                                className="bg-destructive hover:bg-destructive/90"
+                              >
+                                O'chirish
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))
             )}
