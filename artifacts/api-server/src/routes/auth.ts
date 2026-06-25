@@ -335,7 +335,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     const newStaff = await queryOne<{ id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null }>(
       "INSERT INTO staff (full_name, role, class_id, login, password, telegram_id, subjects, can_teach) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7) RETURNING id, full_name, role, class_id, login, password, telegram_id",
       [full_name.trim(), role, class_id ?? null, login, password,
-       JSON.stringify(subjects ?? []),
+       subjects ?? [],
        role === "teacher" || role === "sinf_rahbari"]
     );
 
