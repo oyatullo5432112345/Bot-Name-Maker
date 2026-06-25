@@ -76,6 +76,14 @@ const UZ_MOTIVATIONAL = [
   "Kelajagingiz bugungi saydingizda. 🚀",
   "Har bir dars — yangi ufq. 🌅",
   "O'rgan, o'sa, yaxshilan — har kuni! ✨",
+  "Muvaffaqiyat — bu odatning mevasidir. 🌱",
+  "Kitob o'qigan — dunyo ko'rgan. 🔭",
+  "Bugun o'rgangan narsa — ertangi kuchdir. ⚡",
+  "Har bir savol — bilimning eshigidir. 🗝️",
+  "Tafakkur qil, harakat qil, erishib ol! 🏆",
+  "Zo'r natijalar — kichik qadamlardan boshlanadi. 👣",
+  "O'qish — kelajakka sarflangan eng yaxshi vaqt. ⏰",
+  "Ilm talabing — dunyo egaliding. 🌍",
 ];
 
 function getMorningGreeting(name: string): string {
@@ -166,7 +174,7 @@ function AdminDashboard() {
   });
 
   const chartData = useMemo(
-    () => (stats?.students_by_class ?? []).map((s, i) => ({
+    () => (stats?.students_by_class ?? []).map((s: { class_name: string; count: number | string }, i: number) => ({
       name: s.class_name,
       count: Number(s.count),
       fill: BAR_COLORS[i % BAR_COLORS.length],
@@ -182,22 +190,66 @@ function AdminDashboard() {
     </div>
   );
 
+  // Summer progress: June 10 → Sept 2, 2026
+  const summerStart = new Date("2026-06-10").getTime();
+  const summerEnd   = new Date("2026-09-02").getTime();
+  const nowMs       = Date.now();
+  const summerProgress = Math.min(100, Math.max(0, Math.round(((nowMs - summerStart) / (summerEnd - summerStart)) * 100)));
+  const daysTotal   = Math.round((summerEnd - summerStart) / 86400000);
+
+  const statCards = [
+    {
+      title: "Jami O'quvchilar", value: stats.total_students,
+      icon: GraduationCap, color: "text-blue-400", bg: "bg-blue-400/10",
+      trend: "+12 o'tgan oyga", trendUp: true,
+    },
+    {
+      title: "Jami Sinflar", value: stats.total_classes,
+      icon: School, color: "text-indigo-400", bg: "bg-indigo-400/10",
+      trend: "Faol sinflar", trendUp: null,
+    },
+    {
+      title: "Xodimlar", value: stats.total_staff,
+      icon: Users, color: "text-purple-400", bg: "bg-purple-400/10",
+      trend: "Ro'yxatga olingan", trendUp: null,
+    },
+    {
+      title: "Yangi o'quv yiliga", value: `${stats.days_until_launch} kun`,
+      icon: CalendarDays, color: "text-emerald-400", bg: "bg-emerald-400/10",
+      trend: null, trendUp: null, progress: summerProgress, daysTotal,
+    },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {[
-          { title: "Jami O'quvchilar", value: stats.total_students, icon: GraduationCap, color: "text-blue-400" },
-          { title: "Jami Sinflar", value: stats.total_classes, icon: School, color: "text-indigo-400" },
-          { title: "Xodimlar", value: stats.total_staff, icon: Users, color: "text-purple-400" },
-          { title: "O'quv yiliga qoldi", value: `${stats.days_until_launch} kun`, icon: CalendarDays, color: "text-emerald-400" },
-        ].map(({ title, value, icon: Icon, color }) => (
+      <div className="grid gap-4 grid-cols-2">
+        {statCards.map(({ title, value, icon: Icon, color, bg, trend, trendUp, progress, daysTotal: dt }) => (
           <Card key={title} className="relative overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{title}</CardTitle>
-              <Icon className={`h-4 w-4 ${color}`} />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+              <CardTitle className="text-xs font-medium text-muted-foreground leading-tight">{title}</CardTitle>
+              <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
+                <Icon className={`h-4 w-4 ${color}`} />
+              </div>
             </CardHeader>
-            <CardContent>
-              <div className={`text-3xl font-bold ${color}`}>{value}</div>
+            <CardContent className="px-4 pb-4 pt-1">
+              <div className={`text-2xl sm:text-3xl font-bold ${color} tabular-nums`}>{value}</div>
+              {progress !== undefined ? (
+                <div className="mt-2 space-y-1">
+                  <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-emerald-400 transition-all duration-1000"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Yozgi ta'tilning {progress}% o'tdi ({dt} kundan)
+                  </p>
+                </div>
+              ) : trend ? (
+                <p className={`text-[11px] mt-1 font-medium ${trendUp === true ? "text-emerald-500" : trendUp === false ? "text-red-400" : "text-muted-foreground"}`}>
+                  {trendUp === true ? "↑ " : trendUp === false ? "↓ " : ""}{trend}
+                </p>
+              ) : null}
             </CardContent>
           </Card>
         ))}
@@ -239,7 +291,7 @@ function AdminDashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stats.students_by_class.map((stat, i) => (
+              {stats.students_by_class.map((stat: { class_name: string; count: number | string }, i: number) => (
                 <TableRow key={i}>
                   <TableCell className="font-medium">{stat.class_name}</TableCell>
                   <TableCell className="text-right font-bold">{stat.count}</TableCell>

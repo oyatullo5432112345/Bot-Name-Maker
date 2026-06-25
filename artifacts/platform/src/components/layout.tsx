@@ -78,10 +78,23 @@ function NavLink({ href, icon: Icon, label, badge, active, onClick }: {
   );
 }
 
+const SECTION_COLORS: Record<string, string> = {
+  "Ta'lim":            "text-emerald-500",
+  "Sozlamalar":        "text-slate-400",
+  "Kutubxona boshqaruvi": "text-amber-500",
+  "O'yinlar":          "text-pink-500",
+  "Mening ma'lumotlarim": "text-blue-400",
+};
+
 function NavSection({ label, children }: { label?: string; children: React.ReactNode }) {
+  const labelColor = label ? (SECTION_COLORS[label] ?? "text-muted-foreground") : "";
   return (
     <div className="space-y-0.5">
-      {label && <p className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>}
+      {label && (
+        <p className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wider ${labelColor}`}>
+          {label}
+        </p>
+      )}
       {children}
     </div>
   );
@@ -321,19 +334,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       localStorage.setItem("announcements_last_seen", String(Date.now()));
                     }
                   }}
-                  className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors ${
+                  className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all duration-150 active:scale-90 ${
                     active ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
-                  <div className="relative">
-                    <Icon className="w-5 h-5" />
+                  <div className={`relative transition-transform duration-150 ${active ? "scale-110" : "scale-100"}`}>
+                    <div className={`absolute inset-0 rounded-full transition-all duration-200 ${active ? "bg-primary/15 scale-150 blur-sm" : ""}`} />
+                    <Icon className="w-5 h-5 relative" />
                     {badge && badge > 0 ? (
                       <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center">
                         {badge > 9 ? "9+" : badge}
                       </span>
                     ) : null}
                   </div>
-                  <span className="text-[10px] font-medium">{label}</span>
+                  <span className={`text-[10px] font-medium transition-all duration-150 ${active ? "font-bold" : ""}`}>{label}</span>
+                  {active && (
+                    <span className="w-1 h-1 rounded-full bg-primary mt-0.5" />
+                  )}
                 </Link>
               );
             })}
