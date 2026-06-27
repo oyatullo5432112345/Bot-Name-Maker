@@ -9,7 +9,7 @@ import {
   Gamepad2, Trophy, BookOpen, ClipboardList, CalendarDays,
   MessageSquare, Library, Award, Video,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, Menu, X, CreditCard, Music2,
-  FileSpreadsheet,
+  FileSpreadsheet, Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -198,6 +198,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         <NavSection>
           <NavLink href="/reyting" icon={Trophy} label="Haftalik Reyting" active={isActive("/reyting")} />
+          <NavLink href="/tanga" icon={Wallet} label="Tanga Tizimi 🪙" active={isActive("/tanga")} />
         </NavSection>
 
         {!isMudir && ["admin","director"].includes(user.role) && (

@@ -48,6 +48,7 @@ const AnnouncementsPage = lazy(() => import("@/pages/announcements/index"));
 const DavomatPage = lazy(() => import("@/pages/davomat/index"));
 const ChatPage = lazy(() => import("@/pages/chat/index"));
 const StudentIdCard = lazy(() => import("@/pages/students/id-card"));
+const TangaPage = lazy(() => import("@/pages/tanga/index"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -137,6 +138,7 @@ function Router() {
       <Route path="/admin/music"><ProtectedRoute component={AdminMusicPage} roles={["admin"]} /></Route>
       <Route path="/admin/export"><ProtectedRoute component={AdminExportPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/reyting"><ProtectedRoute component={ReytingPage} /></Route>
+      <Route path="/tanga"><ProtectedRoute component={TangaPage} /></Route>
 
       <Route path="/qollanmalar"><ProtectedRoute component={QollanmalarPage} /></Route>
       <Route path="/announcements"><ProtectedRoute component={AnnouncementsPage} /></Route>

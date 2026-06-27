@@ -19,6 +19,7 @@ import olimpiadaRouter from "./olimpiada.js";
 import announcementsRouter from "./announcements.js";
 import attendanceRouter from "./attendance.js";
 import reytingRouter from "./reyting.js";
+import tangaRouter from "./tanga.js";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(olimpiadaRouter);
 router.use(announcementsRouter);
 router.use(attendanceRouter);
 router.use(reytingRouter);
+router.use(tangaRouter);
 
 export default router;
