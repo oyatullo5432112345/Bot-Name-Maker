@@ -3,7 +3,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AchievementsWidget } from "@/components/achievements-widget";
 import { GrowthChart } from "@/components/growth-chart";
-import { WorldCupBanner } from "@/components/world-cup-banner";
 import {
   useGetDashboardStats,
   getGetDashboardStatsQueryKey,
@@ -12,8 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User, Megaphone, Pin, ChevronRight, TrendingUp } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Link } from "wouter";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { Link } from "wouter";
 
 const BAR_COLORS = ["#3b82f6","#6366f1","#8b5cf6","#a855f7","#ec4899","#f97316","#eab308","#22c55e","#14b8a6","#0ea5e9"];
 
@@ -144,6 +143,39 @@ function AnnouncementsBanner() {
   );
 }
 
+interface MyTangaInfo {
+  total: number;
+  unvon: { title: string; emoji: string; color: string };
+}
+
+function TangaHeaderWidget() {
+  const { data } = useQuery<MyTangaInfo>({
+    queryKey: ["tanga-my-header"],
+    queryFn: async () => {
+      const t = localStorage.getItem("talim_auth_token");
+      const r = await fetch(`${API_BASE}/tanga/my`, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+      if (!r.ok) throw new Error("err");
+      return r.json() as Promise<MyTangaInfo>;
+    },
+    staleTime: 60_000,
+  });
+  if (!data) return null;
+  return (
+    <Link href="/tanga">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer hover:shadow-md transition-all"
+        style={{ borderColor: data.unvon.color + "40", background: data.unvon.color + "15" }}>
+        <span className="text-xl">{data.unvon.emoji}</span>
+        <div className="text-right">
+          <p className="text-xs font-bold tabular-nums" style={{ color: data.unvon.color }}>
+            {data.total} 🪙
+          </p>
+          <p className="text-[10px] text-muted-foreground leading-none mt-0.5">{data.unvon.title}</p>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   if (!user) return null;
@@ -156,11 +188,13 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <WorldCupBanner />
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Bosh sahifa</h1>
-        <p className="text-muted-foreground mt-1">{getMorningGreeting(user.full_name ?? "")}</p>
-        <p className="text-xs text-muted-foreground/70 mt-0.5 italic">{motivation}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Bosh sahifa</h1>
+          <p className="text-muted-foreground mt-1">{getMorningGreeting(user.full_name ?? "")}</p>
+          <p className="text-xs text-muted-foreground/70 mt-0.5 italic">{motivation}</p>
+        </div>
+        {isStudent && <TangaHeaderWidget />}
       </div>
       <AnnouncementsBanner />
       {isAdminOrDir && <AdminDashboard />}
