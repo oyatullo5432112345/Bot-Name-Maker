@@ -79,17 +79,26 @@ router.post("/students", requireAuth, async (req, res): Promise<void> => {
   const password = Math.floor(100000 + Math.random() * 900000).toString();
   const telegram_id = Date.now();
 
-  const data = await queryOne(
-    `INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING ${SELECT}`,
-    [telegram_id, full_name, phone_number, class_name, login, password, new Date().toISOString()]
-  );
+  try {
+    const data = await queryOne(
+      `INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING ${SELECT}`,
+      [telegram_id, full_name, phone_number, class_name, login, password, new Date().toISOString()]
+    );
 
-  if (!data) {
-    res.status(500).json({ error: "O'quvchi qo'shishda xatolik" });
-    return;
+    if (!data) {
+      res.status(500).json({ error: "O'quvchi qo'shishda xatolik" });
+      return;
+    }
+    res.status(201).json(GetStudentResponse.parse(data));
+  } catch (err) {
+    const msg = (err as Error).message ?? "";
+    if (msg.includes("unique") || msg.includes("duplicate")) {
+      res.status(409).json({ error: `"${login}" login allaqachon mavjud, qayta urinib ko'ring` });
+    } else {
+      res.status(500).json({ error: "O'quvchi qo'shishda xatolik: " + msg });
+    }
   }
-  res.status(201).json(GetStudentResponse.parse(data));
 });
 
 // GET /api/students/:id
@@ -139,15 +148,19 @@ router.patch("/students/:id", requireAuth, async (req, res): Promise<void> => {
   }
   values.push(params.data.id);
 
-  const data = await queryOne(
-    `UPDATE users SET ${setClauses.join(", ")} WHERE telegram_id = $${idx} RETURNING ${SELECT}`,
-    values
-  );
-  if (!data) {
-    res.status(404).json({ error: "O'quvchi topilmadi" });
-    return;
+  try {
+    const data = await queryOne(
+      `UPDATE users SET ${setClauses.join(", ")} WHERE telegram_id = $${idx} RETURNING ${SELECT}`,
+      values
+    );
+    if (!data) {
+      res.status(404).json({ error: "O'quvchi topilmadi" });
+      return;
+    }
+    res.json(UpdateStudentResponse.parse(data));
+  } catch (err) {
+    res.status(500).json({ error: "O'quvchini yangilashda xatolik: " + (err as Error).message });
   }
-  res.json(UpdateStudentResponse.parse(data));
 });
 
 // DELETE /api/students/:id

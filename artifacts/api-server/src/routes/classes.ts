@@ -80,16 +80,25 @@ router.post("/classes", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const data = await queryOne<{ id: string; name: string; teacher_id: string | null; created_at: string }>(
-    "INSERT INTO classes (name, created_at) VALUES ($1, $2) RETURNING id, name, teacher_id, created_at",
-    [parsed.data.name, new Date().toISOString()]
-  );
+  try {
+    const data = await queryOne<{ id: string; name: string; teacher_id: string | null; created_at: string }>(
+      "INSERT INTO classes (name, created_at) VALUES ($1, $2) RETURNING id, name, teacher_id, created_at",
+      [parsed.data.name, new Date().toISOString()]
+    );
 
-  if (!data) {
-    res.status(500).json({ error: "Sinf qo'shishda xatolik" });
-    return;
+    if (!data) {
+      res.status(500).json({ error: "Sinf qo'shishda xatolik" });
+      return;
+    }
+    res.status(201).json({ id: data.id, name: data.name, teacher_id: data.teacher_id ?? null, teacher_name: null, student_count: 0, created_at: data.created_at });
+  } catch (err) {
+    const msg = (err as Error).message ?? "";
+    if (msg.includes("unique") || msg.includes("duplicate")) {
+      res.status(409).json({ error: `"${parsed.data.name}" nomli sinf allaqachon mavjud` });
+    } else {
+      res.status(500).json({ error: "Sinf qo'shishda xatolik: " + msg });
+    }
   }
-  res.status(201).json({ id: data.id, name: data.name, teacher_id: data.teacher_id ?? null, teacher_name: null, student_count: 0, created_at: data.created_at });
 });
 
 // DELETE /api/classes/:id

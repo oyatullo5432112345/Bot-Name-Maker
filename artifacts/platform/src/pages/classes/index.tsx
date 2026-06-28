@@ -164,8 +164,11 @@ export default function ClassesList() {
           setNewClassName("");
         },
         onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-          toast({ variant: "destructive", title: "Xatolik", description: msg || "Xatolik yuz berdi" });
+          const msg =
+            (err as { data?: { error?: string } })?.data?.error ||
+            (err as Error)?.message ||
+            "Xatolik yuz berdi";
+          toast({ variant: "destructive", title: "Xatolik", description: msg });
         }
       }
     );

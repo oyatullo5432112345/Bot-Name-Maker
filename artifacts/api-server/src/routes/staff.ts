@@ -96,18 +96,27 @@ router.post("/staff", requireAuth, async (req, res): Promise<void> => {
   const login = `${base}${Math.floor(100 + Math.random() * 900)}`;
   const password = Math.floor(100000 + Math.random() * 900000).toString();
 
-  const data = await queryOne<Parameters<typeof enrichStaff>[0]>(
-    `INSERT INTO staff (full_name, role, class_id, login, password, telegram_id, subjects, can_teach)
-     VALUES ($1,$2,$3,$4,$5,NULL,'{}',false) RETURNING ${SELECT}`,
-    [parsed.data.full_name, parsed.data.role, parsed.data.class_id ?? null, login, password]
-  );
+  try {
+    const data = await queryOne<Parameters<typeof enrichStaff>[0]>(
+      `INSERT INTO staff (full_name, role, class_id, login, password, telegram_id, subjects, can_teach)
+       VALUES ($1,$2,$3,$4,$5,NULL,'{}',false) RETURNING ${SELECT}`,
+      [parsed.data.full_name, parsed.data.role, parsed.data.class_id ?? null, login, password]
+    );
 
-  if (!data) {
-    res.status(500).json({ error: "Xodim qo'shishda xatolik" });
-    return;
+    if (!data) {
+      res.status(500).json({ error: "Xodim qo'shishda xatolik" });
+      return;
+    }
+    const enriched = await enrichStaff(data);
+    res.status(201).json(enriched);
+  } catch (err) {
+    const msg = (err as Error).message ?? "";
+    if (msg.includes("unique") || msg.includes("duplicate")) {
+      res.status(409).json({ error: `"${login}" login allaqachon mavjud, qayta urinib ko'ring` });
+    } else {
+      res.status(500).json({ error: "Xodim qo'shishda xatolik: " + msg });
+    }
   }
-  const enriched = await enrichStaff(data);
-  res.status(201).json(enriched);
 });
 
 // PATCH /api/staff/:id
@@ -144,18 +153,22 @@ router.patch("/staff/:id", requireAuth, async (req, res): Promise<void> => {
   }
   values.push(params.data.id);
 
-  const data = await queryOne<Parameters<typeof enrichStaff>[0]>(
-    `UPDATE staff SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING ${SELECT}`,
-    values
-  );
+  try {
+    const data = await queryOne<Parameters<typeof enrichStaff>[0]>(
+      `UPDATE staff SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING ${SELECT}`,
+      values
+    );
 
-  if (!data) {
-    res.status(404).json({ error: "Xodim topilmadi" });
-    return;
+    if (!data) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+
+    const enriched = await enrichStaff(data);
+    res.json(UpdateStaffResponse.parse(enriched));
+  } catch (err) {
+    res.status(500).json({ error: "Xodimni yangilashda xatolik: " + (err as Error).message });
   }
-
-  const enriched = await enrichStaff(data);
-  res.json(UpdateStaffResponse.parse(enriched));
 });
 
 // DELETE /api/staff/:id
