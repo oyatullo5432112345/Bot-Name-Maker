@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Trophy, CalendarDays, Medal, Swords, BarChart3, School } from "lucide-react";
+import { Trophy, CalendarDays, Medal, Swords, BarChart3, School, Megaphone } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
 import EventsTab from "./_events";
 import GoliblarTab from "./_goliblar";
 import ZakovatTab from "./_zakovat";
 import StatsTab from "./_stats";
 import TumanReyting from "./_tuman-reyting";
+import ElonTab from "./_elon";
 
-type Tab = "tanlovlar" | "goliblar" | "zakovat" | "stats" | "tuman";
+type Tab = "tanlovlar" | "goliblar" | "zakovat" | "stats" | "tuman" | "elon";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; adminOnly?: boolean }[] = [
   { id: "tanlovlar", label: "Tanlovlar",     icon: <CalendarDays className="w-4 h-4" /> },
@@ -15,6 +16,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode; adminOnly?: boolean
   { id: "zakovat",   label: "Zakovat",       icon: <Swords className="w-4 h-4" /> },
   { id: "stats",     label: "Statistika",    icon: <BarChart3 className="w-4 h-4" />, adminOnly: true },
   { id: "tuman",     label: "Tuman Reytingi",icon: <School className="w-4 h-4" /> },
+  { id: "elon",      label: "E'lon boshqaruv", icon: <Megaphone className="w-4 h-4" />, adminOnly: true },
 ];
 
 export default function OlimpiyadaPage() {
@@ -61,6 +63,7 @@ export default function OlimpiyadaPage() {
       {tab === "zakovat"   && <ZakovatTab />}
       {tab === "stats"     && isAdmin && <StatsTab />}
       {tab === "tuman"     && <TumanReyting />}
+      {tab === "elon"      && isAdmin && <ElonTab />}
     </div>
   );
 }

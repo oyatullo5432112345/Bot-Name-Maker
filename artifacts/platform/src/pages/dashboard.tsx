@@ -8,7 +8,7 @@ import {
   getGetDashboardStatsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User, Megaphone, Pin, ChevronRight, TrendingUp } from "lucide-react";
+import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User, Megaphone, Pin, ChevronRight, TrendingUp, Trophy } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
@@ -99,6 +99,64 @@ type Announcement = {
   id: string; title: string; content: string;
   author_name: string; pinned: boolean; created_at: string;
 };
+
+interface OlimpiyadaAnnouncement {
+  id: string; title: string; start_time: string; end_time: string | null;
+}
+
+function OlimpiyadaBanner() {
+  const { data, dataUpdatedAt } = useQuery<OlimpiyadaAnnouncement | null>({
+    queryKey: ["olimpiada-announce-dashboard"],
+    queryFn: async () => {
+      const t = localStorage.getItem("talim_auth_token");
+      const r = await fetch(`${API_BASE}/olimpiada-announce`, {
+        headers: t ? { Authorization: `Bearer ${t}` } : {},
+      });
+      if (!r.ok) return null;
+      const text = await r.text();
+      return text === "null" || !text ? null : (JSON.parse(text) as OlimpiyadaAnnouncement);
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  if (!data) return null;
+  void dataUpdatedAt;
+
+  const endTime = data.end_time ? new Date(data.end_time) : null;
+  const now = new Date();
+  const isEnded = endTime && endTime < now;
+  if (isEnded) return null;
+
+  return (
+    <Link href="/olimpiada">
+      <div
+        className="rounded-2xl overflow-hidden cursor-pointer hover:scale-[1.01] transition-transform duration-200"
+        style={{
+          background: "linear-gradient(135deg, #f59e0b 0%, #f97316 40%, #ef4444 100%)",
+          boxShadow: "0 4px 20px rgba(245,158,11,0.4)",
+        }}
+      >
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div className="relative">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+              <Trophy className="w-5 h-5 text-white" />
+            </div>
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full animate-ping opacity-75" />
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-black text-sm uppercase tracking-wide">🏆 OLIMPIADA BOSHLANDI!</p>
+            <p className="text-white/90 text-xs font-medium truncate">{data.title}</p>
+          </div>
+          <div className="text-white/80 shrink-0">
+            <ChevronRight className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
 
 function AnnouncementsBanner() {
   const { data } = useQuery<Announcement[]>({
@@ -196,6 +254,7 @@ export default function Dashboard() {
         </div>
         {isStudent && <TangaHeaderWidget />}
       </div>
+      <OlimpiyadaBanner />
       <AnnouncementsBanner />
       {isAdminOrDir && <AdminDashboard />}
       {isTeacher && <TeacherDashboard />}

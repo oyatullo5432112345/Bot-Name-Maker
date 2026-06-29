@@ -182,7 +182,7 @@ function QuickSheet({
     { href: "/dars-jadvali", icon: CalendarDays, label: "Jadval", emoji: "📅" },
     { href: "/announcements", icon: Megaphone, label: "E'lonlar", emoji: "📢", badge: unreadCount },
     { href: "/tanga", icon: Wallet, label: "Tanga 🪙", emoji: "🪙" },
-    { href: "/reyting", icon: Trophy, label: "Reyting", emoji: "🏆" },
+    { href: "/olimpiada", icon: Trophy, label: "Olimpiada", emoji: "🏆" },
   ];
 
   if (!open) return null;
@@ -388,7 +388,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </NavSection>
 
         <NavSection>
-          <NavLink href="/reyting" icon={Trophy} label="Haftalik Reyting" active={isActive("/reyting")} />
           <NavLink href="/tanga" icon={Wallet} label="Tanga Tizimi 🪙" active={isActive("/tanga")} />
         </NavSection>
 
@@ -409,8 +408,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {isStudent && (
           <NavSection label="O'yinlar">
-            <NavLink href="/games" icon={Gamepad2} label="O'yinlar ro'yxati" active={isActive("/games") && location !== "/games/reyting"} />
-            <NavLink href="/games/reyting" icon={Trophy} label="Reyting" active={isActive("/games/reyting")} />
+            <NavLink href="/games" icon={Gamepad2} label="O'yinlar ro'yxati" active={isActive("/games")} />
           </NavSection>
         )}
 
@@ -422,7 +420,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {!isMudir && (
           <NavSection>
-            <NavLink href="/qollanmalar" icon={Video} label="Yo'riqnomalar" active={isActive("/qollanmalar")} />
             <NavLink
               href="/announcements"
               icon={Megaphone}
