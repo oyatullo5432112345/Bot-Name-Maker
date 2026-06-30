@@ -66,12 +66,12 @@ const PERIOD_TIMES: Record<number, string> = {
 function useCountdown(target: Date) {
   const [timeLeft, setTimeLeft] = useState(() => Math.max(0, target.getTime() - Date.now()));
   useEffect(() => {
-    if (timeLeft <= 0) return;
     const interval = setInterval(() => {
-      setTimeLeft(Math.max(0, target.getTime() - Date.now()));
+      const left = Math.max(0, target.getTime() - Date.now());
+      setTimeLeft(left);
     }, 1000);
     return () => clearInterval(interval);
-  }, [target, timeLeft]);
+  }, [target]);
   return {
     days: Math.floor(timeLeft / 86400000),
     hours: Math.floor((timeLeft % 86400000) / 3600000),
