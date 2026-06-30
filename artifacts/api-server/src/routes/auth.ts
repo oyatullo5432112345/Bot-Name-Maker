@@ -95,10 +95,10 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  type StaffRow = { id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean };
+  type StaffRow = { id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean; pro_expires_at?: string | null };
 
   const staff = await queryOne<StaffRow>(
-    "SELECT id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach FROM staff WHERE login = $1 AND password = $2",
+    "SELECT id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach, pro_expires_at FROM staff WHERE login = $1 AND password = $2",
     [trimmedLogin, trimmedPassword]
   );
 
@@ -120,6 +120,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       telegram_id: staff.telegram_id,
       subjects,
       can_teach: staff.can_teach ?? false,
+      pro_expires_at: (staff as Record<string, unknown>)["pro_expires_at"] as string | null ?? null,
     };
     const token = createToken(payload);
     res.setHeader("X-Auth-Token", token);
@@ -127,10 +128,10 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  type StudentRow = { id: string; telegram_id: number; full_name: string; class_name: string; login: string; password: string };
+  type StudentRow = { id: string; telegram_id: number; full_name: string; class_name: string; login: string; password: string; pro_expires_at?: string | null };
 
   const student = await queryOne<StudentRow>(
-    "SELECT id, telegram_id, full_name, class_name, login, password FROM users WHERE login = $1 AND password = $2",
+    "SELECT id, telegram_id, full_name, class_name, login, password, pro_expires_at FROM users WHERE login = $1 AND password = $2",
     [trimmedLogin, trimmedPassword]
   );
 
@@ -144,6 +145,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       class_name: student.class_name,
       class_id: cls?.id ?? null,
       telegram_id: student.telegram_id,
+      pro_expires_at: (student as Record<string, unknown>)["pro_expires_at"] as string | null ?? null,
     };
     const token = createToken(payload);
     res.setHeader("X-Auth-Token", token);
@@ -224,10 +226,12 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const telegram_id = linkedChatId ?? Date.now();
   const registration_date = new Date().toISOString();
 
+  const pro_expires_at = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
   try {
     await query(
-      "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-      [telegram_id, full_name, normalizedPhone, class_name, login, password, registration_date]
+      "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date, pro_expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+      [telegram_id, full_name, normalizedPhone, class_name, login, password, registration_date, pro_expires_at]
     );
 
     if (code_id) {
@@ -245,6 +249,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       class_name,
       class_id: null,
       telegram_id,
+      pro_expires_at,
     };
     const token = createToken(payload);
     res.json(LoginResponse.parse({ ...payload, token }));
@@ -331,12 +336,15 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     return;
   }
 
+  const pro_expires_at_staff = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
   try {
-    const newStaff = await queryOne<{ id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null }>(
-      "INSERT INTO staff (full_name, role, class_id, login, password, telegram_id, subjects, can_teach) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7) RETURNING id, full_name, role, class_id, login, password, telegram_id",
+    const newStaff = await queryOne<{ id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; pro_expires_at: string | null }>(
+      "INSERT INTO staff (full_name, role, class_id, login, password, telegram_id, subjects, can_teach, pro_expires_at) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8) RETURNING id, full_name, role, class_id, login, password, telegram_id, pro_expires_at",
       [full_name.trim(), role, class_id ?? null, login, password,
        subjects ?? [],
-       role === "teacher" || role === "sinf_rahbari"]
+       role === "teacher" || role === "sinf_rahbari",
+       pro_expires_at_staff]
     );
 
     if (!newStaff) {
@@ -365,6 +373,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
       class_name,
       class_id: newStaff.class_id,
       telegram_id: newStaff.telegram_id,
+      pro_expires_at: newStaff.pro_expires_at ?? null,
     };
     const token = createToken(payload);
     res.status(201).json({ ...payload, token, password: newStaff.password });

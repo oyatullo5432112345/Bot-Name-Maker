@@ -49,6 +49,8 @@ export interface AuthResult {
   telegram_id?: number | null;
   /** @nullable */
   token?: string | null;
+  /** @nullable */
+  pro_expires_at?: string | null;
 }
 
 export interface Student {

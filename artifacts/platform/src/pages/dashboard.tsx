@@ -29,6 +29,34 @@ const DAY_NAMES: Record<number, string> = {
   1: "Dushanba", 2: "Seshanba", 3: "Chorshanba",
   4: "Payshanba", 5: "Juma", 6: "Shanba",
 };
+
+const UZ_MONTHS = [
+  "Yanvar","Fevral","Mart","Aprel","May","Iyun",
+  "Iyul","Avgust","Sentabr","Oktabr","Noyabr","Dekabr",
+];
+
+function getTodayLabel(): string {
+  const now = new Date();
+  const day = DAY_NAMES[now.getDay()] ?? "Yakshanba";
+  return `${now.getDate()}-${UZ_MONTHS[now.getMonth()]}, ${day}`;
+}
+
+function DateWidget() {
+  const [label, setLabel] = useState(getTodayLabel);
+  useEffect(() => {
+    const t = setInterval(() => setLabel(getTodayLabel()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+      style={{ background: "hsl(var(--primary)/0.1)", color: "hsl(var(--primary))" }}
+    >
+      <CalendarDays className="w-3.5 h-3.5" />
+      {label}
+    </div>
+  );
+}
 const PERIOD_TIMES: Record<number, string> = {
   1: "08:00–08:45", 2: "08:55–09:40", 3: "09:50–10:35",
   4: "10:55–11:40", 5: "11:50–12:35", 6: "12:45–13:30",
@@ -248,6 +276,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
+          <div className="mb-1.5"><DateWidget /></div>
           <h1 className="text-2xl font-bold tracking-tight">Bosh sahifa</h1>
           <p className="text-muted-foreground mt-1">{getMorningGreeting(user.full_name ?? "")}</p>
           <p className="text-xs text-muted-foreground/70 mt-0.5 italic">{motivation}</p>

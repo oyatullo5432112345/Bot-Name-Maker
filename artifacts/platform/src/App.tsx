@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { BirthdayBanner } from "@/components/birthday-banner";
+import { ProWelcomeModal } from "@/components/pro-welcome-modal";
 import { useAuth } from "@/lib/use-auth";
 import { AuthGuard } from "@/components/auth-guard";
 import { AppLayout } from "@/components/layout";
@@ -162,6 +163,7 @@ function App() {
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />
               <BirthdayBanner />
+              <ProWelcomeModal />
             </WouterRouter>
             <Toaster />
           </TooltipProvider>

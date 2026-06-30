@@ -2,3 +2,5 @@
 - [Supabase credentials](supabase-creds-setup.md) — SUPABASE_URL and SUPABASE_ANON_KEY saved as shared env vars (not secrets) since anon key is publishable.
 - [DataSync preloader pattern](datasync-preloader.md) — startup data prefetch overlay uses sessionStorage key per userId to run once per session; component lives in platform/src/components/data-sync.tsx.
 - [Supabase-to-pg migration complete](supabase-to-pg-migration.md) — all routes (auth, students, staff, classes, dashboard) and bot.ts fully migrated to pg Pool via lib/db.ts; supabase.ts file left but unused.
+- [DB schema bootstrap](db-schema-bootstrap.md) — Drizzle schema (lib/db/src/schema/index.ts) is empty; real schema lives in migrations/*.sql files; must run psql against PGHOST/PGUSER/PGDATABASE manually on first deploy.
+- [Pro system](pro-system.md) — pro_expires_at (TIMESTAMPTZ, nullable) in users+staff; set to now+90d on registration; included in token payload and LoginResponse/GetMeResponse Zod schemas; AuthResult updated in both api-zod and api-client-react generated files.

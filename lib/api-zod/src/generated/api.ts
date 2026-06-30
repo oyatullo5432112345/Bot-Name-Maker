@@ -32,7 +32,8 @@ export const LoginResponse = zod.object({
   "class_name": zod.string().nullish(),
   "class_id": zod.string().nullish(),
   "telegram_id": zod.number().nullish(),
-  "token": zod.string().nullish()
+  "token": zod.string().nullish(),
+  "pro_expires_at": zod.string().nullish()
 })
 
 
@@ -47,7 +48,8 @@ export const GetMeResponse = zod.object({
   "class_name": zod.string().nullish(),
   "class_id": zod.string().nullish(),
   "telegram_id": zod.number().nullish(),
-  "token": zod.string().nullish()
+  "token": zod.string().nullish(),
+  "pro_expires_at": zod.string().nullish()
 })
 
 

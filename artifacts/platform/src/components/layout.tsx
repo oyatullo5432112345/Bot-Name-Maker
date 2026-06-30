@@ -440,6 +440,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Footer */}
       <div className="border-t px-3 py-3 space-y-2">
+        {/* Pro status badge */}
+        {user.pro_expires_at && new Date(user.pro_expires_at).getTime() > Date.now() && (
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-xl"
+            style={{ background: "linear-gradient(135deg, #f59e0b15, #f9731615)", border: "1px solid #f59e0b40" }}
+          >
+            <span className="text-base shrink-0">⭐</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-bold" style={{ color: "#f59e0b" }}>Pro versiya</p>
+              <p className="text-[10px] text-muted-foreground">
+                {Math.max(0, Math.ceil((new Date(user.pro_expires_at).getTime() - Date.now()) / 86400000))} kun qoldi
+              </p>
+            </div>
+          </div>
+        )}
         {/* Tanga info for students */}
         {isStudent && tanga && (
           <Link href="/tanga">
