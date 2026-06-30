@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/use-auth";
-import { useListClasses } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,7 +54,18 @@ function copyText(text: string, toast: ReturnType<typeof import("@/hooks/use-toa
 export default function AdminCodesPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { data: classes } = useListClasses({ query: { queryKey: ["classes"] } });
+
+  const { data: classes = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["admin-classes-list"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/classes`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) return [];
+      return res.json() as Promise<{ id: string; name: string }[]>;
+    },
+    staleTime: 60_000,
+  });
 
   const [tab, setTab] = useState<"generate" | "list">("generate");
 
