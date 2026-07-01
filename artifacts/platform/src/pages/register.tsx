@@ -810,7 +810,7 @@ function StudentRegister() {
         toast({ variant: "destructive", title: "Xatolik", description: data.error ?? "Ro'yxatdan o'tishda xatolik" });
         return;
       }
-      setCredentials({ login: data.login ?? "", password: data.password ?? "" });
+      setCredentials({ login: data.login ?? "", password: data.password ?? previewPassword });
       setPendingAuthData(data as Parameters<typeof authLogin>[0]);
     } catch {
       toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanishda muammo" });
