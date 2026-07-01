@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: talim-platform
+    runtime: node
+    region: frankfurt  # Markaziy Osiyo uchun eng yaqin
+
+    buildCommand: |
+      npm install -g pnpm &&
+      pnpm install --frozen-lockfile &&
+      pnpm --filter @workspace/platform run build &&
+      pnpm --filter @workspace/api-server run build
+
+    startCommand: node --enable-source-maps ./artifacts/api-server/dist/index.mjs
+
+    preDeployCommand: node ./artifacts/api-server/migrate.mjs
+
+    healthCheckPath: /api/classes
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: 10000
+
+      # Render PostgreSQL dan avtomatik olinadi
+      - key: DATABASE_URL
+        fromDatabase:
+          name: talim-db
+          property: connectionString
+
+      # Quyidagilarni Render Dashboard > Environment da o'rnatish kerak:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false          # Dashboard dan qo'shiladi
+
+      - key: ADMIN_ID
+        sync: false          # Admin login (masalan: admin)
+
+      - key: ADMIN_PASSWORD
+        sync: false          # Admin paroli
+
+      - key: WEBSITE_URL
+        sync: false          # https://talim-platform.onrender.com
+
+      - key: ALLOWED_ORIGINS
+        sync: false          # https://talim-platform.onrender.com (ixtiyoriy)
+
+databases:
+  - name: talim-db
+    databaseName: talim
+    user: talim
+    region: frankfurt
+    plan: free              # Bepul plan (90 kun, keyin to'lov)
