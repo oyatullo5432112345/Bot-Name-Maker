@@ -12,6 +12,7 @@ import {
   FileSpreadsheet, Wallet, ChevronRight, Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { IlimModal } from "@/components/ilim-modal";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -307,10 +308,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const unreadCount = useUnreadAnnouncements();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [quickSheetOpen, setQuickSheetOpen] = useState(false);
+  const [ilimOpen, setIlimOpen] = useState(false);
   const isStudent = user?.role === "student";
   const tanga = useTangaInfo(isStudent ?? false);
 
   useEffect(() => { setDrawerOpen(false); setQuickSheetOpen(false); }, [location]);
+
+  // Platformaga kirganida birinchi sessiyada bir marta avtomatik ko'rsatish
+  useEffect(() => {
+    if (!user) return undefined;
+    const key = "ilim_modal_shown_v1";
+    if (sessionStorage.getItem(key)) return undefined;
+    sessionStorage.setItem(key, "1");
+    const t = setTimeout(() => setIlimOpen(true), 900);
+    return () => clearTimeout(t);
+  }, [user?.id]);
 
   const handleLogout = () => {
     setQuickSheetOpen(false);
@@ -436,6 +448,30 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <NavLink href="/chat" icon={MessageSquare} label="Qo'llab-quvvatlash" active={isActive("/chat")} />
           </NavSection>
         )}
+
+        {/* Ilim O'quv Markazi */}
+        <NavSection>
+          <button
+            onClick={() => { setIlimOpen(true); setDrawerOpen(false); }}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all text-left"
+            style={{
+              background: "linear-gradient(135deg, #1e3a5f18, #1e40af18)",
+              border: "1px solid #1e40af30",
+              color: "#60a5fa",
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = "linear-gradient(135deg, #1e3a5f30, #1e40af30)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "linear-gradient(135deg, #1e3a5f18, #1e40af18)")}
+          >
+            <span className="text-base shrink-0">📚</span>
+            <span className="flex-1 font-semibold">Ilim O'quv Markazi</span>
+            <span
+              className="text-[9px] px-1.5 py-0.5 rounded-full font-bold shrink-0"
+              style={{ background: "#22c55e22", color: "#22c55e", border: "1px solid #22c55e44" }}
+            >
+              YANGI
+            </span>
+          </button>
+        </NavSection>
       </div>
 
       {/* Footer */}
@@ -517,6 +553,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         {sidebarContent}
       </aside>
+
+      {/* Ilim O'quv Markazi modal */}
+      <IlimModal open={ilimOpen} onClose={() => setIlimOpen(false)} />
 
       {/* Quick Sheet */}
       <QuickSheet
