@@ -7,6 +7,7 @@ import { AuthProvider } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { BirthdayBanner } from "@/components/birthday-banner";
 import { ProWelcomeModal } from "@/components/pro-welcome-modal";
+import { PwaUpdatePrompt } from "@/components/pwa-update-prompt";
 import { useAuth } from "@/lib/use-auth";
 import { AuthGuard } from "@/components/auth-guard";
 import { AppLayout } from "@/components/layout";
@@ -164,6 +165,7 @@ function App() {
               <Router />
               <BirthdayBanner />
               <ProWelcomeModal />
+              <PwaUpdatePrompt />
             </WouterRouter>
             <Toaster />
           </TooltipProvider>
