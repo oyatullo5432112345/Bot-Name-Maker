@@ -182,10 +182,10 @@ if [ -n "$BOT_TOKEN" ] && [ -n "$ADMIN_ID_VAL" ]; then
   if [ -n "$FILE_ID" ]; then
     node -e "
       const fs=require('fs');
-      const p='./artifacts/api-server/data/bot-settings.json';
+      const p='./artifacts/data/bot-settings.json';
       let s={}; try{s=JSON.parse(fs.readFileSync(p,'utf8'));}catch{}
       s.apkFileId='$FILE_ID'; s.apkFileName='talim-platform.apk';
-      fs.mkdirSync('./artifacts/api-server/data',{recursive:true});
+      fs.mkdirSync('./artifacts/data',{recursive:true});
       fs.writeFileSync(p,JSON.stringify(s,null,2));
       console.log('✅ file_id saqlandi');
     "

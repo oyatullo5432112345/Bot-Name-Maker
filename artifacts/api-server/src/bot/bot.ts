@@ -136,7 +136,9 @@ async function sendApkIfAvailable(ctx: { replyWithDocument: Function }): Promise
         `O'rnatish: faylni yuklab, *"Noma'lum manbalar"* ni yoqib, APK ni oching.`,
       parse_mode: "Markdown",
     });
-  } catch { /* APK yuborishda xato bo'lsa davom etaveradi */ }
+  } catch (err: any) {
+    logger.error({ err: err?.message ?? err }, "APK yuborishda xato");
+  }
 }
 
 async function sendWelcome(ctx: { replyWithPhoto: Function; reply: Function }, adminExtra = false): Promise<void> {
