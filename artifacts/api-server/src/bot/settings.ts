@@ -42,6 +42,8 @@ export interface BotSettings {
   welcomeMessage: string;
   phoneMappings: PhoneMapping[];
   onboardingVideoFileId?: string;
+  apkFileId?: string;
+  apkFileName?: string;
   videoUrls: VideoUrls;
   roleVideoUrls: RoleVideoUrls;
   staffRegCode?: string;
@@ -161,6 +163,19 @@ export function setOnboardingVideo(fileId: string): void {
   const settings = loadSettings();
   settings.onboardingVideoFileId = fileId;
   saveSettings(settings);
+}
+
+export function setApkFileId(fileId: string, fileName: string): void {
+  const settings = loadSettings();
+  settings.apkFileId = fileId;
+  settings.apkFileName = fileName;
+  saveSettings(settings);
+}
+
+export function getApkFileId(): { fileId: string; fileName: string } | null {
+  const s = loadSettings();
+  if (!s.apkFileId) return null;
+  return { fileId: s.apkFileId, fileName: s.apkFileName ?? "talim.apk" };
 }
 
 export function setStaffRegCode(code: string): void {
