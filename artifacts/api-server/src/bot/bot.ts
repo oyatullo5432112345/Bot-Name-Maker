@@ -126,6 +126,19 @@ async function findStudentByPhone(phone: string) {
   );
 }
 
+async function sendApkIfAvailable(ctx: { replyWithDocument: Function }): Promise<void> {
+  const apk = getApkFileId();
+  if (!apk) return;
+  try {
+    await ctx.replyWithDocument(apk.fileId, {
+      caption:
+        `📲 *Talim Platform — Android ilovasi*\n\n` +
+        `O'rnatish: faylni yuklab, *"Noma'lum manbalar"* ni yoqib, APK ni oching.`,
+      parse_mode: "Markdown",
+    });
+  } catch { /* APK yuborishda xato bo'lsa davom etaveradi */ }
+}
+
 async function sendWelcome(ctx: { replyWithPhoto: Function; reply: Function }, adminExtra = false): Promise<void> {
   const settings = loadSettings();
   const kb = buildWelcomeKeyboard();
@@ -450,6 +463,7 @@ export function createBot(): Bot {
         "_(Havola 15 daqiqa amal qiladi)_",
         { parse_mode: "Markdown", reply_markup: adminKb }
       );
+      await sendApkIfAvailable(ctx);
       return;
     }
 
@@ -478,6 +492,7 @@ export function createBot(): Bot {
           { parse_mode: "Markdown", reply_markup: kb }
         );
       }
+      await sendApkIfAvailable(ctx);
       return;
     }
 
@@ -523,6 +538,7 @@ export function createBot(): Bot {
       } else {
         await sendWelcome(ctx, false);
       }
+      await sendApkIfAvailable(ctx);
       return;
     }
 
@@ -535,6 +551,7 @@ export function createBot(): Bot {
       "Kodni admindan oling va quyidagi tugma orqali ro'yxatdan o'ting 👇",
       { parse_mode: "MarkdownV2", reply_markup: regKb }
     );
+    await sendApkIfAvailable(ctx);
 
     // Admin bildirishnomasi
     const adminTgId = Number(process.env["ADMIN_ID"] ?? "0");
