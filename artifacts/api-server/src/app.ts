@@ -42,6 +42,19 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
 
+// APK to'g'ridan-to'g'ri yuklab olish
+const apkPath = path.resolve(
+  import.meta.dirname ?? __dirname,
+  "../talim-platform.apk"
+);
+if (fs.existsSync(apkPath)) {
+  app.get("/download/apk", (_req, res) => {
+    res.setHeader("Content-Disposition", 'attachment; filename="talim-platform.apk"');
+    res.setHeader("Content-Type", "application/vnd.android.package-archive");
+    res.sendFile(apkPath);
+  });
+}
+
 // Production: platform frontend static fayllarni serve qilish
 const platformDist = path.resolve(
   import.meta.dirname ?? __dirname,
