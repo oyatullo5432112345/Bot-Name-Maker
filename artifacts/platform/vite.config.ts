@@ -21,7 +21,7 @@ export default defineConfig({
     tailwindcss(),
     runtimeErrorOverlay(),
     VitePWA({
-      registerType: "prompt",
+      registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "logo.png", "pwa-192.png", "pwa-512.png"],
       manifest: {
         name: "Talim Platform — Toshloq tumani",
