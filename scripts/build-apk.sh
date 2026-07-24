@@ -52,7 +52,13 @@ org.gradle.jvmargs=-Xmx2048m
 EOF
 
 mkdir -p "$TWA_DIR/app/src/main/res/values" \
-         "$TWA_DIR/app/src/main/res/drawable"
+         "$TWA_DIR/app/src/main/res/drawable" \
+         "$TWA_DIR/app/src/main/res/drawable-nodpi"
+
+# Splash screen generatsiya
+echo "🎨 Splash screen yaratilmoqda..."
+node scripts/generate-splash.mjs /tmp/talim-splash.png
+cp /tmp/talim-splash.png "$TWA_DIR/app/src/main/res/drawable-nodpi/splash_bg.png"
 
 cat > "$TWA_DIR/app/src/main/res/values/strings.xml" << EOF
 <?xml version="1.0" encoding="utf-8"?>
@@ -72,7 +78,9 @@ cat > "$TWA_DIR/app/src/main/res/values/styles.xml" << 'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <style name="Theme.TalimSplash" parent="@android:style/Theme.NoTitleBar">
-    <item name="android:windowBackground">@color/colorPrimary</item>
+    <item name="android:windowBackground">@drawable/splash</item>
+    <item name="android:windowFullscreen">true</item>
+    <item name="android:windowContentOverlay">@null</item>
   </style>
 </resources>
 EOF
@@ -80,7 +88,11 @@ EOF
 cat > "$TWA_DIR/app/src/main/res/drawable/splash.xml" << 'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-  <item android:drawable="@color/colorPrimary" />
+  <item>
+    <bitmap
+      android:src="@drawable/splash_bg"
+      android:gravity="fill"/>
+  </item>
 </layer-list>
 EOF
 
