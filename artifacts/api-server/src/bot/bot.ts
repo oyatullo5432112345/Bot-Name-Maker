@@ -126,18 +126,21 @@ async function findStudentByPhone(phone: string) {
   );
 }
 
-async function sendApkIfAvailable(ctx: { replyWithDocument: Function }): Promise<void> {
+async function sendApkIfAvailable(ctx: Context): Promise<void> {
   const apk = getApkFileId();
-  if (!apk) return;
+  const chatId = ctx.chat?.id ?? ctx.from?.id;
+  logger.info({ hasApk: !!apk, chatId, fileId: apk?.fileId?.slice(0, 20) }, "sendApkIfAvailable chaqirildi");
+  if (!apk || !chatId) return;
   try {
-    await ctx.replyWithDocument(apk.fileId, {
+    await ctx.api.sendDocument(chatId, apk.fileId, {
       caption:
         `📲 *Talim Platform — Android ilovasi*\n\n` +
         `O'rnatish: faylni yuklab, *"Noma'lum manbalar"* ni yoqib, APK ni oching.`,
       parse_mode: "Markdown",
     });
+    logger.info({ chatId }, "APK muvaffaqiyatli yuborildi ✅");
   } catch (err: any) {
-    logger.error({ err: err?.message ?? err }, "APK yuborishda xato");
+    logger.error({ err: err?.message ?? err, chatId }, "APK yuborishda xato ❌");
   }
 }
 
