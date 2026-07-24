@@ -87,16 +87,18 @@ export function loadSettings(): BotSettings {
       welcomeMessage: parsed.welcomeMessage ?? DEFAULT_SETTINGS.welcomeMessage,
       phoneMappings: parsed.phoneMappings ?? [],
       onboardingVideoFileId: parsed.onboardingVideoFileId,
+      apkFileId: parsed.apkFileId,
+      apkFileName: parsed.apkFileName,
       videoUrls: parsed.videoUrls ?? { student: "", teacher: "", staff: "" },
       roleVideoUrls: parsed.roleVideoUrls ?? {},
       staffRegCode: parsed.staffRegCode,
       roleRegCodes: {
-      director: "77d",
-      zavuch: "88Z",
-      zamDirector: "55B",
-      kutubxonachi: "99K",
-      ...(parsed.roleRegCodes ?? {}),
-    },
+        director: "77d",
+        zavuch: "88Z",
+        zamDirector: "55B",
+        kutubxonachi: "99K",
+        ...(parsed.roleRegCodes ?? {}),
+      },
     };
   } catch {
     return { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
