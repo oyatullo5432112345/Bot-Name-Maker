@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
 import { getAuthUser } from "./auth.js";
+import { notifyUser, gradeNotificationText } from "../lib/notify.js";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -104,6 +105,16 @@ router.post("/grades", async (req, res): Promise<void> => {
        user["login"] as string, user["full_name"] as string, new Date().toISOString()]
     );
     res.status(201).json(data);
+
+    // O'quvchiga Telegram orqali xabar — javobni kutmasdan, orqa fonda
+    void (async () => {
+      const student = await queryOne<{ telegram_id: number | null }>(
+        "SELECT telegram_id FROM users WHERE login = $1", [student_login]
+      );
+      if (student?.telegram_id) {
+        await notifyUser(student.telegram_id, gradeNotificationText(subject, grade, user["full_name"] as string));
+      }
+    })();
   } catch (err) {
     res.status(500).json({ error: "Baho qo'shishda xatolik", details: (err as Error).message });
   }
