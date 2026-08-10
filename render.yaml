@@ -6,7 +6,7 @@ services:
     region: frankfurt  # Markaziy Osiyo uchun eng yaqin
 
     buildCommand: |
-      pnpm install --frozen-lockfile &&
+      pnpm install --no-frozen-lockfile &&
       pnpm --filter @workspace/platform run build &&
       pnpm --filter @workspace/api-server run build
 
