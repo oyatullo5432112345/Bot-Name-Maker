@@ -66,6 +66,15 @@ CREATE TABLE IF NOT EXISTS bot_sessions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (namespace, user_id)
 );
+
+-- Bot sozlamalari (kanallar, xush kelibsiz xabari, telefon-chatId bog'lanishi,
+-- ro'yxatdan o'tish kodlari va h.k.) — avval JSON faylda edi, endi bazada,
+-- shuning uchun har deployda o'chib ketmaydi.
+CREATE TABLE IF NOT EXISTS bot_settings (
+  id         SMALLINT PRIMARY KEY,
+  data       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
 
 async function run() {
