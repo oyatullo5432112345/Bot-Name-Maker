@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
 import { requireAuth, getAuthUser } from "./auth.js";
+import { notifyUser, attendanceNotificationText } from "../lib/notify.js";
 
 const router: IRouter = Router();
 
@@ -129,6 +130,21 @@ router.post("/attendance", requireAuth, async (req, res): Promise<void> => {
     }
 
     res.json({ success: true, count: records.length });
+
+    // Kelmagan/kech qolgan o'quvchilarga Telegram xabar — orqa fonda,
+    // javobni kutmasdan (kelganlarga har kuni xabar yubormaymiz — ortiqcha).
+    void (async () => {
+      const notifyStatuses = new Set(["absent", "late", "excused"]);
+      for (const rec of records) {
+        if (!notifyStatuses.has(rec.status)) continue;
+        const student = await queryOne<{ telegram_id: number | null }>(
+          "SELECT telegram_id FROM users WHERE login = $1", [rec.student_login]
+        );
+        if (student?.telegram_id) {
+          await notifyUser(student.telegram_id, attendanceNotificationText(class_name, rec.status, date));
+        }
+      }
+    })();
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
