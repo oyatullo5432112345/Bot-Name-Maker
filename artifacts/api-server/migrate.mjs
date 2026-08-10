@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS olimpiada_announcements (
   author_id  TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Bot va admin panel sessiyalarini saqlash (server qayta ishga tushsa ham
+-- foydalanuvchi qayerda to'xtagan bo'lsa, o'sha yerdan davom etadi)
+CREATE TABLE IF NOT EXISTS bot_sessions (
+  namespace  TEXT NOT NULL,
+  user_id    BIGINT NOT NULL,
+  state      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (namespace, user_id)
+);
 `;
 
 async function run() {
