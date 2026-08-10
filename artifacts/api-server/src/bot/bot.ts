@@ -22,6 +22,7 @@ import {
 import { createMagicToken } from "../routes/auth.js";
 import { generateCertificatePNG, todayUzDate } from "../lib/certificate-generator.js";
 import { createSessionStore } from "./session-store.js";
+import { initSettings } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.resolve(__dirname, "logo.png");
@@ -57,6 +58,7 @@ type UserState =
 // qayerda to'xtagan bo'lsa, o'sha yerdan davom etadi.
 const userStates = createSessionStore<UserState>("bot_main", { type: "idle" });
 void userStates.loadAll();
+void initSettings();
 
 interface SupportTicket {
   fromUserId: number;

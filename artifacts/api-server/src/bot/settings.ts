@@ -1,10 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.resolve(__dirname, "../../data");
-const SETTINGS_FILE = path.join(DATA_DIR, "bot-settings.json");
+import { pool } from "../lib/db.js";
+import { logger } from "../lib/logger.js";
 
 export interface Channel {
   id: string;
@@ -69,45 +64,60 @@ const DEFAULT_SETTINGS: BotSettings = {
   },
 };
 
-function ensureDir(): void {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+let cache: BotSettings = { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
+let initialized = false;
 
-export function loadSettings(): BotSettings {
+/**
+ * Server ishga tushganda bir marta chaqiriladi — bazadan sozlamalarni
+ * xotiraga yuklaydi. Shu bilan `loadSettings()` boshqa joylarda hech narsa
+ * o'zgartirmasdan sinxron ishlayveradi.
+ */
+export async function initSettings(): Promise<void> {
   try {
-    ensureDir();
-    if (!fs.existsSync(SETTINGS_FILE)) {
-      saveSettings(DEFAULT_SETTINGS);
-      return { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
+    const result = await pool.query<{ data: BotSettings }>(
+      "SELECT data FROM bot_settings WHERE id = 1"
+    );
+    if (result.rows[0]?.data) {
+      const parsed = result.rows[0].data;
+      cache = {
+        channels: parsed.channels ?? [],
+        welcomeMessage: parsed.welcomeMessage ?? DEFAULT_SETTINGS.welcomeMessage,
+        phoneMappings: parsed.phoneMappings ?? [],
+        onboardingVideoFileId: parsed.onboardingVideoFileId,
+        apkFileId: parsed.apkFileId,
+        apkFileName: parsed.apkFileName,
+        videoUrls: parsed.videoUrls ?? { student: "", teacher: "", staff: "" },
+        roleVideoUrls: parsed.roleVideoUrls ?? {},
+        staffRegCode: parsed.staffRegCode,
+        roleRegCodes: { ...DEFAULT_SETTINGS.roleRegCodes, ...(parsed.roleRegCodes ?? {}) },
+      };
+    } else {
+      await pool.query(
+        "INSERT INTO bot_settings (id, data) VALUES (1, $1) ON CONFLICT (id) DO NOTHING",
+        [JSON.stringify(cache)]
+      );
     }
-    const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<BotSettings>;
-    return {
-      channels: parsed.channels ?? [],
-      welcomeMessage: parsed.welcomeMessage ?? DEFAULT_SETTINGS.welcomeMessage,
-      phoneMappings: parsed.phoneMappings ?? [],
-      onboardingVideoFileId: parsed.onboardingVideoFileId,
-      apkFileId: parsed.apkFileId,
-      apkFileName: parsed.apkFileName,
-      videoUrls: parsed.videoUrls ?? { student: "", teacher: "", staff: "" },
-      roleVideoUrls: parsed.roleVideoUrls ?? {},
-      staffRegCode: parsed.staffRegCode,
-      roleRegCodes: {
-        director: "77d",
-        zavuch: "88Z",
-        zamDirector: "55B",
-        kutubxonachi: "99K",
-        ...(parsed.roleRegCodes ?? {}),
-      },
-    };
-  } catch {
-    return { ...DEFAULT_SETTINGS, channels: [], phoneMappings: [] };
+    initialized = true;
+    logger.info("Bot sozlamalari bazadan yuklandi ✅");
+  } catch (err) {
+    logger.error({ err }, "Sozlamalarni bazadan yuklashda xato — default holatda ishlaydi");
   }
 }
 
+export function loadSettings(): BotSettings {
+  return cache;
+}
+
 export function saveSettings(settings: BotSettings): void {
-  ensureDir();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+  cache = settings;
+  // Orqa fonda bazaga yozamiz — chaqiruvchi kutib turmaydi (avvalgi sinxron API saqlanadi).
+  void pool
+    .query(
+      `INSERT INTO bot_settings (id, data, updated_at) VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+      [JSON.stringify(settings)]
+    )
+    .catch((err) => logger.warn({ err }, "Sozlamalarni saqlashda xato"));
 }
 
 export function addChannel(channel: Channel): boolean {
