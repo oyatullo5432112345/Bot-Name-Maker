@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import crypto from "node:crypto";
 import { query, queryOne } from "../lib/db.js";
 import {
   LoginBody,
@@ -8,6 +9,45 @@ import {
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
 import { getChatIdByPhone, normalizePhone } from "../bot/settings.js";
+
+// ─── Imzolangan token (HMAC-SHA256) ──────────────────────────────────────────
+// Avval token faqat base64(JSON) edi — imzosiz, ya'ni har kim o'zi
+// {"role":"admin",...} yasab, admin bo'lib kirishi mumkin edi.
+// Endi har bir token maxfiy kalit bilan imzolanadi va imzo tekshirilmasa rad etiladi.
+const TOKEN_SECRET = process.env["TOKEN_SECRET"] ?? process.env["JWT_SECRET"];
+if (!TOKEN_SECRET) {
+  logger.error(
+    "⚠️  TOKEN_SECRET (yoki JWT_SECRET) environment variable o'rnatilmagan! " +
+    "Tokenlar vaqtinchalik kalit bilan imzolanmoqda — buni Render'da albatta sozlang."
+  );
+}
+const SECRET = TOKEN_SECRET ?? "insecure-dev-secret-o-zgartiring";
+
+function sign(data: string): string {
+  return crypto.createHmac("sha256", SECRET).update(data).digest("base64url");
+}
+
+function createSignedToken(payload: unknown): string {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${body}.${sign(body)}`;
+}
+
+function parseSignedToken<T>(token: string): T | null {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [body, sig] = parts as [string, string];
+  const expected = sign(body);
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return null;
+  }
+  try {
+    return JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as T;
+  } catch {
+    return null;
+  }
+}
 
 interface MagicTokenData {
   payload: Record<string, unknown>;
@@ -19,17 +59,13 @@ export function createMagicToken(payload: Record<string, unknown>): string {
     payload,
     expiresAt: Date.now() + 15 * 60 * 1000,
   };
-  return Buffer.from(JSON.stringify(data)).toString("base64url");
+  return createSignedToken(data);
 }
 
 function parseMagicToken(token: string): MagicTokenData | null {
-  try {
-    const data = JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as MagicTokenData;
-    if (!data.payload || !data.expiresAt) return null;
-    return data;
-  } catch {
-    return null;
-  }
+  const data = parseSignedToken<MagicTokenData>(token);
+  if (!data?.payload || !data.expiresAt) return null;
+  return data;
 }
 
 const router: IRouter = Router();
@@ -38,15 +74,11 @@ const ADMIN_ID = process.env["ADMIN_ID"] ?? "";
 const ADMIN_PASSWORD = process.env["ADMIN_PASSWORD"] ?? ADMIN_ID;
 
 function createToken(payload: object): string {
-  return Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return createSignedToken(payload);
 }
 
 function parseToken(token: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  return parseSignedToken<Record<string, unknown>>(token);
 }
 
 export function getAuthUser(authHeader: string | undefined): Record<string, unknown> | null {
