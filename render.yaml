@@ -2,10 +2,10 @@ services:
   - type: web
     name: talim-platform
     runtime: node
+    plan: free
     region: frankfurt  # Markaziy Osiyo uchun eng yaqin
 
     buildCommand: |
-      npm install -g pnpm &&
       pnpm install --frozen-lockfile &&
       pnpm --filter @workspace/platform run build &&
       pnpm --filter @workspace/api-server run build
