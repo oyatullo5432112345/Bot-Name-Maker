@@ -1,4 +1,7 @@
-// Foydalanuvchi holati (state machine) — in-memory
+// Foydalanuvchi holati (state machine) — endi bazada saqlanadi
+// (server qayta ishga tushsa ham yo'qolmaydi, xotirada tez ishlaydi).
+
+import { createSessionStore } from "./session-store.js";
 
 export type UserStep =
   // O'quvchi ro'yxatdan o'tish
@@ -35,16 +38,17 @@ interface UserState {
   staffLogin?: string;
 }
 
-const states = new Map<number, UserState>();
+const store = createSessionStore<UserState>("bot_admin", { step: "idle" });
+void store.loadAll();
 
 export function getState(userId: number): UserState {
-  return states.get(userId) ?? { step: "idle" };
+  return store.get(userId) ?? { step: "idle" };
 }
 
 export function setState(userId: number, state: UserState): void {
-  states.set(userId, state);
+  store.set(userId, state);
 }
 
 export function clearState(userId: number): void {
-  states.set(userId, { step: "idle" });
+  store.set(userId, { step: "idle" });
 }

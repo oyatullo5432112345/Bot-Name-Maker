@@ -8,9 +8,6 @@ import {
   addChannel,
   removeChannel,
   setWelcomeMessage,
-  setOnboardingVideo,
-  setApkFileId,
-  getApkFileId,
   linkPhoneToChatId,
   getPhoneByChatId,
   normalizePhone,
@@ -24,6 +21,7 @@ import {
 } from "./settings.js";
 import { createMagicToken } from "../routes/auth.js";
 import { generateCertificatePNG, todayUzDate } from "../lib/certificate-generator.js";
+import { createSessionStore } from "./session-store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.resolve(__dirname, "logo.png");
@@ -47,8 +45,6 @@ type UserState =
   | { type: "awaiting_message" }
   | { type: "awaiting_support" }
   | { type: "awaiting_support_reply"; ticketId: string }
-  | { type: "awaiting_video_file" }
-  | { type: "awaiting_apk" }
   | { type: "awaiting_reg_code"; roleGroup: RegRoleGroup }
   | { type: "awaiting_personal_code"; roleGroup: RegRoleGroup | "management" }
   | { type: "awaiting_management_code" }
@@ -57,7 +53,10 @@ type UserState =
   | { type: "awaiting_login_input" }
   | { type: "awaiting_password_input"; login: string };
 
-const userStates = new Map<number, UserState>();
+// Sessiya bazaga ham yoziladi — server qayta ishga tushsa ham foydalanuvchi
+// qayerda to'xtagan bo'lsa, o'sha yerdan davom etadi.
+const userStates = createSessionStore<UserState>("bot_main", { type: "idle" });
+void userStates.loadAll();
 
 interface SupportTicket {
   fromUserId: number;
@@ -103,12 +102,7 @@ function buildSubscribeKeyboard(missingChannels: string[]): InlineKeyboard {
 }
 
 function buildWelcomeKeyboard(): InlineKeyboard {
-  const apk = getApkFileId();
-  const kb = new InlineKeyboard().url("🌐 Toshloq tuman platformasi", `${WEBSITE_URL}/login`);
-  if (apk) {
-    kb.row().text("📲 Ilovani yuklab olish (APK)", "get_apk");
-  }
-  return kb;
+  return new InlineKeyboard().url("🌐 Toshloq tuman platformasi", `${WEBSITE_URL}/login`);
 }
 
 function buildContactKeyboard(): Keyboard {
@@ -124,24 +118,6 @@ async function findStudentByPhone(phone: string) {
     "SELECT full_name, class_name, login, password FROM users WHERE phone_number = $1 LIMIT 1",
     [normalized]
   );
-}
-
-async function sendApkIfAvailable(ctx: Context): Promise<void> {
-  const apk = getApkFileId();
-  const chatId = ctx.chat?.id ?? ctx.from?.id;
-  logger.info({ hasApk: !!apk, chatId, fileId: apk?.fileId?.slice(0, 20) }, "sendApkIfAvailable chaqirildi");
-  if (!apk || !chatId) return;
-  try {
-    await ctx.api.sendDocument(chatId, apk.fileId, {
-      caption:
-        `📲 *Talim Platform — Android ilovasi*\n\n` +
-        `O'rnatish: faylni yuklab, *"Noma'lum manbalar"* ni yoqib, APK ni oching.`,
-      parse_mode: "Markdown",
-    });
-    logger.info({ chatId }, "APK muvaffaqiyatli yuborildi ✅");
-  } catch (err: any) {
-    logger.error({ err: err?.message ?? err, chatId }, "APK yuborishda xato ❌");
-  }
 }
 
 async function sendWelcome(ctx: { replyWithPhoto: Function; reply: Function }, adminExtra = false): Promise<void> {
@@ -468,7 +444,6 @@ export function createBot(): Bot {
         "_(Havola 15 daqiqa amal qiladi)_",
         { parse_mode: "Markdown", reply_markup: adminKb }
       );
-      await sendApkIfAvailable(ctx);
       return;
     }
 
@@ -497,7 +472,6 @@ export function createBot(): Bot {
           { parse_mode: "Markdown", reply_markup: kb }
         );
       }
-      await sendApkIfAvailable(ctx);
       return;
     }
 
@@ -543,7 +517,6 @@ export function createBot(): Bot {
       } else {
         await sendWelcome(ctx, false);
       }
-      await sendApkIfAvailable(ctx);
       return;
     }
 
@@ -556,7 +529,6 @@ export function createBot(): Bot {
       "Kodni admindan oling va quyidagi tugma orqali ro'yxatdan o'ting 👇",
       { parse_mode: "MarkdownV2", reply_markup: regKb }
     );
-    await sendApkIfAvailable(ctx);
 
     // Admin bildirishnomasi
     const adminTgId = Number(process.env["ADMIN_ID"] ?? "0");
@@ -1190,65 +1162,6 @@ export function createBot(): Bot {
     await sendAccountInfo(ctx, table, dbId, ctx.from.id);
   });
 
-  // ─── /setvideo (admin) ────────────────────────────────────────────────────────
-  bot.command("setvideo", async (ctx) => {
-    const userId = ctx.from?.id;
-    if (!userId || !isAdmin(userId)) {
-      await ctx.reply("⛔ Ruxsat yo'q.");
-      return;
-    }
-    userStates.set(userId, { type: "awaiting_video_file" });
-    await ctx.reply(
-      "📹 *Onboarding yoriqnoma videosini yuklash*\n\n" +
-      "Endi video faylni shu chatga yuboring (forward qilmang, to'g'ridan yuklang).\n\n" +
-      "Video saqlangandan keyin barcha yangi foydalanuvchilarga avtomatik yuboriladi.",
-      {
-        parse_mode: "Markdown",
-        reply_markup: new InlineKeyboard().text("❌ Bekor qilish", "admin_panel"),
-      }
-    );
-  });
-
-  // ─── Video message handler (admin video yuklash) ──────────────────────────────
-  bot.on("message:video", async (ctx) => {
-    const userId = ctx.from?.id;
-    if (!userId) return;
-    const state = userStates.get(userId) ?? { type: "idle" };
-    if (state.type === "awaiting_video_file" && isAdmin(userId)) {
-      const fileId = ctx.message.video.file_id;
-      setOnboardingVideo(fileId);
-      userStates.set(userId, { type: "idle" });
-      await ctx.reply(
-        "✅ *Yoriqnoma video saqlandi!*\n\n" +
-        "Endi yangi foydalanuvchilar ro'yxatdan o'tishda shu video ko'rsatiladi.\n\n" +
-        `📌 File ID: \`${fileId}\``,
-        { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("⚙️ Admin panel", "admin_panel") }
-      );
-    }
-  });
-
-  // ─── Document handler (admin APK yuklash) ────────────────────────────────────
-  bot.on("message:document", async (ctx) => {
-    const userId = ctx.from?.id;
-    if (!userId) return;
-    const state = userStates.get(userId) ?? { type: "idle" };
-    if (state.type === "awaiting_apk" && isAdmin(userId)) {
-      const doc = ctx.message.document;
-      const fileName = doc.file_name ?? "talim.apk";
-      const fileId = doc.file_id;
-      setApkFileId(fileId, fileName);
-      userStates.set(userId, { type: "idle" });
-      await ctx.reply(
-        "✅ *APK fayl saqlandi!*\n\n" +
-        `📁 Fayl nomi: \`${fileName}\`\n` +
-        `📦 Hajm: ${doc.file_size ? (doc.file_size / 1024 / 1024).toFixed(1) + " MB" : "noma'lum"}\n\n` +
-        "Endi foydalanuvchilar `/apk` buyrug'i orqali bu faylni yuklab olishlari mumkin.",
-        { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("⚙️ Admin panel", "admin_panel") }
-      );
-      return;
-    }
-  });
-
   // ─── Message handler ─────────────────────────────────────────────────────────
   bot.on("message:text", async (ctx) => {
     const userId = ctx.from.id;
@@ -1620,71 +1533,6 @@ export function createBot(): Bot {
 
     // ── Oddiy foydalanuvchi ───────────────────────────────────────────────
     await ctx.reply("Boshlash uchun /start yuboring.");
-  });
-
-  // ─── /apk — foydalanuvchiga APK yuborish ───────────────────────────────────
-  bot.command("apk", async (ctx) => {
-    const apk = getApkFileId();
-    if (!apk) {
-      await ctx.reply(
-        "📲 APK fayl hali yuklanmagan.\n\nAdmin bilan bog'laning.",
-        { reply_markup: new InlineKeyboard().url("🌐 Veb versiya", `${WEBSITE_URL}/login`) }
-      );
-      return;
-    }
-    await ctx.replyWithDocument(apk.fileId, {
-      caption:
-        `📲 *Talim Platform — Android ilovasi*\n\n` +
-        `📁 Fayl: \`${apk.fileName}\`\n\n` +
-        `*O'rnatish uchun:*\n` +
-        `1\\. Faylni yuklab oling\n` +
-        `2\\. Telefonингиздаги *"Noma'lum manbalar"* ni yoqing\n` +
-        `3\\. APK faylni oching va o'rnating`,
-      parse_mode: "MarkdownV2",
-      reply_markup: new InlineKeyboard().url("🌐 Veb versiya ham mavjud", `${WEBSITE_URL}/login`),
-    });
-  });
-
-  // ─── Callback: get_apk ──────────────────────────────────────────────────────
-  bot.callbackQuery("get_apk", async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const apk = getApkFileId();
-    if (!apk) {
-      await ctx.reply("📲 APK fayl hali yuklanmagan. Admin bilan bog'laning.");
-      return;
-    }
-    await ctx.replyWithDocument(apk.fileId, {
-      caption:
-        `📲 *Talim Platform — Android ilovasi*\n\n` +
-        `📁 Fayl: \`${apk.fileName}\`\n\n` +
-        `*O'rnatish uchun:*\n` +
-        `1\\. Faylni yuklab oling\n` +
-        `2\\. Telefonингиздаги *"Noma'lum manbalar"* ni yoqing\n` +
-        `3\\. APK faylni oching va o'rnating`,
-      parse_mode: "MarkdownV2",
-      reply_markup: new InlineKeyboard().url("🌐 Veb versiya ham mavjud", `${WEBSITE_URL}/login`),
-    });
-  });
-
-  // ─── /setapk — admin APK faylini yuklaydi ───────────────────────────────────
-  bot.command("setapk", async (ctx) => {
-    const userId = ctx.from?.id;
-    if (!userId || !isAdmin(userId)) {
-      await ctx.reply("⛔ Bu buyruq faqat admin uchun.");
-      return;
-    }
-    const current = getApkFileId();
-    userStates.set(userId, { type: "awaiting_apk" });
-    await ctx.reply(
-      "📲 *APK faylni yuklash*\n\n" +
-      (current ? `Hozirgi APK: \`${current.fileName}\`\n\n` : "Hozirda APK yuklanmagan.\n\n") +
-      "Endi Android APK faylini shu chatga yuboring.\n\n" +
-      "Yuborilgandan keyin barcha foydalanuvchilar `/apk` orqali olishlari mumkin bo'ladi.",
-      {
-        parse_mode: "Markdown",
-        reply_markup: new InlineKeyboard().text("❌ Bekor qilish", "admin_close"),
-      }
-    );
   });
 
   // ─── /mahfiykod — admin ro'yxat kodini o'rnatadi ───────────────────────────
