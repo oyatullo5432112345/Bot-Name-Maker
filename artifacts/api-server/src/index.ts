@@ -1,6 +1,11 @@
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
 import { createServer } from "http";
+import { initSettings } from "./bot/settings.js";
+
+// Bot sozlamalarini bazadan yuklaymiz — bot yoqilmagan bo'lsa ham,
+// admin panel /api/settings orqali ularni o'qiy/yoza olishi kerak.
+void initSettings();
 
 const rawPort = process.env["PORT"];
 
