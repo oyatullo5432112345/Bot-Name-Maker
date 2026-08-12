@@ -6,7 +6,7 @@ import { useLogout } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, Users, GraduationCap, School, LogOut,
-  Gamepad2, Trophy, BookOpen, ClipboardList, CalendarDays,
+  Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays,
   MessageSquare, Library, Award, Video,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
   FileSpreadsheet, Wallet, ChevronRight, Settings,
@@ -390,6 +390,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <NavLink href="/baholash" icon={ClipboardList} label="Baholash" active={isActive("/baholash")} />
             {canViewDavomat && <NavLink href="/davomat" icon={CalendarCheck} label="Davomat" active={isActive("/davomat")} />}
             <NavLink href="/dars-jadvali" icon={CalendarDays} label="Dars jadvali" active={isActive("/dars-jadvali")} />
+            <NavLink href="/monitoring" icon={ClipboardCheck} label="Monitoring" active={isActive("/monitoring")} />
             <NavLink href="/library" icon={Library} label="Kutubxona" active={isActive("/library")} />
             <NavLink href="/certificate" icon={Award} label="Sertifikat" active={isActive("/certificate")} />
           </NavSection>
@@ -633,4 +634,4 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
-}
+        }
