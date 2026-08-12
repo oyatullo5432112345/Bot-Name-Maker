@@ -388,6 +388,7 @@ function StaffRegisterModal({
   const cfg = ROLE_CONFIG[role];
   const colors = cfg ? COLOR_CLASSES[cfg.color] : null;
   const [customSubject, setCustomSubject] = useState("");
+  const [subjectSearch, setSubjectSearch] = useState("");
   const [submitError, setSubmitError] = useState("");
 
   const handlePhoneChange = (val: string) => {
@@ -615,20 +616,26 @@ function StaffRegisterModal({
             {isTeacher && (
               <div className="space-y-2">
                 <div>
-                  <Label>O'qitiladigan fanlar</Label>
+                  <Label>Qaysi fandan dars berasiz?</Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Kamida 1 ta fan tanlang — keyin admin sinflarni biriktiradi
+                    Kamida 1 ta fan tanlang. Bir nechta fandan dars bersangiz — hammasini belgilang.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-1.5 p-3 rounded-lg border border-blue-200 bg-blue-50/50">
-                  {COMMON_SUBJECTS.map(subject => {
+                <Input
+                  placeholder="Fan nomini qidirish..."
+                  value={subjectSearch}
+                  onChange={e => setSubjectSearch(e.target.value)}
+                  className="mb-1"
+                />
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 p-3 rounded-lg border border-blue-200 bg-blue-50/50 max-h-56 overflow-y-auto">
+                  {COMMON_SUBJECTS.filter(s => s.toLowerCase().includes(subjectSearch.trim().toLowerCase())).map(subject => {
                     const selected = selectedSubjects.includes(subject);
                     return (
                       <button
                         key={subject}
                         type="button"
                         onClick={() => toggleSubject(subject)}
-                        className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-all ${
+                        className={`px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all text-left ${
                           selected
                             ? "bg-blue-600 text-white border-blue-600 shadow-sm"
                             : "bg-white text-blue-700 border-blue-200 hover:bg-blue-100"
@@ -641,7 +648,7 @@ function StaffRegisterModal({
                   })}
                 </div>
 
-                {/* Qo'lda yozish */}
+                {/* Ro'yxatda yo'q fan */}
                 <div className="flex gap-2">
                   <Input
                     placeholder="Ro'yxatda yo'q fan nomini yozing..."
