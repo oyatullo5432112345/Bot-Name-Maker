@@ -21,6 +21,7 @@ const useSSL = process.env.NODE_ENV === "production" || DATABASE_URL.includes("r
 const pool = new pg.Pool({
   connectionString: DATABASE_URL,
   ssl: useSSL ? { rejectUnauthorized: false } : false,
+  connectionTimeoutMillis: 10000,
 });
 
 // migrate.mjs artifacts/api-server/ ichida, migrations/ loyiha ildizida
@@ -78,9 +79,13 @@ CREATE TABLE IF NOT EXISTS bot_settings (
 `;
 
 async function run() {
-  console.log("🚀 Migration boshlanmoqda...\n");
+  process.stdout.write("🚀 Migration boshlanmoqda...\n");
 
   try {
+    process.stdout.write("▶ Bazaga ulanmoqda...\n");
+    await pool.query("SELECT 1");
+    process.stdout.write("✅ Bazaga ulanish muvaffaqiyatli\n");
+
     for (const file of SQL_FILES) {
       const filePath = path.join(MIGRATIONS_DIR, file);
       if (!fs.existsSync(filePath)) {
