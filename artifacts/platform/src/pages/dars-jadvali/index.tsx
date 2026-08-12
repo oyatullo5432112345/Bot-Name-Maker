@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/lib/use-auth";
 import { useListClasses, getListClassesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus, Pencil, Trash2, CalendarDays, BookOpen } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CalendarDays, BookOpen, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -252,6 +252,13 @@ export default function DarsJadvaliPage() {
   const [formSubject, setFormSubject] = useState("");
   const [formTeacherId, setFormTeacherId] = useState("");
   const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    total_parsed: number;
+    saved: number;
+    unmatched: { row: { class_name: string; subject: string }; reason: string }[];
+  } | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -349,6 +356,38 @@ export default function DarsJadvaliPage() {
     setSaving(false);
   };
 
+  const handleImportFile = async (file: File | null) => {
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+        reader.onerror = () => reject(new Error("Faylni o'qib bo'lmadi"));
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch(`${API_BASE}/timetable/import`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ file_base64: base64, media_type: file.type }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Xatolik", description: data.error ?? "Yuklashda xatolik" });
+      } else {
+        setImportResult(data);
+        toast({ title: "Jadval yuklandi", description: `${data.saved} ta dars saqlandi` });
+        if (selectedClassId) void loadTimetable(selectedClassId);
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanib bo'lmadi" });
+    }
+    setImporting(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleDelete = async (id: string) => {
     try {
       const res = await fetch(`${API_BASE}/timetable/${id}`, {
@@ -397,12 +436,55 @@ export default function DarsJadvaliPage() {
         </div>
 
         {selectedClassId && isEditor && (
-          <Button onClick={openAdd}>
-            <Plus className="w-4 h-4 mr-2" />
-            Dars qo'shish
+          <Button variant="outline" onClick={openAdd}>
+            <Pencil className="w-4 h-4 mr-2" />
+            Bitta darsni qo'lda tuzatish
           </Button>
         )}
       </div>
+
+      {isEditor && (
+        <Card className="border-dashed">
+          <CardContent className="py-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+              <div>
+                <p className="font-medium text-sm">Dars jadvalini yuklab, avtomatik to'ldirish</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Rasmiy dars jadvali rasmi yoki PDF faylini yuklang — barcha sinflar, o'qituvchilar va soatlar avtomatik kiritiladi.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={(e) => void handleImportFile(e.target.files?.[0] ?? null)}
+                />
+                <Button onClick={() => fileInputRef.current?.click()} disabled={importing}>
+                  {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                  {importing ? "O'qilmoqda..." : "Jadval faylini yuklash"}
+                </Button>
+              </div>
+            </div>
+            {importResult && (
+              <div className="mt-3 text-sm rounded-lg bg-secondary/50 p-3">
+                <p>✅ {importResult.saved} ta dars saqlandi ({importResult.total_parsed} tasi rasmda topildi)</p>
+                {importResult.unmatched.length > 0 && (
+                  <div className="mt-2 text-amber-600">
+                    <p className="font-medium">⚠️ {importResult.unmatched.length} ta qatorni qo'lda tekshiring:</p>
+                    <ul className="list-disc pl-5 mt-1 space-y-0.5">
+                      {importResult.unmatched.map((u, i) => (
+                        <li key={i}>{u.row.class_name} — {u.row.subject}: {u.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {!selectedClassId ? (
         <Card>
@@ -443,7 +525,7 @@ export default function DarsJadvaliPage() {
                   {isEditor && (
                     <div className="mt-3">
                       <Button variant="outline" size="sm" onClick={openAdd}>
-                        <Plus className="w-4 h-4 mr-1" /> Dars qo'shish
+                        <Plus className="w-4 h-4 mr-1" /> Qo'lda qo'shish
                       </Button>
                     </div>
                   )}
