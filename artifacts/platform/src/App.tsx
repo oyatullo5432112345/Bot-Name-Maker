@@ -38,9 +38,8 @@ const LibraryPage = lazy(() => import("@/pages/library/index"));
 const NewBookPage = lazy(() => import("@/pages/library/new"));
 const LibraryLoansPage = lazy(() => import("@/pages/library/loans"));
 const CertificatePage = lazy(() => import("@/pages/certificate"));
-const AdminVideosPage = lazy(() => import("@/pages/admin/videos"));
+
 const AdminCodesPage = lazy(() => import("@/pages/admin/codes"));
-const AdminExportPage = lazy(() => import("@/pages/admin/export"));
 const ReytingPage = lazy(() => import("@/pages/reyting/index"));
 const QollanmalarPage = lazy(() => import("@/pages/qollanmalar"));
 const OlimpiyadaPage = lazy(() => import("@/pages/olimpiada/index"));
@@ -136,9 +135,7 @@ function Router() {
       <Route path="/certificate"><ProtectedRoute component={CertificatePage} /></Route>
       <Route path="/olimpiada"><ProtectedRoute component={OlimpiyadaPage} /></Route>
 
-      <Route path="/admin/videos"><ProtectedRoute component={AdminVideosPage} roles={["admin","director","mudir"]} /></Route>
       <Route path="/admin/codes"><ProtectedRoute component={AdminCodesPage} roles={["admin","director","mudir"]} /></Route>
-      <Route path="/admin/export"><ProtectedRoute component={AdminExportPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/reyting"><ProtectedRoute component={ReytingPage} /></Route>
       <Route path="/tanga"><ProtectedRoute component={TangaPage} /></Route>
 
