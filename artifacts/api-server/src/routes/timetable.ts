@@ -15,7 +15,7 @@ export const PERIOD_TIMES: Record<number, string> = {
   7: "13:40 - 14:25", 8: "14:35 - 15:20",
 };
 
-async function enrichEntry(entry: {
+export async function enrichEntry(entry: {
   id: string; class_id: string; day_of_week: number;
   period: number; subject: string; teacher_id: string | null; created_at: string;
 }) {
