@@ -1,9 +1,7 @@
-import { useState } from "react";
+import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/use-auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Trophy, Star, Users, BookOpen, TrendingUp } from "lucide-react";
+import { Trophy, Gamepad2, Wallet, Medal, ChevronRight } from "lucide-react";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -12,226 +10,120 @@ const authH = (): HeadersInit => {
   return t ? { Authorization: `Bearer ${t}` } : {};
 };
 
-interface StudentRank {
-  rank: number; student_login: string; student_name: string;
-  class_name: string; avg_grade: number; total_grades: number; fives: number;
+// ─────────────────────────────────────────────────────────────
+// Reyting Markazi — avval 4 ta mustaqil sahifada tarqoq bo'lgan
+// reyting tizimlarini (baholar, o'yinlar, tanga/unvon, olimpiada)
+// bitta joyga jamlaydi. Har birining backend/mantiqi o'z holicha
+// ajratilgan qoladi — faqat foydalanuvchiga bitta "eshik" ko'rsatiladi.
+// ─────────────────────────────────────────────────────────────
+
+interface Card {
+  key: string;
+  title: string;
+  desc: string;
+  href: string;
+  icon: React.ReactNode;
+  gradient: string;
 }
 
-interface ClassRank {
-  rank: number; class_name: string; avg_grade: number;
-  total_grades: number; fives: number; student_count: number;
-}
+const CARDS: Card[] = [
+  {
+    key: "baholar",
+    title: "Baholar reytingi",
+    desc: "O'quvchilar, sinflar va fanlar bo'yicha eng yuqori baholovchilar",
+    href: "/reyting",
+    icon: <Medal className="w-6 h-6" />,
+    gradient: "from-blue-500 to-indigo-600",
+  },
+  {
+    key: "oyinlar",
+    title: "O'yinlar reytingi",
+    desc: "Ta'lim o'yinlarida to'plangan ballar bo'yicha eng zo'rlar",
+    href: "/games/reyting",
+    icon: <Gamepad2 className="w-6 h-6" />,
+    gradient: "from-pink-500 to-rose-600",
+  },
+  {
+    key: "tanga",
+    title: "Tanga va unvonlar",
+    desc: "Tanga to'plab unvon oshiring — reyting jadvali",
+    href: "/tanga",
+    icon: <Wallet className="w-6 h-6" />,
+    gradient: "from-amber-500 to-orange-600",
+  },
+  {
+    key: "olimpiada",
+    title: "Olimpiada reytingi",
+    desc: "Tuman va maktab bo'yicha olimpiada g'oliblari",
+    href: "/olimpiada",
+    icon: <Trophy className="w-6 h-6" />,
+    gradient: "from-emerald-500 to-teal-600",
+  },
+];
 
-interface SubjectStar {
-  subject: string; student_login: string; student_name: string;
-  class_name: string; avg_grade: number; total_grades: number;
-}
+interface TangaInfo { total: number; unvon: { title: string; emoji: string } }
 
-const MEDAL: Record<number, string> = { 1: "🥇", 2: "🥈", 3: "🥉" };
-const GRADE_COLOR = (g: number) => {
-  if (g >= 4.5) return "text-green-600 dark:text-green-400";
-  if (g >= 3.5) return "text-blue-600 dark:text-blue-400";
-  if (g >= 2.5) return "text-yellow-600 dark:text-yellow-400";
-  return "text-red-600 dark:text-red-400";
-};
-
-type Tab = "students" | "classes" | "subjects";
-
-export default function ReytingPage() {
+export default function ReytingMarkaziPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>("students");
+  const isStudent = user?.role === "student";
 
-  const { data: students = [], isLoading: loadingS } = useQuery<StudentRank[]>({
-    queryKey: ["reyting-students"],
+  const { data: tanga } = useQuery<TangaInfo>({
+    queryKey: ["reyting-markazi-tanga"],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/reyting/students`, { headers: authH() });
-      if (!r.ok) return [];
-      return r.json() as Promise<StudentRank[]>;
+      const r = await fetch(`${API_BASE}/tanga/my`, { headers: authH() });
+      if (!r.ok) throw new Error("err");
+      return r.json() as Promise<TangaInfo>;
     },
-    staleTime: 5 * 60_000,
-    enabled: tab === "students",
+    enabled: isStudent,
+    staleTime: 60_000,
   });
-
-  const { data: classes = [], isLoading: loadingC } = useQuery<ClassRank[]>({
-    queryKey: ["reyting-classes"],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/reyting/classes`, { headers: authH() });
-      if (!r.ok) return [];
-      return r.json() as Promise<ClassRank[]>;
-    },
-    staleTime: 5 * 60_000,
-    enabled: tab === "classes",
-  });
-
-  const { data: subjects = [], isLoading: loadingSub } = useQuery<SubjectStar[]>({
-    queryKey: ["reyting-subjects"],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/reyting/subjects`, { headers: authH() });
-      if (!r.ok) return [];
-      return r.json() as Promise<SubjectStar[]>;
-    },
-    staleTime: 5 * 60_000,
-    enabled: tab === "subjects",
-  });
-
-  const myLogin = user?.login;
-  const isLoading = (tab === "students" && loadingS) || (tab === "classes" && loadingC) || (tab === "subjects" && loadingSub);
-
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "students", label: "O'quvchilar", icon: <TrendingUp className="w-3.5 h-3.5" /> },
-    { id: "classes",  label: "Sinflar",     icon: <Users className="w-3.5 h-3.5" /> },
-    { id: "subjects", label: "Fan yulduzlari", icon: <Star className="w-3.5 h-3.5" /> },
-  ];
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center">
-          <Trophy className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold">Haftalik Reyting</h1>
-          <p className="text-sm text-muted-foreground">Oxirgi 7 kun natijalariga ko'ra</p>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Reyting Markazi</h1>
+        <p className="text-muted-foreground mt-1">
+          Barcha reyting turlari — bitta joyda
+        </p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 bg-muted rounded-xl">
-        {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
-              tab === t.id
-                ? "bg-background shadow text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.icon} {t.label}
-          </button>
+      {isStudent && tanga && (
+        <div className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 p-4 text-white flex items-center justify-between">
+          <div>
+            <p className="text-white/80 text-sm">Sizning holatingiz</p>
+            <p className="text-2xl font-bold mt-0.5">{tanga.unvon.emoji} {tanga.unvon.title}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-3xl font-black">{tanga.total}</p>
+            <p className="text-white/70 text-xs">🪙 tanga</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {CARDS.map((c) => (
+          <Link key={c.key} href={c.href}>
+            <div className="group relative rounded-2xl overflow-hidden border hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer bg-card">
+              <div className={`h-2 bg-gradient-to-r ${c.gradient}`} />
+              <div className="p-5 flex items-center gap-4">
+                <div className={`shrink-0 rounded-xl p-3 bg-gradient-to-br ${c.gradient} text-white shadow-sm`}>
+                  {c.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-base">{c.title}</h3>
+                  <p className="text-muted-foreground text-sm mt-0.5">{c.desc}</p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </div>
+          </Link>
         ))}
       </div>
 
-      {/* Content */}
-      {isLoading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      ) : tab === "students" ? (
-        <div className="space-y-2">
-          {students.length === 0 ? (
-            <Card><CardContent className="py-12 text-center text-muted-foreground">
-              Bu hafta hali baho kiritilmagan
-            </CardContent></Card>
-          ) : students.map(s => (
-            <Card
-              key={s.student_login}
-              className={`transition-all ${s.student_login === myLogin ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20" : ""}`}
-            >
-              <CardContent className="py-3 px-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 flex items-center justify-center shrink-0">
-                    {MEDAL[s.rank] ? (
-                      <span className="text-xl">{MEDAL[s.rank]}</span>
-                    ) : (
-                      <span className="text-sm font-bold text-muted-foreground tabular-nums">{s.rank}</span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className={`font-semibold text-sm truncate ${s.student_login === myLogin ? "text-primary" : ""}`}>
-                        {s.student_name}
-                        {s.student_login === myLogin && <span className="text-[10px] text-primary ml-1">(Sen)</span>}
-                      </p>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{s.class_name} · {s.total_grades} ta baho</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className={`text-lg font-bold tabular-nums ${GRADE_COLOR(s.avg_grade)}`}>
-                      {s.avg_grade.toFixed(1)}
-                    </p>
-                    {s.fives > 0 && (
-                      <p className="text-[10px] text-muted-foreground">⭐ {s.fives} ta besh</p>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : tab === "classes" ? (
-        <div className="space-y-2">
-          {classes.length === 0 ? (
-            <Card><CardContent className="py-12 text-center text-muted-foreground">
-              Bu hafta hali baho kiritilmagan
-            </CardContent></Card>
-          ) : classes.map(c => (
-            <Card key={c.class_name}>
-              <CardContent className="py-3 px-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 flex items-center justify-center shrink-0">
-                    {MEDAL[c.rank] ? (
-                      <span className="text-xl">{MEDAL[c.rank]}</span>
-                    ) : (
-                      <span className="text-sm font-bold text-muted-foreground">{c.rank}</span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm">{c.class_name} sinf</p>
-                    <p className="text-xs text-muted-foreground">
-                      {c.student_count} o'quvchi · {c.total_grades} ta baho · ⭐ {c.fives} ta besh
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className={`text-lg font-bold tabular-nums ${GRADE_COLOR(c.avg_grade)}`}>
-                      {c.avg_grade.toFixed(1)}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">o'rtacha</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        /* Subject stars */
-        <div className="space-y-3">
-          <p className="text-xs text-muted-foreground text-center">Oxirgi 30 kun · Har fandan eng yuqori o'rtacha baho</p>
-          {subjects.length === 0 ? (
-            <Card><CardContent className="py-12 text-center text-muted-foreground">
-              Hali ma'lumot yo'q
-            </CardContent></Card>
-          ) : (
-            <div className="grid grid-cols-1 gap-2">
-              {subjects.map(s => (
-                <Card key={s.subject} className={s.student_login === myLogin ? "border-primary/40 bg-primary/5" : ""}>
-                  <CardContent className="py-3 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center shrink-0">
-                        <BookOpen className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">{s.subject}</Badge>
-                          {s.student_login === myLogin && (
-                            <span className="text-[10px] text-primary font-medium">Sen! 🎉</span>
-                          )}
-                        </div>
-                        <p className="text-sm font-semibold mt-0.5">{s.student_name}</p>
-                        <p className="text-xs text-muted-foreground">{s.class_name}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">⭐ {s.avg_grade.toFixed(1)}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
+        Har bir reyting turi o'z mantig'i bo'yicha alohida hisoblanadi — bu yerda esa faqat
+        ularning barchasiga tezroq o'tish uchun bitta markaziy sahifa jamlangan.
+      </div>
     </div>
   );
 }
