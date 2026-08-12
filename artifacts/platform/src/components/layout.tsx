@@ -7,9 +7,9 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, Users, GraduationCap, School, LogOut,
   Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays,
-  MessageSquare, Library, Award, Video,
+  MessageSquare, Library, Award,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
-  FileSpreadsheet, Wallet, ChevronRight, Settings,
+  Wallet, ChevronRight, Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IlimModal } from "@/components/ilim-modal";
@@ -345,11 +345,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     href === "/dashboard" ? location === href || location === "/" : location.startsWith(href);
 
   const mobileNavItems: NavItem[] = !isMudir ? [
-    { href: "/dashboard", icon: LayoutDashboard, label: "Bosh" },
-    { href: "/baholash", icon: ClipboardList, label: "Baholar" },
-    ...(canViewDavomat ? [{ href: "/davomat", icon: CalendarCheck, label: "Davomat" }] : []),
-    { href: "/announcements", icon: Megaphone, label: "E'lonlar", badge: unreadCount },
+    { href: "/monitoring", icon: ClipboardCheck, label: "Monitoring" },
     { href: "/dars-jadvali", icon: CalendarDays, label: "Jadval" },
+    { href: "/games", icon: Gamepad2, label: "O'yinlar" },
+    { href: "/announcements", icon: Megaphone, label: "E'lonlar", badge: unreadCount },
+    { href: "/olimpiada", icon: Trophy, label: "Olimpiada" },
   ] : [
     { href: "/olimpiada", icon: Trophy, label: "Olimpiada" },
   ];
@@ -379,9 +379,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
         <NavSection>
           {!isMudir && <NavLink href="/dashboard" icon={LayoutDashboard} label="Bosh sahifa" active={isActive("/dashboard")} />}
+          <NavLink href="/monitoring" icon={ClipboardCheck} label="Monitoring" active={isActive("/monitoring")} />
           {canViewStudents && <NavLink href="/students" icon={GraduationCap} label="O'quvchilar" active={isActive("/students")} />}
           {canViewClasses && <NavLink href="/classes" icon={School} label="Sinflar" active={isActive("/classes")} />}
           {canViewStaff && <NavLink href="/staff" icon={Users} label="Xodimlar" active={isActive("/staff")} />}
+          {isStudent && <NavLink href="/games" icon={Gamepad2} label="O'yinlar" active={isActive("/games")} />}
         </NavSection>
 
         {!isMudir && (
@@ -390,7 +392,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <NavLink href="/baholash" icon={ClipboardList} label="Baholash" active={isActive("/baholash")} />
             {canViewDavomat && <NavLink href="/davomat" icon={CalendarCheck} label="Davomat" active={isActive("/davomat")} />}
             <NavLink href="/dars-jadvali" icon={CalendarDays} label="Dars jadvali" active={isActive("/dars-jadvali")} />
-            <NavLink href="/monitoring" icon={ClipboardCheck} label="Monitoring" active={isActive("/monitoring")} />
             <NavLink href="/library" icon={Library} label="Kutubxona" active={isActive("/library")} />
             <NavLink href="/certificate" icon={Award} label="Sertifikat" active={isActive("/certificate")} />
           </NavSection>
@@ -407,8 +408,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {!isMudir && ["admin","director"].includes(user.role) && (
           <NavSection label="Sozlamalar">
             <NavLink href="/admin/codes" icon={KeyRound} label="Mahfiy kodlar" active={isActive("/admin/codes")} />
-            <NavLink href="/admin/videos" icon={Video} label="Onboarding videolari" active={isActive("/admin/videos")} />
-            <NavLink href="/admin/export" icon={FileSpreadsheet} label="Hujjat Generator" active={isActive("/admin/export")} />
           </NavSection>
         )}
 
@@ -416,12 +415,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <NavSection label="Kutubxona boshqaruvi">
             <NavLink href="/library/loans" icon={ClipboardList} label="Ijara jurnali" active={isActive("/library/loans")} />
             <NavLink href="/library/new" icon={BookOpen} label="Kitob qo'shish" active={isActive("/library/new")} />
-          </NavSection>
-        )}
-
-        {isStudent && (
-          <NavSection label="O'yinlar">
-            <NavLink href="/games" icon={Gamepad2} label="O'yinlar ro'yxati" active={isActive("/games")} />
           </NavSection>
         )}
 
