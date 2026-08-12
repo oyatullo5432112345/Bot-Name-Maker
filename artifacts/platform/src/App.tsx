@@ -49,6 +49,9 @@ const DavomatPage = lazy(() => import("@/pages/davomat/index"));
 const ChatPage = lazy(() => import("@/pages/chat/index"));
 const StudentIdCard = lazy(() => import("@/pages/students/id-card"));
 const TangaPage = lazy(() => import("@/pages/tanga/index"));
+const MonitoringIndex = lazy(() => import("@/pages/monitoring/index"));
+const MonitoringAdmin = lazy(() => import("@/pages/monitoring/admin"));
+const MonitoringTake = lazy(() => import("@/pages/monitoring/take"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -138,6 +141,10 @@ function Router() {
       <Route path="/admin/export"><ProtectedRoute component={AdminExportPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/reyting"><ProtectedRoute component={ReytingPage} /></Route>
       <Route path="/tanga"><ProtectedRoute component={TangaPage} /></Route>
+
+      <Route path="/monitoring/admin"><ProtectedRoute component={MonitoringAdmin} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/monitoring/:id"><ProtectedRoute component={MonitoringTake} /></Route>
+      <Route path="/monitoring"><ProtectedRoute component={MonitoringIndex} /></Route>
 
       <Route path="/qollanmalar"><ProtectedRoute component={QollanmalarPage} /></Route>
       <Route path="/announcements"><ProtectedRoute component={AnnouncementsPage} /></Route>
