@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 import { query, queryOne } from "../lib/db.js";
 import {
   LoginBody,
@@ -22,6 +23,52 @@ if (!TOKEN_SECRET) {
   );
 }
 const SECRET = TOKEN_SECRET ?? "insecure-dev-secret-o-zgartiring";
+
+// ─── Parol xesh(hash)lash (bcrypt) ───────────────────────────────────────────
+// Eski bazada parollar oddiy matn (plaintext) holida saqlangan edi.
+// Endi yangi parollar bcrypt bilan xeshlanadi. Eski (hali xeshlanmagan)
+// parollar bilan ham kirish davom etadi — muvaffaqiyatli kirishda ular
+// avtomatik ravishda bcrypt xeshiga "yangilanadi" (upgrade-on-login),
+// shuning uchun alohida katta migratsiya oynasi shart emas.
+const BCRYPT_ROUNDS = 10;
+
+export async function hashPassword(plain: string): Promise<string> {
+  return bcrypt.hash(plain, BCRYPT_ROUNDS);
+}
+
+function looksHashed(stored: string): boolean {
+  return stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$");
+}
+
+/**
+ * Kiritilgan parolni bazadagi qiymat bilan solishtiradi.
+ * - Agar bazada bcrypt xeshi bo'lsa — bcrypt.compare bilan tekshiradi.
+ * - Agar bazada hali eski plaintext parol bo'lsa — to'g'ridan-to'g'ri
+ *   solishtiradi (vaqt-doimiy taqqoslash bilan) va agar mos kelsa,
+ *   `onUpgrade` callback orqali xeshlangan variantga yangilaydi.
+ */
+async function verifyPassword(
+  plain: string,
+  stored: string,
+  onUpgrade?: (newHash: string) => Promise<void>
+): Promise<boolean> {
+  if (looksHashed(stored)) {
+    return bcrypt.compare(plain, stored);
+  }
+  const a = Buffer.from(plain);
+  const b = Buffer.from(stored);
+  const matches = a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (matches && onUpgrade) {
+    const newHash = await hashPassword(plain);
+    await onUpgrade(newHash).catch(() => { /* xeshni yangilab bo'lmasa ham kirishga ruxsat beramiz */ });
+  }
+  return matches;
+}
+
+// ─── Sessiya tokeni muddati ──────────────────────────────────────────────────
+// Avval token muddatsiz edi (bir marta olingan token abadiy amal qilardi).
+// Endi har bir sessiya tokeni 30 kundan keyin avtomatik eskiradi.
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 kun
 
 function sign(data: string): string {
   return crypto.createHmac("sha256", SECRET).update(data).digest("base64url");
@@ -74,11 +121,21 @@ const ADMIN_ID = process.env["ADMIN_ID"] ?? "";
 const ADMIN_PASSWORD = process.env["ADMIN_PASSWORD"] ?? ADMIN_ID;
 
 function createToken(payload: object): string {
-  return createSignedToken(payload);
+  // Har bir sessiya tokeniga yaratilgan vaqt + amal qilish muddatini qo'shamiz.
+  const withExpiry = { ...payload, _issuedAt: Date.now(), _expiresAt: Date.now() + SESSION_TTL_MS };
+  return createSignedToken(withExpiry);
 }
 
 function parseToken(token: string): Record<string, unknown> | null {
-  return parseSignedToken<Record<string, unknown>>(token);
+  const data = parseSignedToken<Record<string, unknown>>(token);
+  if (!data) return null;
+  const expiresAt = data["_expiresAt"] as number | undefined;
+  // Eski (v1) tokenlarda _expiresAt yo'q edi — ularni ham vaqtincha qabul qilamiz,
+  // lekin yangi login qilinganda ular avtomatik yangi, muddatli tokenga almashadi.
+  if (typeof expiresAt === "number" && Date.now() > expiresAt) {
+    return null;
+  }
+  return data;
 }
 
 export function getAuthUser(authHeader: string | undefined): Record<string, unknown> | null {
@@ -130,11 +187,17 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   type StaffRow = { id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean; pro_expires_at?: string | null };
 
   const staff = await queryOne<StaffRow>(
-    "SELECT id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach, pro_expires_at FROM staff WHERE login = $1 AND password = $2",
-    [trimmedLogin, trimmedPassword]
+    "SELECT id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach, pro_expires_at FROM staff WHERE login = $1",
+    [trimmedLogin]
   );
 
-  if (staff) {
+  const staffPasswordOk = staff
+    ? await verifyPassword(trimmedPassword, staff.password, async (newHash) => {
+        await query("UPDATE staff SET password = $1 WHERE id = $2", [newHash, staff.id]);
+      })
+    : false;
+
+  if (staff && staffPasswordOk) {
     let class_name: string | null = null;
     if (staff.class_id) {
       const cls = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [staff.class_id]);
@@ -163,11 +226,17 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   type StudentRow = { id: string; telegram_id: number; full_name: string; class_name: string; login: string; password: string; pro_expires_at?: string | null };
 
   const student = await queryOne<StudentRow>(
-    "SELECT id, telegram_id, full_name, class_name, login, password, pro_expires_at FROM users WHERE login = $1 AND password = $2",
-    [trimmedLogin, trimmedPassword]
+    "SELECT id, telegram_id, full_name, class_name, login, password, pro_expires_at FROM users WHERE login = $1",
+    [trimmedLogin]
   );
 
-  if (student) {
+  const studentPasswordOk = student
+    ? await verifyPassword(trimmedPassword, student.password, async (newHash) => {
+        await query("UPDATE users SET password = $1 WHERE id = $2", [newHash, student.id]);
+      })
+    : false;
+
+  if (student && studentPasswordOk) {
     const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [student.class_name]);
     const payload = {
       id: student.id ?? String(student.telegram_id),
@@ -261,9 +330,10 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const pro_expires_at = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
 
   try {
+    const passwordHash = await hashPassword(password);
     await query(
       "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date, pro_expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
-      [telegram_id, full_name, normalizedPhone, class_name, login, password, registration_date, pro_expires_at]
+      [telegram_id, full_name, normalizedPhone, class_name, login, passwordHash, registration_date, pro_expires_at]
     );
 
     if (code_id) {
@@ -371,9 +441,10 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
   const pro_expires_at_staff = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
 
   try {
+    const passwordHash = await hashPassword(password);
     const newStaff = await queryOne<{ id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; pro_expires_at: string | null }>(
       "INSERT INTO staff (full_name, role, class_id, login, password, telegram_id, subjects, can_teach, pro_expires_at) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8) RETURNING id, full_name, role, class_id, login, password, telegram_id, pro_expires_at",
-      [full_name.trim(), role, class_id ?? null, login, password,
+      [full_name.trim(), role, class_id ?? null, login, passwordHash,
        subjects ?? [],
        role === "teacher" || role === "sinf_rahbari",
        pro_expires_at_staff]
@@ -408,7 +479,10 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
       pro_expires_at: newStaff.pro_expires_at ?? null,
     };
     const token = createToken(payload);
-    res.status(201).json({ ...payload, token, password: newStaff.password });
+    // Diqqat: bu yerda ataylab bazadagi (xeshlangan) `newStaff.password` emas,
+    // balki foydalanuvchi kiritgan asl (plaintext) `password` qaytariladi —
+    // aks holda admin ekranida bcrypt xeshi ko'rsatilib qolardi.
+    res.status(201).json({ ...payload, token, password });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message ?? "Xatolik yuz berdi" });
   }

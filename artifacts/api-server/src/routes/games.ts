@@ -40,6 +40,14 @@ router.post("/games/score", async (req, res): Promise<void> => {
 });
 
 router.get("/games/ratings", async (req, res): Promise<void> => {
+  // Avval bu endpoint ochiq edi — login qilmasdan ham barcha o'quvchilarning
+  // ism-familiyasi va ballari ko'rinardi. Endi avtorizatsiya talab qilinadi.
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) {
+    res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
+    return;
+  }
+
   const gameId = req.query["game_id"] as string | undefined;
 
   try {
