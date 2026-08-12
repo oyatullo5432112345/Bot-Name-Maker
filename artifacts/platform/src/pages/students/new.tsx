@@ -2,7 +2,8 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLocation } from "wouter";
-import { useCreateStudent } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCreateStudent, getListStudentsQueryKey } from "@workspace/api-client-react";
 import { ChevronLeft, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,8 @@ type StudentFormValues = z.infer<typeof studentSchema>;
 export default function NewStudent() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  
+  const queryClient = useQueryClient();
+
   const createMutation = useCreateStudent();
 
   const form = useForm<StudentFormValues>({
@@ -50,6 +52,7 @@ export default function NewStudent() {
             title: "Muvaffaqiyatli",
             description: "Yangi o'quvchi qo'shildi",
           });
+          queryClient.invalidateQueries({ queryKey: getListStudentsQueryKey({}) });
           setLocation("/students");
         },
         onError: () => {

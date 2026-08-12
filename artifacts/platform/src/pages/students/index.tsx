@@ -42,7 +42,9 @@ export default function StudentsList() {
 
   const { data: students, isLoading } = useListStudents(classFilter, {
     query: {
-      queryKey: getListStudentsQueryKey(classFilter)
+      queryKey: getListStudentsQueryKey(classFilter),
+      staleTime: 15_000,
+      refetchOnWindowFocus: true,
     }
   });
 

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
+import { getListStudentsQueryKey } from "@workspace/api-client-react";
 import { ChevronLeft, Loader2, Copy, CheckCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,6 +42,7 @@ interface BulkResult {
 export default function BulkNewStudents() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [namesText, setNamesText] = useState("");
   const [className, setClassName] = useState("");
@@ -78,6 +81,7 @@ export default function BulkNewStudents() {
           title: "Muvaffaqiyatli",
           description: `${data.created.length} ta o'quvchi qo'shildi`,
         });
+        queryClient.invalidateQueries({ queryKey: getListStudentsQueryKey({}) });
       }
     } catch {
       toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanishda xatolik" });
