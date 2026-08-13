@@ -5,14 +5,13 @@ import { useTheme } from "@/lib/theme";
 import { useLogout } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LayoutDashboard, Users, GraduationCap, School, LogOut,
+  LayoutDashboard, Users, GraduationCap, School, LogOut, Home,
   Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays,
   MessageSquare, Library, Award,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
   Wallet, ChevronRight, Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { IlimModal } from "@/components/ilim-modal";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -100,10 +99,15 @@ function NavLink({ href, icon: Icon, label, badge, active, onClick }: {
 const SECTION_COLORS: Record<string, string> = {
   "Ta'lim":            "text-emerald-500",
   "Sozlamalar":        "text-slate-400",
+  "Boshqa":            "text-amber-500",
   "Kutubxona boshqaruvi": "text-amber-500",
   "O'yinlar":          "text-pink-500",
   "Mening ma'lumotlarim": "text-blue-400",
 };
+
+// Pastki menyu tugmalari uchun har biriga alohida rang (jozibali ko'rinish uchun)
+const TAB_ACCENTS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#22c55e"];
+
 
 function NavSection({ label, children }: { label?: string; children: React.ReactNode }) {
   const labelColor = label ? (SECTION_COLORS[label] ?? "text-muted-foreground") : "";
@@ -120,32 +124,17 @@ function NavSection({ label, children }: { label?: string; children: React.React
 }
 
 // ===================================================
-// Ta'lim TV Logo — UZ bayrog'i ranglari
+// Ta'lim Platform logotipi (matnli, sodda)
 // ===================================================
 function TalimTvLogo({ size = "default" }: { size?: "default" | "small" }) {
   const isSmall = size === "small";
   return (
-    <div className={`flex items-center gap-${isSmall ? "1.5" : "2"} select-none`}>
-      <div className={`${isSmall ? "w-7 h-7" : "w-8 h-8"} rounded-lg overflow-hidden shrink-0 shadow`}>
-        <div className="w-full h-1/3" style={{ background: "#1C64A8" }} />
-        <div className="w-full h-1/3 bg-white" />
-        <div className="w-full h-1/3" style={{ background: "#1EB53A" }} />
-      </div>
-      <div>
-        <span
-          className={`font-black ${isSmall ? "text-sm" : "text-base"} leading-none tracking-tight`}
-          style={{
-            background: "linear-gradient(135deg, #1C64A8 0%, #1C64A8 33%, #ffffff 50%, #1EB53A 66%, #1EB53A 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            backgroundClip: "text",
-            filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.15))",
-          }}
-        >
-          Ta'lim TV
-        </span>
-        {!isSmall && <div className="text-[9px] text-muted-foreground leading-none mt-0.5">3-Maktab</div>}
-      </div>
+    <div className="flex items-center select-none">
+      <span
+        className={`font-black ${isSmall ? "text-base" : "text-lg"} leading-none tracking-tight text-foreground`}
+      >
+        Ta'lim <span className="text-blue-500">Platform</span>
+      </span>
     </div>
   );
 }
@@ -308,21 +297,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const unreadCount = useUnreadAnnouncements();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [quickSheetOpen, setQuickSheetOpen] = useState(false);
-  const [ilimOpen, setIlimOpen] = useState(false);
   const isStudent = user?.role === "student";
   const tanga = useTangaInfo(isStudent ?? false);
 
   useEffect(() => { setDrawerOpen(false); setQuickSheetOpen(false); }, [location]);
-
-  // Platformaga kirganida birinchi sessiyada bir marta avtomatik ko'rsatish
-  useEffect(() => {
-    if (!user) return undefined;
-    const key = "ilim_modal_shown_v1";
-    if (sessionStorage.getItem(key)) return undefined;
-    sessionStorage.setItem(key, "1");
-    const t = setTimeout(() => setIlimOpen(true), 900);
-    return () => clearTimeout(t);
-  }, [user?.id]);
 
   const handleLogout = () => {
     setQuickSheetOpen(false);
@@ -394,15 +372,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <NavLink href="/dars-jadvali" icon={CalendarDays} label="Dars jadvali" active={isActive("/dars-jadvali")} />
             <NavLink href="/library" icon={Library} label="Kutubxona" active={isActive("/library")} />
             <NavLink href="/certificate" icon={Award} label="Sertifikat" active={isActive("/certificate")} />
+            <NavLink href="/olimpiada" icon={Trophy} label="Olimpiada.Uz" active={isActive("/olimpiada")} />
           </NavSection>
         )}
 
-        <NavSection>
-          <NavLink href="/olimpiada" icon={Trophy} label="Olimpiada.Uz" active={isActive("/olimpiada")} />
-        </NavSection>
-
-        <NavSection>
+        <NavSection label="Boshqa">
           <NavLink href="/tanga" icon={Wallet} label="Tanga Tizimi 🪙" active={isActive("/tanga")} />
+          {!isMudir && (
+            <NavLink
+              href="/announcements"
+              icon={Megaphone}
+              label="E'lonlar"
+              badge={unreadCount}
+              active={isActive("/announcements")}
+              onClick={() => localStorage.setItem("announcements_last_seen", String(Date.now()))}
+            />
+          )}
+          {!isMudir && <NavLink href="/chat" icon={MessageSquare} label="Qo'llab-quvvatlash" active={isActive("/chat")} />}
         </NavSection>
 
         {!isMudir && ["admin","director"].includes(user.role) && (
@@ -424,48 +410,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </NavSection>
         )}
 
-        {!isMudir && (
-          <NavSection>
-            <NavLink
-              href="/announcements"
-              icon={Megaphone}
-              label="E'lonlar"
-              badge={unreadCount}
-              active={isActive("/announcements")}
-              onClick={() => localStorage.setItem("announcements_last_seen", String(Date.now()))}
-            />
-          </NavSection>
-        )}
-
-        {!isMudir && (
-          <NavSection>
-            <NavLink href="/chat" icon={MessageSquare} label="Qo'llab-quvvatlash" active={isActive("/chat")} />
-          </NavSection>
-        )}
-
-        {/* Ilim O'quv Markazi */}
-        <NavSection>
-          <button
-            onClick={() => { setIlimOpen(true); setDrawerOpen(false); }}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all text-left"
-            style={{
-              background: "linear-gradient(135deg, #1e3a5f18, #1e40af18)",
-              border: "1px solid #1e40af30",
-              color: "#60a5fa",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = "linear-gradient(135deg, #1e3a5f30, #1e40af30)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "linear-gradient(135deg, #1e3a5f18, #1e40af18)")}
-          >
-            <span className="text-base shrink-0">📚</span>
-            <span className="flex-1 font-semibold">Ilim O'quv Markazi</span>
-            <span
-              className="text-[9px] px-1.5 py-0.5 rounded-full font-bold shrink-0"
-              style={{ background: "#22c55e22", color: "#22c55e", border: "1px solid #22c55e44" }}
-            >
-              YANGI
-            </span>
-          </button>
-        </NavSection>
       </div>
 
       {/* Footer */}
@@ -548,8 +492,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {sidebarContent}
       </aside>
 
-      {/* Ilim O'quv Markazi modal */}
-      <IlimModal open={ilimOpen} onClose={() => setIlimOpen(false)} />
 
       {/* Quick Sheet */}
       <QuickSheet
@@ -571,6 +513,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="ml-3 flex-1">
             <TalimTvLogo size="small" />
           </div>
+          <Link href="/dashboard">
+            <button
+              className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors mr-1 ${
+                location === "/dashboard" || location === "/"
+                  ? "text-primary bg-primary/10"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+              }`}
+              aria-label="Bosh sahifa"
+            >
+              <Home className="w-4 h-4" />
+            </button>
+          </Link>
           <button
             onClick={toggleTheme}
             className="w-9 h-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -587,41 +541,48 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </main>
 
         {/* Mobile bottom tab bar */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 border-t bg-background">
-          <div className="flex items-center justify-around px-1 py-2">
-            {mobileNavItems.map(({ href, icon: Icon, label, badge }) => {
-              const active = href === "/dashboard"
-                ? location === href || location === "/"
-                : location.startsWith(href);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={() => {
-                    if (href === "/announcements") {
-                      localStorage.setItem("announcements_last_seen", String(Date.now()));
-                    }
-                  }}
-                  className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all duration-150 active:scale-90 ${
-                    active ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  <div className={`relative transition-transform duration-150 ${active ? "scale-110" : "scale-100"}`}>
-                    <div className={`absolute inset-0 rounded-full transition-all duration-200 ${active ? "bg-primary/15 scale-150 blur-sm" : ""}`} />
-                    <Icon className="w-5 h-5 relative" />
-                    {badge && badge > 0 ? (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center">
-                        {badge > 9 ? "9+" : badge}
-                      </span>
-                    ) : null}
-                  </div>
-                  <span className={`text-[10px] font-medium transition-all duration-150 ${active ? "font-bold" : ""}`}>{label}</span>
-                  {active && (
-                    <span className="w-1 h-1 rounded-full bg-primary mt-0.5" />
-                  )}
-                </Link>
-              );
-            })}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30">
+          <div className="mx-2 mb-2 rounded-2xl border bg-background/95 backdrop-blur shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.25)]">
+            <div className="flex items-center justify-around px-1 py-2">
+              {mobileNavItems.map(({ href, icon: Icon, label, badge }, i) => {
+                const active = href === "/dashboard"
+                  ? location === href || location === "/"
+                  : location.startsWith(href);
+                const accent = TAB_ACCENTS[i % TAB_ACCENTS.length];
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => {
+                      if (href === "/announcements") {
+                        localStorage.setItem("announcements_last_seen", String(Date.now()));
+                      }
+                    }}
+                    className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition-all duration-150 active:scale-90"
+                  >
+                    <div
+                      className={`relative flex items-center justify-center w-10 h-8 rounded-xl transition-all duration-200 ${
+                        active ? "scale-105" : "scale-100"
+                      }`}
+                      style={active ? { background: `${accent}20` } : undefined}
+                    >
+                      <Icon className="w-5 h-5 relative" style={{ color: active ? accent : "hsl(var(--muted-foreground))" }} />
+                      {badge && badge > 0 ? (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center">
+                          {badge > 9 ? "9+" : badge}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span
+                      className={`text-[10px] transition-all duration-150 ${active ? "font-bold" : "font-medium text-muted-foreground"}`}
+                      style={active ? { color: accent } : undefined}
+                    >
+                      {label}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
         </nav>
       </div>
