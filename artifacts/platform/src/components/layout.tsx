@@ -44,6 +44,22 @@ function useUnreadAnnouncements() {
 
 interface TangaInfo { total: number; unvon: { title: string; emoji: string; color: string } }
 
+function useSupportUnread() {
+  const { data } = useQuery<{ count: number }>({
+    queryKey: ["support-unread-count"],
+    queryFn: async () => {
+      const t = getToken();
+      const r = await fetch(`${API_BASE}/support/unread`, {
+        headers: t ? { Authorization: `Bearer ${t}` } : {},
+      });
+      if (!r.ok) return { count: 0 };
+      return r.json() as Promise<{ count: number }>;
+    },
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
+  return data?.count ?? 0;
+}
 function useTangaInfo(enabled: boolean) {
   const { data } = useQuery<TangaInfo>({
     queryKey: ["tanga-layout"],
@@ -295,6 +311,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
   const logoutMutation = useLogout();
   const unreadCount = useUnreadAnnouncements();
+  const supportUnread = useSupportUnread();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [quickSheetOpen, setQuickSheetOpen] = useState(false);
   const isStudent = user?.role === "student";
@@ -388,7 +405,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               onClick={() => localStorage.setItem("announcements_last_seen", String(Date.now()))}
             />
           )}
-          {!isMudir && <NavLink href="/chat" icon={MessageSquare} label="Qo'llab-quvvatlash" active={isActive("/chat")} />}
+          {!isMudir && <NavLink href="/chat" icon={MessageSquare} label="Qo'llab-quvvatlash" badge={supportUnread} active={isActive("/chat")} />}
         </NavSection>
 
         {!isMudir && ["admin","director"].includes(user.role) && (
