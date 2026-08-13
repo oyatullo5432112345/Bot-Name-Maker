@@ -8,13 +8,11 @@ import {
   getGetDashboardStatsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User, Megaphone, Pin, ChevronRight, TrendingUp, Trophy } from "lucide-react";
+import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User, Megaphone, Pin, ChevronRight, Trophy } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Link } from "wouter";
 
-const BAR_COLORS = ["#3b82f6","#6366f1","#8b5cf6","#a855f7","#ec4899","#f97316","#eab308","#22c55e","#14b8a6","#0ea5e9"];
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -297,15 +295,6 @@ function AdminDashboard() {
     query: { queryKey: getGetDashboardStatsQueryKey(), retry: 2 }
   });
 
-  const chartData = useMemo(
-    () => (stats?.students_by_class ?? []).map((s: { class_name: string; count: number | string }, i: number) => ({
-      name: s.class_name,
-      count: Number(s.count),
-      fill: BAR_COLORS[i % BAR_COLORS.length],
-    })),
-    [stats?.students_by_class]
-  );
-
   if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   if (isError || !stats) return (
     <div className="flex flex-col items-center py-12 gap-4 text-muted-foreground">
@@ -378,31 +367,6 @@ function AdminDashboard() {
           </Card>
         ))}
       </div>
-
-      {chartData.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-primary" />
-              Sinflar bo'yicha o'quvchilar soni
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                  cursor={{ fill: "hsl(var(--muted))" }}
-                  formatter={(value: number) => [`${value} o'quvchi`, ""]}
-                />
-                <Bar dataKey="count" radius={[6, 6, 0, 0]} fill="#3b82f6" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardHeader><CardTitle>Sinflar jadvali</CardTitle></CardHeader>
