@@ -327,7 +327,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const telegram_id = linkedChatId ?? Date.now();
   const registration_date = new Date().toISOString();
 
-  const pro_expires_at = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  const pro_expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   try {
     const passwordHash = await hashPassword(password);
@@ -438,7 +438,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     return;
   }
 
-  const pro_expires_at_staff = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  const pro_expires_at_staff = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   try {
     const passwordHash = await hashPassword(password);
