@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { WelcomeAnimation } from "@/components/welcome-animation";
 import { useAuth } from "@/lib/use-auth";
@@ -761,26 +761,38 @@ function StudentRegister() {
   const [credentials, setCredentials] = useState<{ login: string; password: string } | null>(null);
   const [pendingAuthData, setPendingAuthData] = useState<Parameters<typeof authLogin>[0] | null>(null);
   const [welcomeStudent, setWelcomeStudent] = useState<{ name: string } | null>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
 
   const previewLogin = codeData ? previewStudentLogin(codeData.first_name.trim()) : "";
   const previewPassword = codeData?.class_name ? `3maktab${codeData.class_name.toLowerCase().replace(/\s+/g, "")}` : "";
 
-  const handleVerifyCode = async () => {
+  const verifyCode = useCallback(async (code: string) => {
+    if (code.length < 6) { setCodeData(null); setCodeError(""); return; }
     setCodeLoading(true);
     setCodeError("");
     try {
       const res = await fetch("/api/auth/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: secretCode.trim().toUpperCase() }),
+        body: JSON.stringify({ code: code.trim().toUpperCase() }),
       });
       const data = await res.json() as CodeData & { error?: string };
-      if (!res.ok) { setCodeError(data.error ?? "Kod noto'g'ri yoki ishlatilgan"); return; }
-      if (data.role !== "student") { setCodeError("Bu kod o'quvchi uchun emas. O'ng tarafdagi bo'limdan ro'yxatdan o'ting."); return; }
+      if (!res.ok) { setCodeError(data.error ?? "Kod noto'g'ri yoki ishlatilgan"); setCodeData(null); return; }
+      if (data.role !== "student") { setCodeError("Bu kod o'quvchi uchun emas. O'ng tarafdagi bo'limdan ro'yxatdan o'ting."); setCodeData(null); return; }
       setCodeData(data);
+      // Kod to'g'ri chiqishi bilan avtomatik telefon maydoniga o'tish — vaqt tejash uchun
+      setTimeout(() => phoneInputRef.current?.focus(), 150);
     } catch { setCodeError("Serverga ulanishda xatolik"); }
     setCodeLoading(false);
-  };
+  }, []);
+
+  // Kod 8 belgiga yetishi bilan avtomatik tekshiradi — alohida tugma bosish shart emas
+  useEffect(() => {
+    const trimmed = secretCode.trim();
+    if (trimmed.length < 6) { setCodeData(null); return; }
+    const t = setTimeout(() => void verifyCode(trimmed), 350);
+    return () => clearTimeout(t);
+  }, [secretCode, verifyCode]);
 
   const handlePhoneChange = (val: string) => {
     let digits = val.replace(/\D/g, "");
@@ -852,74 +864,82 @@ function StudentRegister() {
     );
   }
 
-  if (!codeData) {
-    return (
-      <div className="space-y-4">
-        <div className="text-center py-3">
-          <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
-            <KeyRound className="w-7 h-7 text-primary" />
-          </div>
-          <h3 className="font-bold text-lg">Mahfiy kodni kiriting</h3>
-          <p className="text-sm text-muted-foreground mt-1">Admin sizga bergan 8 belgili kodni kiriting</p>
-        </div>
-        <Input
-          placeholder="AB3K9X2M"
-          value={secretCode}
-          onChange={e => setSecretCode(e.target.value.toUpperCase())}
-          className="text-center text-xl font-mono tracking-[0.3em] h-12"
-          maxLength={10}
-          onKeyDown={e => e.key === "Enter" && void handleVerifyCode()}
-        />
-        {codeError && <p className="text-sm text-destructive text-center">{codeError}</p>}
-        <Button className="w-full h-11" onClick={() => void handleVerifyCode()} disabled={!secretCode.trim() || codeLoading}>
-          {codeLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-          Kodni tasdiqlash
-        </Button>
-      </div>
-    );
-  }
-
+  // Bitta uzluksiz ekran: kod va telefon birga — ortiqcha bosqichlarsiz, tezroq
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-green-200 bg-green-50 p-3 flex items-center gap-3">
-        <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-        <div className="flex-1">
-          <p className="font-semibold text-sm text-green-800">{codeData.full_name}</p>
-          {codeData.class_name && <p className="text-xs text-green-600">{codeData.class_name} sinfi</p>}
+      <div className="text-center py-1">
+        <div className="w-14 h-14 bg-gradient-to-br from-primary/20 to-primary/5 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm">
+          <KeyRound className="w-7 h-7 text-primary" />
         </div>
-        <button className="text-xs text-green-700 underline" onClick={() => { setCodeData(null); setSecretCode(""); setPhone(""); }}>
-          Almashtirish
-        </button>
+        <h3 className="font-bold text-lg">O'quvchi sifatida ro'yxatdan o'tish</h3>
+        <p className="text-sm text-muted-foreground mt-1">Admin bergan kodni kiriting — qolganini o'zimiz to'ldiramiz</p>
       </div>
+
       <div className="space-y-1.5">
-        <Label>Telefon raqam</Label>
-        <div className="flex">
-          <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground select-none">+998</span>
-          <Input className="rounded-l-none" placeholder="90 123 45 67" value={formatPhone(phone).replace("+998 ", "")} onChange={e => handlePhoneChange(e.target.value)} maxLength={12} type="tel" />
+        <div className="relative">
+          <Input
+            placeholder="AB3K9X2M"
+            value={secretCode}
+            onChange={e => setSecretCode(e.target.value.toUpperCase())}
+            className={`text-center text-xl font-mono tracking-[0.3em] h-12 pr-10 transition-colors ${
+              codeData ? "border-green-400 bg-green-50/50" : codeError ? "border-destructive" : ""
+            }`}
+            maxLength={10}
+            autoFocus
+          />
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            {codeLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+            {!codeLoading && codeData && <CheckCircle2 className="w-4 h-4 text-green-600" />}
+          </div>
         </div>
+        {codeError && <p className="text-sm text-destructive text-center">{codeError}</p>}
       </div>
-      {phone.replace(/\D/g, "").length >= 9 && (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-3 space-y-1.5">
-          <p className="text-xs font-semibold text-green-700">🔑 Sizning login ma'lumotlaringiz (avtomatik)</p>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-green-600">Login:</span>
-            <span className="font-mono text-sm font-semibold text-green-800">{previewLogin}</span>
+
+      {/* Kod tasdiqlangach — smooth ravishda pastdagi maydonlar ochiladi */}
+      <div className={`space-y-4 transition-all duration-300 ${codeData ? "opacity-100" : "opacity-40 pointer-events-none select-none"}`}>
+        {codeData && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 flex items-center gap-3 animate-in fade-in slide-in-from-top-1 duration-300">
+            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold text-sm text-green-800">{codeData.full_name}</p>
+              {codeData.class_name && <p className="text-xs text-green-600">{codeData.class_name} sinfi</p>}
+            </div>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-green-600">Parol:</span>
-            <span className="font-mono text-sm font-semibold text-green-800">{previewPassword}</span>
+        )}
+
+        <div className="space-y-1.5">
+          <Label>Telefon raqam</Label>
+          <div className="flex">
+            <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground select-none">+998</span>
+            <Input
+              ref={phoneInputRef}
+              className="rounded-l-none"
+              placeholder="90 123 45 67"
+              value={formatPhone(phone).replace("+998 ", "")}
+              onChange={e => handlePhoneChange(e.target.value)}
+              maxLength={12}
+              type="tel"
+              onKeyDown={e => e.key === "Enter" && canSubmit && void handleSubmit()}
+            />
           </div>
-          <p className="text-xs text-green-600 mt-1">Ro'yxatdan o'tgandan keyin bu ma'lumotlarni saqlang!</p>
         </div>
-      )}
-      {codeData.class_name && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-md">
-          <GraduationCap className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-          <span className="text-sm font-medium">{codeData.class_name} sinfi</span>
-          <span className="ml-auto text-xs text-muted-foreground">avtomatik</span>
-        </div>
-      )}
-      <Button className="w-full" disabled={!canSubmit || isLoading} onClick={handleSubmit}>
+
+        {phone.replace(/\D/g, "").length >= 9 && codeData && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 space-y-1.5 animate-in fade-in duration-300">
+            <p className="text-xs font-semibold text-green-700">🔑 Sizning login ma'lumotlaringiz (avtomatik)</p>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-green-600">Login:</span>
+              <span className="font-mono text-sm font-semibold text-green-800">{previewLogin}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-green-600">Parol:</span>
+              <span className="font-mono text-sm font-semibold text-green-800">{previewPassword}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Button className="w-full h-11" disabled={!canSubmit || isLoading} onClick={handleSubmit}>
         {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
         Ro'yxatdan o'tish
       </Button>
