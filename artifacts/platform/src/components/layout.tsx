@@ -9,7 +9,7 @@ import {
   Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays,
   MessageSquare, Library, Award,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
-  Wallet, ChevronRight, Settings,
+  Wallet, ChevronRight, Settings, Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -113,6 +113,7 @@ function NavLink({ href, icon: Icon, label, badge, active, onClick }: {
 }
 
 const SECTION_COLORS: Record<string, string> = {
+  "Guruh o'yinlari":   "text-pink-500",
   "Ta'lim":            "text-emerald-500",
   "Sozlamalar":        "text-slate-400",
   "Boshqa":            "text-amber-500",
@@ -390,6 +391,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <NavLink href="/library" icon={Library} label="Kutubxona" active={isActive("/library")} />
             <NavLink href="/certificate" icon={Award} label="Sertifikat" active={isActive("/certificate")} />
             <NavLink href="/olimpiada" icon={Trophy} label="Olimpiada.Uz" active={isActive("/olimpiada")} />
+          </NavSection>
+        )}
+
+        {!isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"].includes(user.role) && (
+          <NavSection label="Guruh o'yinlari">
+            <NavLink href="/games/board" icon={Gamepad2} label="Bilim Arenasi 🏆" active={isActive("/games/board")} />
+            <NavLink href="/games/wheel" icon={Sparkles} label="G'ildirak 🎡" active={isActive("/games/wheel")} />
           </NavSection>
         )}
 
