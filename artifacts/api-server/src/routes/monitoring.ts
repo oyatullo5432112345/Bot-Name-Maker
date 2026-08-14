@@ -71,6 +71,8 @@ const QuestionBody = z.object({
   options: z.array(z.string().min(1)).optional(),
   correct_index: z.number().int().min(0).optional(),
   correct_text: z.string().min(1).optional(),
+  difficulty: z.enum(["oson", "orta", "qiyin"]).default("orta"),
+  time_seconds: z.number().int().min(5).max(600).nullable().optional(),
 });
 
 const CreateTestBody = z.object({
@@ -84,6 +86,8 @@ const CreateTestBody = z.object({
   show_result_immediately: z.boolean().default(true),
   has_options: z.boolean().default(true),
   scheduled_open_at: z.string().datetime().nullable().optional(),
+  timed: z.boolean().default(true),
+  pause_seconds: z.number().int().min(0).max(60).default(0),
   questions: z.array(QuestionBody).min(1),
 });
 
@@ -117,26 +121,26 @@ router.post("/monitoring/tests", async (req, res): Promise<void> => {
     const test = await queryOne<{ id: string }>(
       `INSERT INTO monitoring_tests
          (title, subject, class_name, quarter, academic_year, duration_minutes, is_anonymous,
-          show_result_immediately, has_options, scheduled_open_at, status, created_by_login)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          show_result_immediately, has_options, scheduled_open_at, status, created_by_login, timed, pause_seconds)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING id`,
       [d.title, d.subject, d.class_name ?? null, d.quarter, d.academic_year,
        d.duration_minutes, d.is_anonymous, d.show_result_immediately, d.has_options,
-       d.scheduled_open_at ?? null, "draft", user["login"] as string]
+       d.scheduled_open_at ?? null, "draft", user["login"] as string, d.timed, d.pause_seconds]
     );
     if (!test) { res.status(500).json({ error: "Test yaratilmadi" }); return; }
 
     for (let i = 0; i < d.questions.length; i++) {
       const q = d.questions[i]!;
       await query(
-        `INSERT INTO monitoring_questions (test_id, question, options, correct_index, correct_text, order_index)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
+        `INSERT INTO monitoring_questions (test_id, question, options, correct_index, correct_text, order_index, difficulty, time_seconds)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
         [
           test.id, q.question,
           d.has_options ? JSON.stringify(q.options) : "[]",
           d.has_options ? q.correct_index : null,
           d.has_options ? null : q.correct_text!.trim(),
-          i,
+          i, q.difficulty, q.time_seconds ?? null,
         ]
       );
     }
@@ -392,8 +396,8 @@ router.get("/monitoring/tests/:id/take", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user || user["role"] !== "student") { res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return; }
 
-  const test = await queryOne<{ id: string; status: string; duration_minutes: number; title: string; subject: string; has_options: boolean; opens_at: string | null }>(
-    "SELECT id, status, duration_minutes, title, subject, has_options, opens_at FROM monitoring_tests WHERE id = $1",
+  const test = await queryOne<{ id: string; status: string; duration_minutes: number; title: string; subject: string; has_options: boolean; opens_at: string | null; timed: boolean; pause_seconds: number }>(
+    "SELECT id, status, duration_minutes, title, subject, has_options, opens_at, timed, pause_seconds FROM monitoring_tests WHERE id = $1",
     [req.params["id"]]
   );
   if (!test || test.status !== "open") { res.status(404).json({ error: "Test topilmadi yoki hali qulfda (yopiq)" }); return; }
@@ -404,8 +408,8 @@ router.get("/monitoring/tests/:id/take", async (req, res): Promise<void> => {
   );
   if (already) { res.status(409).json({ error: "Siz bu testni allaqachon ishlagansiz" }); return; }
 
-  const questions = await query<{ id: string; question: string; options: string[] }>(
-    "SELECT id, question, options FROM monitoring_questions WHERE test_id = $1 ORDER BY order_index",
+  const questions = await query<{ id: string; question: string; options: string[]; difficulty: string; time_seconds: number | null }>(
+    "SELECT id, question, options, difficulty, time_seconds FROM monitoring_questions WHERE test_id = $1 ORDER BY order_index",
     [test.id]
   );
   res.json({ test, questions, server_now: new Date().toISOString() });
