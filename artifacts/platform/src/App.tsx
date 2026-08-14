@@ -51,6 +51,7 @@ const TangaPage = lazy(() => import("@/pages/tanga/index"));
 const MonitoringIndex = lazy(() => import("@/pages/monitoring/index"));
 const MonitoringAdmin = lazy(() => import("@/pages/monitoring/admin"));
 const MonitoringTake = lazy(() => import("@/pages/monitoring/take"));
+const MonitoringAnalytics = lazy(() => import("@/pages/monitoring/analytics"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -139,6 +140,7 @@ function Router() {
       <Route path="/reyting"><ProtectedRoute component={ReytingPage} /></Route>
       <Route path="/tanga"><ProtectedRoute component={TangaPage} /></Route>
 
+      <Route path="/monitoring/analytics"><ProtectedRoute component={MonitoringAnalytics} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/monitoring/admin"><ProtectedRoute component={MonitoringAdmin} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
       <Route path="/monitoring/:id"><ProtectedRoute component={MonitoringTake} /></Route>
       <Route path="/monitoring"><ProtectedRoute component={MonitoringIndex} /></Route>
