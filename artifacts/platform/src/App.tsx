@@ -25,6 +25,11 @@ const NewStaff = lazy(() => import("@/pages/staff/new"));
 const BulkNewStaff = lazy(() => import("@/pages/staff/bulk-new"));
 const StaffSubjectsPage = lazy(() => import("@/pages/staff/subjects"));
 const GamesPage = lazy(() => import("@/pages/games/index"));
+const BoardGameList = lazy(() => import("@/pages/games/board/index"));
+const BoardGameNew = lazy(() => import("@/pages/games/board/new"));
+const BoardGamePlay = lazy(() => import("@/pages/games/board/play"));
+const WheelList = lazy(() => import("@/pages/games/wheel/index"));
+const WheelSpin = lazy(() => import("@/pages/games/wheel/spin"));
 const SozOyini = lazy(() => import("@/pages/games/sozoyini"));
 const Jumboq = lazy(() => import("@/pages/games/jumboq"));
 const Arqon = lazy(() => import("@/pages/games/arqon"));
@@ -154,6 +159,11 @@ function Router() {
       <Route path="/games/arqon"><ProtectedRoute component={Arqon} roles={["student"]} /></Route>
       <Route path="/games/poyga"><ProtectedRoute component={Poyga} roles={["student"]} /></Route>
       <Route path="/games/reyting"><ProtectedRoute component={Reyting} roles={["student"]} /></Route>
+      <Route path="/games/board/new"><ProtectedRoute component={BoardGameNew} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/games/board/:id"><ProtectedRoute component={BoardGamePlay} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/games/board"><ProtectedRoute component={BoardGameList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/games/wheel/:id"><ProtectedRoute component={WheelSpin} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/games/wheel"><ProtectedRoute component={WheelList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
       <Route path="/games"><ProtectedRoute component={GamesPage} roles={["student"]} /></Route>
 
       <Route><Suspense fallback={<LoadingSpinner />}><NotFound /></Suspense></Route>
