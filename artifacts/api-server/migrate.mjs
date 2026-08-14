@@ -33,6 +33,8 @@ const SQL_FILES = [
   "001_registration_codes.sql",
   "001_tanga_system.sql",
   "002_olimpiada_royhatdan_otish.sql",
+  "003_monitoring.sql",
+  "004_monitoring_v2.sql",
 ];
 
 // Qo'shimcha ustunlar (agar mavjud bo'lmasa qo'shiladi)
