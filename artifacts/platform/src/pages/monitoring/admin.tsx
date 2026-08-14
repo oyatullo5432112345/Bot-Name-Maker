@@ -36,9 +36,16 @@ interface DraftQuestion {
   options: string[];
   correct_index: number;
   correct_text: string;
+  difficulty: "oson" | "orta" | "qiyin";
+  customTime: boolean;
+  time_seconds: number;
 }
 
-const EMPTY_QUESTION = (): DraftQuestion => ({ question: "", options: ["", ""], correct_index: 0, correct_text: "" });
+const DIFFICULTY_TIME: Record<DraftQuestion["difficulty"], number> = { oson: 20, orta: 40, qiyin: 60 };
+const EMPTY_QUESTION = (): DraftQuestion => ({
+  question: "", options: ["", ""], correct_index: 0, correct_text: "",
+  difficulty: "orta", customTime: false, time_seconds: DIFFICULTY_TIME.orta,
+});
 
 function sortClassNames(list: { name: string }[]): string[] {
   return [...list.map(c => c.name)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -59,6 +66,8 @@ export default function MonitoringAdminPage() {
   const [academicYear, setAcademicYear] = useState("2025-2026");
   const [duration, setDuration] = useState(30);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [timed, setTimed] = useState(true);
+  const [pauseEnabled, setPauseEnabled] = useState(false);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const [questions, setQuestions] = useState<DraftQuestion[]>([EMPTY_QUESTION()]);
@@ -88,7 +97,7 @@ export default function MonitoringAdminPage() {
   const resetForm = () => {
     setTitle(""); setSubject(""); setClassName("__all__"); setQuarter(1);
     setDuration(30); setIsAnonymous(false); setHasOptions(true);
-    setScheduleEnabled(false); setScheduledAt("");
+    setScheduleEnabled(false); setScheduledAt(""); setTimed(true); setPauseEnabled(false);
     setQuestions([EMPTY_QUESTION()]); setSaveError("");
   };
 
@@ -122,9 +131,15 @@ export default function MonitoringAdminPage() {
           show_result_immediately: true,
           has_options: hasOptions,
           scheduled_open_at: scheduleEnabled ? new Date(scheduledAt).toISOString() : null,
-          questions: cleanQuestions.map(q => hasOptions
-            ? { question: q.question, options: q.options, correct_index: q.correct_index }
-            : { question: q.question, correct_text: q.correct_text }),
+          timed,
+          pause_seconds: pauseEnabled ? 5 : 0,
+          questions: cleanQuestions.map(q => ({
+            ...(hasOptions
+              ? { question: q.question, options: q.options, correct_index: q.correct_index }
+              : { question: q.question, correct_text: q.correct_text }),
+            difficulty: q.difficulty,
+            time_seconds: timed ? (q.customTime ? q.time_seconds : DIFFICULTY_TIME[q.difficulty]) : null,
+          })),
         }),
       });
       const json = await r.json();
@@ -338,6 +353,24 @@ export default function MonitoringAdminPage() {
               <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
             </div>
 
+            <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+              <div>
+                <p className="text-sm font-medium">Vaqt cheklovi</p>
+                <p className="text-xs text-muted-foreground">O'chirilsa — o'quvchi istagancha vaqt sarflaydi (taymersiz)</p>
+              </div>
+              <Switch checked={timed} onCheckedChange={setTimed} />
+            </div>
+
+            {timed && (
+              <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                <div>
+                  <p className="text-sm font-medium">Savollar orasida pauza</p>
+                  <p className="text-xs text-muted-foreground">Javob belgilagach, keyingi savolga o'tishdan oldin 5 soniya kutadi</p>
+                </div>
+                <Switch checked={pauseEnabled} onCheckedChange={setPauseEnabled} />
+              </div>
+            )}
+
             <div className="rounded-lg border px-3 py-2.5 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div>
@@ -368,6 +401,40 @@ export default function MonitoringAdminPage() {
                       <X className="w-4 h-4" />
                     </button>
                   </div>
+
+                  {timed && (
+                    <div className="pl-8 flex items-center gap-2 flex-wrap">
+                      {(["oson", "orta", "qiyin"] as const).map(d => (
+                        <button
+                          key={d}
+                          onClick={() => updateQuestion(qi, { difficulty: d, time_seconds: q.customTime ? q.time_seconds : DIFFICULTY_TIME[d] })}
+                          className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                            q.difficulty === d
+                              ? d === "oson" ? "bg-emerald-100 border-emerald-300 text-emerald-700"
+                                : d === "orta" ? "bg-amber-100 border-amber-300 text-amber-700"
+                                : "bg-red-100 border-red-300 text-red-700"
+                              : "border-border text-muted-foreground"
+                          }`}
+                        >
+                          {d === "oson" ? "Oson" : d === "orta" ? "O'rta" : "Qiyin"}
+                        </button>
+                      ))}
+                      <label className="flex items-center gap-1.5 text-xs text-muted-foreground ml-1">
+                        <input type="checkbox" checked={q.customTime} onChange={e => updateQuestion(qi, { customTime: e.target.checked })} />
+                        Vaqtni o'zim belgilayman
+                      </label>
+                      {q.customTime ? (
+                        <Input
+                          type="number" min={5} max={600}
+                          value={q.time_seconds}
+                          onChange={e => updateQuestion(qi, { time_seconds: Number(e.target.value) })}
+                          className="w-20 h-7 text-xs"
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{DIFFICULTY_TIME[q.difficulty]} soniya</span>
+                      )}
+                    </div>
+                  )}
 
                   {hasOptions ? (
                     <div className="pl-8 space-y-1.5">
