@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { 
   useListClasses, 
@@ -20,7 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Search, Trash2, UserPlus, BookOpen, X, Users } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, UserPlus, BookOpen, X, Users, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -403,9 +404,12 @@ export default function ClassesList() {
               filteredClasses?.map((cls) => (
                 <TableRow key={cls.id}>
                   <TableCell>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-sm font-medium bg-primary/10 text-primary border border-primary/20">
-                      {cls.name}
-                    </span>
+                    <Link href={`/students?class=${encodeURIComponent(cls.name)}`}>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-sm font-medium bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 cursor-pointer transition-colors">
+                        {cls.name}
+                        <ChevronRight className="w-3 h-3" />
+                      </span>
+                    </Link>
                   </TableCell>
                   <TableCell>
                     {cls.teacher_name ? (
