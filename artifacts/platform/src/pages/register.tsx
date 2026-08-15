@@ -2,21 +2,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { WelcomeAnimation } from "@/components/welcome-animation";
 import { useAuth } from "@/lib/use-auth";
-import { useListClasses, useListStaff } from "@workspace/api-client-react";
 import {
-  Loader2, CheckCircle2, Copy, UserPlus, Users, Shield,
-  GraduationCap, Crown, Briefcase, Award, BookMarked, Users2, Video, KeyRound,
+  Loader2, CheckCircle2, Copy, Shield,
+  GraduationCap, Crown, Briefcase, Award, BookMarked, Users2, KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── Fan ro'yxati ─────────────────────────────────────────────────────────────
@@ -136,15 +128,6 @@ function getSuffix(className: string): string {
   return className.replace(/^\d+/, "").trim().toLowerCase();
 }
 
-function sortClasses<T extends { name: string }>(list: T[]): T[] {
-  return [...list].sort((a, b) => {
-    const ga = getGrade(a.name);
-    const gb = getGrade(b.name);
-    if (ga !== gb) return ga - gb;
-    return getSuffix(a.name).localeCompare(getSuffix(b.name));
-  });
-}
-
 function copyToClipboardFn(text: string, toast: ReturnType<typeof useToast>["toast"]) {
   navigator.clipboard.writeText(text);
   toast({ title: "Nusxalandi!", description: text });
@@ -211,18 +194,58 @@ function CredentialsView({
   subjects,
   onClose,
   onDashboard,
+  authToken,
+  onCredentialsChange,
 }: {
   credentials: { login: string; password: string };
   subjects?: string[];
   onClose?: () => void;
   onDashboard?: () => void;
+  authToken?: string;
+  onCredentialsChange?: (next: { login: string; password: string }) => void;
 }) {
   const { toast } = useToast();
   const [showConfetti, setShowConfetti] = useState(true);
+  const [editing, setEditing] = useState<"login" | "password" | null>(null);
+  const [loginDraft, setLoginDraft] = useState(credentials.login);
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+
   useEffect(() => {
     const t = setTimeout(() => setShowConfetti(false), 2200);
     return () => clearTimeout(t);
   }, []);
+
+  const saveEdit = async () => {
+    if (!authToken) return;
+    const body: { login?: string; password?: string } = {};
+    if (editing === "login") {
+      if (!loginDraft.trim() || loginDraft.trim() === credentials.login) { setEditing(null); return; }
+      body.login = loginDraft.trim();
+    } else {
+      if (!passwordDraft.trim()) { setEditing(null); return; }
+      body.password = passwordDraft.trim();
+    }
+    setSaving(true);
+    try {
+      const r = await fetch("/api/auth/update-credentials", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify(body),
+      });
+      const json = await r.json();
+      if (!r.ok) { toast({ variant: "destructive", title: "Xatolik", description: json.error }); return; }
+      onCredentialsChange?.({
+        login: body.login ?? credentials.login,
+        password: body.password ?? credentials.password,
+      });
+      toast({ title: "Yangilandi" });
+      setEditing(null);
+      setPasswordDraft("");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-4" style={{ position: "relative" }}>
@@ -235,23 +258,53 @@ function CredentialsView({
         <p className="text-xs text-muted-foreground">Quyidagi ma'lumotlarni saqlang</p>
       </div>
       <div className="space-y-2">
-        <div className="rounded-lg border bg-secondary/50 p-3 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground">Login</p>
-            <p className="font-mono font-semibold">{credentials.login}</p>
-          </div>
-          <Button variant="ghost" size="icon" onClick={() => copyToClipboardFn(credentials.login, toast)}>
-            <Copy className="w-4 h-4" />
-          </Button>
+        <div className="rounded-lg border bg-secondary/50 p-3">
+          {editing === "login" ? (
+            <div className="flex items-center gap-2">
+              <Input value={loginDraft} onChange={e => setLoginDraft(e.target.value)} className="h-8 text-sm font-mono" autoFocus />
+              <Button size="sm" onClick={saveEdit} disabled={saving}>Saqlash</Button>
+              <button onClick={() => { setEditing(null); setLoginDraft(credentials.login); }} className="text-xs text-muted-foreground">Bekor</button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Login</p>
+                <p className="font-mono font-semibold">{credentials.login}</p>
+              </div>
+              <div className="flex items-center gap-1">
+                {authToken && (
+                  <button onClick={() => { setEditing("login"); setLoginDraft(credentials.login); }} className="text-xs text-primary font-medium px-1.5">Tahrirlash</button>
+                )}
+                <Button variant="ghost" size="icon" onClick={() => copyToClipboardFn(credentials.login, toast)}>
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="rounded-lg border bg-secondary/50 p-3 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground">Parol</p>
-            <p className="font-mono font-semibold">{credentials.password}</p>
-          </div>
-          <Button variant="ghost" size="icon" onClick={() => copyToClipboardFn(credentials.password, toast)}>
-            <Copy className="w-4 h-4" />
-          </Button>
+        <div className="rounded-lg border bg-secondary/50 p-3">
+          {editing === "password" ? (
+            <div className="flex items-center gap-2">
+              <Input value={passwordDraft} onChange={e => setPasswordDraft(e.target.value)} placeholder="Yangi parol" className="h-8 text-sm font-mono" autoFocus />
+              <Button size="sm" onClick={saveEdit} disabled={saving}>Saqlash</Button>
+              <button onClick={() => { setEditing(null); setPasswordDraft(""); }} className="text-xs text-muted-foreground">Bekor</button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Parol</p>
+                <p className="font-mono font-semibold">{credentials.password}</p>
+              </div>
+              <div className="flex items-center gap-1">
+                {authToken && (
+                  <button onClick={() => { setEditing("password"); setPasswordDraft(""); }} className="text-xs text-primary font-medium px-1.5">Tahrirlash</button>
+                )}
+                <Button variant="ghost" size="icon" onClick={() => copyToClipboardFn(credentials.password, toast)}>
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       {subjects && subjects.length > 0 && (
@@ -275,68 +328,6 @@ function CredentialsView({
   );
 }
 
-// ─── Sinf tanlash ─────────────────────────────────────────────────────────────
-function ClassPicker({
-  classes,
-  selected,
-  onSelect,
-}: {
-  classes: { id: string; name: string }[];
-  selected: string;
-  onSelect: (id: string) => void;
-}) {
-  const sorted = sortClasses(classes);
-  const boshlangich = sorted.filter(c => getGrade(c.name) <= 4);
-  const yuqori = sorted.filter(c => getGrade(c.name) > 4);
-
-  return (
-    <div className="space-y-3">
-      {boshlangich.length > 0 && (
-        <div>
-          <p className="text-xs text-muted-foreground font-medium mb-2">Boshlang'ich (1–4 sinf)</p>
-          <div className="flex flex-wrap gap-2">
-            {boshlangich.map(c => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => onSelect(c.id)}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors
-                  ${selected === c.id
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background border-input hover:bg-secondary"
-                  }`}
-              >
-                {c.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {yuqori.length > 0 && (
-        <div>
-          <p className="text-xs text-muted-foreground font-medium mb-2">Yuqori (5–11 sinf)</p>
-          <div className="flex flex-wrap gap-2">
-            {yuqori.map(c => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => onSelect(c.id)}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors
-                  ${selected === c.id
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background border-input hover:bg-secondary"
-                  }`}
-              >
-                {c.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Mahfiy kod interfeysi ────────────────────────────────────────────────────
 interface CodeData {
   id: string;
@@ -348,87 +339,62 @@ interface CodeData {
   class_name: string | null;
 }
 
-// ─── Staff ro'yxatdan o'tish modali ──────────────────────────────────────────
-function StaffRegisterModal({
-  open,
-  onClose,
-  role,
-  roleLabel,
-  classId,
-  className: classNameProp,
-  onSuccess,
-}: {
-  open: boolean;
-  onClose: () => void;
-  role: string;
-  roleLabel: string;
-  classId?: string;
-  className?: string;
-  onSuccess: () => void;
-}) {
-  const { toast } = useToast();
+// ─── Xodim/O'qituvchi ro'yxatdan o'tish — YAGONA mahfiy kod orqali ───────────
+// Eski sxemada har rol (direktor, zavuch, sinf rahbari...) uchun alohida
+// kartochka bo'lardi. Endi rolni kodning o'zi belgilaydi — foydalanuvchi
+// faqat mahfiy kodni kiritadi, xolos.
+function StaffRegister() {
   const { login: authLogin } = useAuth();
   const [, setLocation] = useLocation();
   const [welcomeStaff, setWelcomeStaff] = useState<{ name: string; role: string } | null>(null);
-  const [lastName, setLastName] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [loginVal, setLoginVal] = useState("");
-  const [passwordVal, setPasswordVal] = useState("");
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [credentials, setCredentials] = useState<{ login: string; password: string } | null>(null);
-  const [pendingAuthData, setPendingAuthData] = useState<Parameters<typeof authLogin>[0] | null>(null);
   const [secretCode, setSecretCode] = useState("");
   const [codeData, setCodeData] = useState<CodeData | null>(null);
   const [codeLoading, setCodeLoading] = useState(false);
   const [codeError, setCodeError] = useState("");
-
-  const isTeacher = role === "teacher" || role === "sinf_rahbari";
-  const cfg = ROLE_CONFIG[role];
-  const colors = cfg ? COLOR_CLASSES[cfg.color] : null;
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [customSubject, setCustomSubject] = useState("");
   const [subjectSearch, setSubjectSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [credentials, setCredentials] = useState<{ login: string; password: string } | null>(null);
+  const [pendingAuthData, setPendingAuthData] = useState<Parameters<typeof authLogin>[0] | null>(null);
 
-  const handlePhoneChange = (val: string) => {
-    let digits = val.replace(/\D/g, "");
-    if (digits.startsWith("998")) digits = digits.slice(3);
-    if (digits.startsWith("0")) digits = digits.slice(1);
-    setPhone(digits.slice(0, 9));
-  };
+  const isTeacher = codeData?.role === "teacher" || codeData?.role === "sinf_rahbari";
+  const roleCfg = codeData ? ROLE_CONFIG[codeData.role] : undefined;
 
-  const formatPhone = (digits: string) => {
-    if (!digits) return "";
-    const d = digits.padEnd(9, "_");
-    return `+998 ${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5, 7)} ${d.slice(7, 9)}`.replace(/_+$/, "").trim();
-  };
-
-  const toggleSubject = (subject: string) => {
-    setSelectedSubjects(prev =>
-      prev.includes(subject) ? prev.filter(s => s !== subject) : [...prev, subject]
-    );
-  };
-
-  const handleVerifyCode = async () => {
+  const verifyCode = useCallback(async (code: string) => {
+    if (code.length < 6) { setCodeData(null); setCodeError(""); return; }
     setCodeLoading(true);
     setCodeError("");
     try {
       const res = await fetch("/api/auth/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: secretCode.trim().toUpperCase() }),
+        body: JSON.stringify({ code: code.trim().toUpperCase() }),
       });
       const data = await res.json() as CodeData & { error?: string };
-      if (!res.ok) { setCodeError(data.error ?? "Kod noto'g'ri yoki ishlatilgan"); return; }
+      if (!res.ok) { setCodeError(data.error ?? "Kod noto'g'ri yoki ishlatilgan"); setCodeData(null); return; }
+      if (data.role === "student") { setCodeError("Bu o'quvchi kodi. Chap tarafdagi \"O'quvchi\" bo'limidan ro'yxatdan o'ting."); setCodeData(null); return; }
       setCodeData(data);
-      setLastName(data.last_name);
-      setFirstName(data.first_name);
     } catch { setCodeError("Serverga ulanishda xatolik"); }
     setCodeLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const trimmed = secretCode.trim();
+    if (trimmed.length < 6) { setCodeData(null); return; }
+    const t = setTimeout(() => void verifyCode(trimmed), 350);
+    return () => clearTimeout(t);
+  }, [secretCode, verifyCode]);
+
+  const toggleSubject = (subject: string) => {
+    setSelectedSubjects(prev => prev.includes(subject) ? prev.filter(s => s !== subject) : [...prev, subject]);
   };
 
+  const canSubmit = !!codeData && (!isTeacher || selectedSubjects.length > 0);
+
   const handleSubmit = async () => {
+    if (!codeData) return;
     setIsLoading(true);
     setSubmitError("");
     try {
@@ -436,24 +402,18 @@ function StaffRegisterModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          last_name: (codeData?.last_name ?? lastName).trim(),
-          first_name: (codeData?.first_name ?? firstName).trim(),
-          role,
-          class_id: classId || null,
-          login: loginVal.trim(),
-          password: passwordVal,
+          last_name: codeData.last_name.trim(),
+          first_name: codeData.first_name.trim(),
+          role: codeData.role,
+          class_id: codeData.class_id || null,
           subjects: isTeacher ? selectedSubjects : undefined,
-          code_id: codeData?.id,
+          code_id: codeData.id,
         }),
       });
       const data = await res.json() as { error?: string; login?: string; password?: string };
-      if (!res.ok) {
-        setSubmitError(data.error ?? "Ro'yxatdan o'tishda xatolik");
-        return;
-      }
+      if (!res.ok) { setSubmitError(data.error ?? "Ro'yxatdan o'tishda xatolik"); return; }
       setCredentials({ login: data.login ?? "", password: data.password ?? "" });
       setPendingAuthData(data as Parameters<typeof authLogin>[0]);
-      onSuccess();
     } catch {
       setSubmitError("Server bilan bog'lanishda muammo. Qayta urinib ko'ring.");
     } finally {
@@ -461,280 +421,162 @@ function StaffRegisterModal({
     }
   };
 
-  const effectiveLastName = codeData?.last_name ?? lastName;
-  const effectiveFirstName = codeData?.first_name ?? firstName;
-  const canSubmit = effectiveLastName.trim().length >= 2 && effectiveFirstName.trim().length >= 2
-    && loginVal.trim().length >= 3 && passwordVal.length >= 4
-    && (!isTeacher || selectedSubjects.length > 0);
-
-  const handleClose = () => {
-    if (pendingAuthData) authLogin(pendingAuthData);
-    setLastName(""); setFirstName(""); setPhone(""); setLoginVal(""); setPasswordVal("");
-    setSelectedSubjects([]); setCredentials(null); setPendingAuthData(null);
-    setSecretCode(""); setCodeData(null); setCodeError("");
-    onClose();
-  };
-
   if (welcomeStaff) {
     return (
       <WelcomeAnimation
         name={welcomeStaff.name}
         role={welcomeStaff.role}
-        onDone={() => {
-          setWelcomeStaff(null);
-          setLocation("/dashboard");
+        onDone={() => { setWelcomeStaff(null); setLocation("/dashboard"); }}
+      />
+    );
+  }
+
+  if (credentials) {
+    return (
+      <CredentialsView
+        credentials={credentials}
+        subjects={isTeacher ? selectedSubjects : undefined}
+        authToken={pendingAuthData?.token}
+        onCredentialsChange={(next) => {
+          setCredentials(next);
+          if (pendingAuthData) setPendingAuthData({ ...pendingAuthData, login: next.login });
+        }}
+        onDashboard={() => {
+          if (pendingAuthData) authLogin(pendingAuthData);
+          const fullName = `${codeData?.last_name ?? ""} ${codeData?.first_name ?? ""}`.trim();
+          setWelcomeStaff({ name: fullName || "Foydalanuvchi", role: codeData?.role ?? "teacher" });
         }}
       />
     );
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && credentials && handleClose()}>
-      <DialogContent
-        className="max-w-lg max-h-[90vh] overflow-y-auto"
-        onInteractOutside={e => { if (!credentials) e.preventDefault(); }}
-        onEscapeKeyDown={e => { if (!credentials) e.preventDefault(); }}
-      >
-        <DialogHeader>
-          {cfg && (
-            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${colors?.bg} ${colors?.border} border w-fit mb-1`}>
-              <cfg.icon className={`w-4 h-4 ${colors?.iconColor}`} />
-              <span className={`text-sm font-semibold ${colors?.titleColor}`}>{roleLabel}</span>
-            </div>
-          )}
-          <DialogTitle className="text-xl">Ro'yxatdan o'tish</DialogTitle>
-          {classNameProp && (
-            <DialogDescription>{classNameProp} sinfi sinf rahbari</DialogDescription>
-          )}
-        </DialogHeader>
+    <div className="space-y-4">
+      <div className="text-center py-1">
+        <div className="w-14 h-14 bg-gradient-to-br from-primary/20 to-primary/5 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm">
+          <KeyRound className="w-7 h-7 text-primary" />
+        </div>
+        <h3 className="font-bold text-lg">Xodim sifatida ro'yxatdan o'tish</h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Direktor, zavuch, o'rinbosar, fan o'qituvchisi, sinf rahbari, kutubxonachi — barchasi shu yerdan, admin bergan kod bilan.
+        </p>
+      </div>
 
-        {credentials ? (
-          <CredentialsView
-            credentials={credentials}
-            subjects={isTeacher ? selectedSubjects : undefined}
-            onClose={handleClose}
-            onDashboard={() => {
-              if (pendingAuthData) authLogin(pendingAuthData);
-              const fullName = `${(codeData?.last_name ?? lastName).trim()} ${(codeData?.first_name ?? firstName).trim()}`.trim();
-              setWelcomeStaff({ name: fullName || "Foydalanuvchi", role });
-            }}
+      <div className="space-y-1.5">
+        <div className="relative">
+          <Input
+            placeholder="AB3K9X2M"
+            value={secretCode}
+            onChange={e => setSecretCode(e.target.value.toUpperCase())}
+            className={`text-center text-xl font-mono tracking-[0.3em] h-12 pr-10 transition-colors ${
+              codeData ? "border-green-400 bg-green-50/50" : codeError ? "border-destructive" : ""
+            }`}
+            maxLength={10}
           />
-        ) : !codeData ? (
-          <div className="space-y-4 py-3">
-            <div className="text-center">
-              <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
-                <KeyRound className="w-7 h-7 text-primary" />
-              </div>
-              <p className="font-semibold text-lg">Mahfiy kodni kiriting</p>
-              <p className="text-sm text-muted-foreground mt-0.5">Admin sizga bergan 8 belgili kodni kiriting</p>
-            </div>
-            <Input
-              placeholder="AB3K9X2M"
-              value={secretCode}
-              onChange={e => setSecretCode(e.target.value.toUpperCase())}
-              className="text-center text-xl font-mono tracking-[0.3em] h-12"
-              maxLength={10}
-              onKeyDown={e => e.key === "Enter" && void handleVerifyCode()}
-            />
-            {codeError && <p className="text-sm text-destructive text-center">{codeError}</p>}
-            <Button className="w-full h-11" onClick={() => void handleVerifyCode()} disabled={!secretCode.trim() || codeLoading}>
-              {codeLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              Kodni tasdiqlash
-            </Button>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            {codeLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+            {!codeLoading && codeData && <CheckCircle2 className="w-4 h-4 text-green-600" />}
           </div>
-        ) : (
-          <div className="space-y-4 pt-1">
-            {/* Verified banner */}
-            <div className="rounded-lg border border-green-200 bg-green-50 p-3 flex items-center gap-3">
-              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm text-green-800">{codeData.full_name}</p>
-                {codeData.class_name && <p className="text-xs text-green-600">{codeData.class_name} sinfi</p>}
-              </div>
-              <button className="text-xs text-green-700 underline" onClick={() => { setCodeData(null); setSecretCode(""); }}>
-                Almashtirish
-              </button>
+        </div>
+        {codeError && <p className="text-sm text-destructive text-center">{codeError}</p>}
+      </div>
+
+      <div className={`space-y-4 transition-all duration-300 ${codeData ? "opacity-100" : "opacity-40 pointer-events-none select-none"}`}>
+        {codeData && roleCfg && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 flex items-center gap-3 animate-in fade-in slide-in-from-top-1 duration-300">
+            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sm text-green-800">{codeData.full_name}</p>
+              <p className="text-xs text-green-600 flex items-center gap-1">
+                <roleCfg.icon className="w-3 h-3" /> {roleCfg.label}
+                {codeData.class_name && ` • ${codeData.class_name} sinfi`}
+              </p>
             </div>
-            <div className="space-y-1.5">
-              <Label>Familiya</Label>
-              <Input
-                placeholder="Valiyev"
-                value={codeData.last_name}
-                readOnly
-                className="bg-muted text-muted-foreground cursor-not-allowed"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Ismi</Label>
-              <Input
-                placeholder="Valijon"
-                value={codeData.first_name}
-                readOnly
-                className="bg-muted text-muted-foreground cursor-not-allowed"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Telefon raqam <span className="text-muted-foreground font-normal text-xs">(ixtiyoriy)</span></Label>
-              <div className="flex">
-                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground select-none">
-                  +998
-                </span>
-                <Input
-                  className="rounded-l-none"
-                  placeholder="90 123 45 67"
-                  value={formatPhone(phone).replace("+998 ", "")}
-                  onChange={e => handlePhoneChange(e.target.value)}
-                  maxLength={12}
-                  type="tel"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Login <span className="text-muted-foreground font-normal text-xs">(kamida 3 ta belgi)</span></Label>
-              <Input
-                placeholder="valiyev_v"
-                value={loginVal}
-                onChange={e => setLoginVal(e.target.value)}
-                autoComplete="off"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Parol <span className="text-muted-foreground font-normal text-xs">(kamida 4 ta belgi)</span></Label>
-              <Input
-                type="password"
-                placeholder="••••••••"
-                value={passwordVal}
-                onChange={e => setPasswordVal(e.target.value)}
-                autoComplete="new-password"
-              />
-            </div>
-
-            {isTeacher && (
-              <div className="space-y-2">
-                <div>
-                  <Label>Qaysi fandan dars berasiz?</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Kamida 1 ta fan tanlang. Bir nechta fandan dars bersangiz — hammasini belgilang.
-                  </p>
-                </div>
-                <Input
-                  placeholder="Fan nomini qidirish..."
-                  value={subjectSearch}
-                  onChange={e => setSubjectSearch(e.target.value)}
-                  className="mb-1"
-                />
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 p-3 rounded-lg border border-blue-200 bg-blue-50/50 max-h-56 overflow-y-auto">
-                  {COMMON_SUBJECTS.filter(s => s.toLowerCase().includes(subjectSearch.trim().toLowerCase())).map(subject => {
-                    const selected = selectedSubjects.includes(subject);
-                    return (
-                      <button
-                        key={subject}
-                        type="button"
-                        onClick={() => toggleSubject(subject)}
-                        className={`px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all text-left ${
-                          selected
-                            ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                            : "bg-white text-blue-700 border-blue-200 hover:bg-blue-100"
-                        }`}
-                      >
-                        {selected && <span className="mr-1">✓</span>}
-                        {subject}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Ro'yxatda yo'q fan */}
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Ro'yxatda yo'q fan nomini yozing..."
-                    value={customSubject}
-                    onChange={e => setCustomSubject(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        const val = customSubject.trim();
-                        if (val && !selectedSubjects.includes(val)) {
-                          setSelectedSubjects(prev => [...prev, val]);
-                        }
-                        setCustomSubject("");
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="border-blue-300 text-blue-700 hover:bg-blue-100 shrink-0"
-                    onClick={() => {
-                      const val = customSubject.trim();
-                      if (val && !selectedSubjects.includes(val)) {
-                        setSelectedSubjects(prev => [...prev, val]);
-                      }
-                      setCustomSubject("");
-                    }}
-                    disabled={!customSubject.trim()}
-                  >
-                    + Qo'shish
-                  </Button>
-                </div>
-
-                {selectedSubjects.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedSubjects.map(s => (
-                      <span
-                        key={s}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-600 text-white rounded text-xs font-medium"
-                      >
-                        {s}
-                        <button
-                          type="button"
-                          onClick={() => setSelectedSubjects(prev => prev.filter(x => x !== s))}
-                          className="hover:text-blue-200 ml-0.5"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {submitError && (
-              <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm text-destructive font-medium">
-                ⚠️ {submitError}
-              </div>
-            )}
-
-            <Button
-              className="w-full"
-              disabled={!canSubmit || isLoading}
-              onClick={handleSubmit}
-            >
-              {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              Ro'yxatdan o'tish
-            </Button>
-
-            {isTeacher && selectedSubjects.length === 0 && (effectiveLastName.length >= 2 || effectiveFirstName.length >= 2) && (
-              <p className="text-xs text-center text-amber-600">⚠️ Davom etish uchun kamida 1 ta fan tanlang</p>
-            )}
-
-            <button
-              type="button"
-              onClick={handleClose}
-              className="w-full text-xs text-muted-foreground hover:text-foreground text-center underline underline-offset-2 py-1 transition-colors"
-            >
-              Bekor qilish
-            </button>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+
+        {isTeacher && (
+          <div className="space-y-2">
+            <div>
+              <Label>Qaysi fandan dars berasiz?</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">Kamida 1 ta fan tanlang.</p>
+            </div>
+            <Input
+              placeholder="Fan nomini qidirish..."
+              value={subjectSearch}
+              onChange={e => setSubjectSearch(e.target.value)}
+              className="mb-1"
+            />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 p-3 rounded-lg border border-blue-200 bg-blue-50/50 max-h-56 overflow-y-auto">
+              {COMMON_SUBJECTS.filter(s => s.toLowerCase().includes(subjectSearch.trim().toLowerCase())).map(subject => {
+                const selected = selectedSubjects.includes(subject);
+                return (
+                  <button
+                    key={subject}
+                    type="button"
+                    onClick={() => toggleSubject(subject)}
+                    className={`px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all text-left ${
+                      selected ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-blue-700 border-blue-200 hover:bg-blue-100"
+                    }`}
+                  >
+                    {selected && <span className="mr-1">✓</span>}
+                    {subject}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Ro'yxatda yo'q fan nomini yozing..."
+                value={customSubject}
+                onChange={e => setCustomSubject(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const val = customSubject.trim();
+                    if (val && !selectedSubjects.includes(val)) setSelectedSubjects(prev => [...prev, val]);
+                    setCustomSubject("");
+                  }
+                }}
+              />
+              <Button
+                type="button" variant="outline" size="sm"
+                className="border-blue-300 text-blue-700 hover:bg-blue-100 shrink-0"
+                onClick={() => {
+                  const val = customSubject.trim();
+                  if (val && !selectedSubjects.includes(val)) setSelectedSubjects(prev => [...prev, val]);
+                  setCustomSubject("");
+                }}
+                disabled={!customSubject.trim()}
+              >
+                + Qo'shish
+              </Button>
+            </div>
+            {selectedSubjects.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedSubjects.map(s => (
+                  <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-600 text-white rounded text-xs font-medium">
+                    {s}
+                    <button type="button" onClick={() => setSelectedSubjects(prev => prev.filter(x => x !== s))} className="hover:text-blue-200 ml-0.5">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {submitError && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm text-destructive font-medium">
+            ⚠️ {submitError}
+          </div>
+        )}
+
+        <Button className="w-full h-11" disabled={!canSubmit || isLoading} onClick={handleSubmit}>
+          {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+          Ro'yxatdan o'tish
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -855,6 +697,11 @@ function StudentRegister() {
     return (
       <CredentialsView
         credentials={credentials}
+        authToken={pendingAuthData?.token}
+        onCredentialsChange={(next) => {
+          setCredentials(next);
+          if (pendingAuthData) setPendingAuthData({ ...pendingAuthData, login: next.login });
+        }}
         onDashboard={() => {
           if (pendingAuthData) authLogin(pendingAuthData);
           const fullName = codeData ? `${codeData.last_name} ${codeData.first_name}`.trim() : "O'quvchi";
@@ -948,380 +795,63 @@ function StudentRegister() {
 }
 
 // ─── Rangli rol kartochkasi ───────────────────────────────────────────────────
-function RoleCard({
-  role,
-  personName,
-  isFilled,
-  count,
-  onClick,
-}: {
-  role: string;
-  personName?: string | null;
-  isFilled: boolean;
-  count?: number;
-  onClick: () => void;
-}) {
-  const cfg = ROLE_CONFIG[role];
-  if (!cfg) return null;
-  const c = COLOR_CLASSES[cfg.color];
-  const Icon = cfg.icon;
-
-  return (
-    <div
-      className={`
-        rounded-xl border-2 p-4 flex items-center justify-between gap-3
-        transition-all duration-200 cursor-pointer
-        ${isFilled
-          ? `${c.bg} ${c.border} opacity-80`
-          : `${c.bg} ${c.border} ${c.hover} hover:shadow-md hover:-translate-y-0.5`
-        }
-      `}
-      onClick={!isFilled ? onClick : undefined}
-    >
-      <div className="flex items-center gap-3 min-w-0">
-        <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${c.badgeBg}`}>
-          <Icon className={`w-5 h-5 ${c.iconColor}`} />
-        </div>
-        <div className="min-w-0">
-          <p className={`text-xs font-semibold uppercase tracking-wide ${c.iconColor}`}>{cfg.label}</p>
-          <p className={`text-sm font-medium truncate mt-0.5 ${isFilled ? c.titleColor : "text-muted-foreground italic"}`}>
-            {isFilled
-              ? (personName ?? (count !== undefined ? `${count} ta ro'yxatdan o'tgan` : "To'ldirilgan"))
-              : cfg.description}
-          </p>
-        </div>
-      </div>
-
-      {isFilled ? (
-        <CheckCircle2 className={`w-6 h-6 flex-shrink-0 ${c.iconColor}`} />
-      ) : (
-        <Button
-          size="sm"
-          variant="outline"
-          className={`shrink-0 font-medium border ${c.btnBorder} ${c.btnText} ${c.btnHover} bg-transparent`}
-          onClick={e => { e.stopPropagation(); onClick(); }}
-        >
-          <UserPlus className="w-3 h-3 mr-1" />
-          O'tish
-        </Button>
-      )}
-    </div>
-  );
-}
-
-// ─── Sinf rahbari kartochkasi ─────────────────────────────────────────────────
-function SinfRahbariCard({
-  cls,
-  rahbar,
-  onRegister,
-}: {
-  cls: { id: string; name: string };
-  rahbar: { full_name: string } | undefined;
-  onRegister: () => void;
-}) {
-  const c = rahbar ? COLOR_CLASSES.emerald : COLOR_CLASSES.rose;
-
-  return (
-    <div
-      className={`
-        rounded-xl border-2 p-3.5 flex items-center justify-between gap-3
-        transition-all duration-200
-        ${rahbar
-          ? `${c.bg} ${c.border}`
-          : `${c.bg} ${c.border} ${c.hover} hover:shadow-sm cursor-pointer`
-        }
-      `}
-      onClick={!rahbar ? onRegister : undefined}
-    >
-      <div className="flex items-center gap-2.5 min-w-0">
-        <div className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${c.badgeBg}`}>
-          <Users2 className={`w-4 h-4 ${c.iconColor}`} />
-        </div>
-        <div className="min-w-0">
-          <p className={`text-xs font-semibold ${c.iconColor}`}>{cls.name} sinfi</p>
-          <p className={`text-sm font-medium truncate ${rahbar ? c.titleColor : "text-muted-foreground italic"}`}>
-            {rahbar ? rahbar.full_name : "Sinf rahbari yo'q"}
-          </p>
-        </div>
-      </div>
-
-      {rahbar ? (
-        <CheckCircle2 className={`w-5 h-5 flex-shrink-0 ${c.iconColor}`} />
-      ) : (
-        <Button
-          size="sm"
-          variant="outline"
-          className={`shrink-0 border ${c.btnBorder} ${c.btnText} ${c.btnHover} bg-transparent text-xs`}
-          onClick={e => { e.stopPropagation(); onRegister(); }}
-        >
-          <UserPlus className="w-3 h-3 mr-1" />
-          O'tish
-        </Button>
-      )}
-    </div>
-  );
-}
-
-// ─── Video yoriqnoma yordamchilari ────────────────────────────────────────────
-function toEmbedUrl(url: string): string {
-  if (!url) return "";
-  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
-  if (m) return `https://www.youtube.com/embed/${m[1]}?rel=0&autoplay=1`;
-  return url;
-}
-function isYouTube(url: string) {
-  return url.includes("youtube.com") || url.includes("youtu.be");
-}
-
-function VideoModal({
-  open,
-  onClose,
-  onContinue,
-  url,
-  title,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onContinue: () => void;
-  url: string;
-  title: string;
-}) {
-  if (!url) return null;
-  const embed = toEmbedUrl(url);
-  const yt = isYouTube(url);
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Video className="w-5 h-5 text-primary" />
-            {title}
-          </DialogTitle>
-          <DialogDescription>
-            Ro'yxatdan o'tishdan oldin qisqa yoriqnomani tomosha qiling
-          </DialogDescription>
-        </DialogHeader>
-        <div className="aspect-video bg-black rounded-lg overflow-hidden">
-          {yt ? (
-            <iframe src={embed} className="w-full h-full" allow="autoplay; fullscreen" allowFullScreen />
-          ) : (
-            <video src={url} controls autoPlay className="w-full h-full" />
-          )}
-        </div>
-        <div className="flex gap-2 justify-end pt-1">
-          <Button variant="outline" size="sm" onClick={onClose}>Keyinroq</Button>
-          <Button onClick={onContinue}>Ko'rdim, davom etish →</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Asosiy sahifa ────────────────────────────────────────────────────────────
 export default function Register() {
-  const { data: classes } = useListClasses({ query: { queryKey: ["classes", "list"] } });
-  const { data: staffList, refetch: refetchStaff } = useListStaff({ query: { queryKey: ["staff", "list"] } });
-
-  const [modalRole, setModalRole] = useState<string | null>(null);
-  const [modalClassId, setModalClassId] = useState<string | undefined>(undefined);
-  const [videoUrls, setVideoUrls] = useState({ student: "", teacher: "", staff: "" });
-  const [videoModal, setVideoModal] = useState<{
-    group: "student" | "teacher" | "staff";
-    pendingRole?: string;
-    pendingClassId?: string;
-  } | null>(null);
-  const [studentVideoSeen, setStudentVideoSeen] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/settings/videos")
-      .then(r => r.json())
-      .then((d: { student: string; teacher: string; staff: string }) => setVideoUrls(d))
-      .catch(() => {});
-  }, []);
-
-  const allClasses = sortClasses(classes ?? []);
-
-  const getStaffForRole = (role: string) => (staffList ?? []).find((s: { role: string }) => s.role === role);
-  const getSinfRahbariForClass = (cId: string) =>
-    (staffList ?? []).find((s: { role: string; class_id?: string | null }) => s.role === "sinf_rahbari" && s.class_id === cId);
-  const teacherCount = (staffList ?? []).filter((s: { role: string }) => s.role === "teacher").length;
-
-  function getVideoGroup(role: string): "student" | "teacher" | "staff" {
-    if (role === "teacher" || role === "sinf_rahbari") return "teacher";
-    return "staff";
-  }
-
-  const openModal = (role: string, cId?: string) => {
-    const group = getVideoGroup(role);
-    const url = videoUrls[group];
-    if (url) {
-      setVideoModal({ group, pendingRole: role, pendingClassId: cId });
-    } else {
-      setModalRole(role);
-      setModalClassId(cId);
-    }
-  };
-
-  const handleVideoContinue = () => {
-    if (!videoModal) return;
-    if (videoModal.group === "student") {
-      setStudentVideoSeen(true);
-    } else if (videoModal.pendingRole) {
-      setModalRole(videoModal.pendingRole);
-      setModalClassId(videoModal.pendingClassId);
-    }
-    setVideoModal(null);
-  };
-
-  const closeModal = () => {
-    setModalRole(null);
-    setModalClassId(undefined);
-    void refetchStaff();
-  };
-
-  const activeClass = modalClassId ? (classes ?? []).find((c: { id: string; name: string }) => c.id === modalClassId) : undefined;
-
-  const SINGLE_SLOT_ROLES = ["director", "mudir", "zam_direktor", "zavuch", "kutubxonachi"];
+  const [choice, setChoice] = useState<"student" | "staff" | null>(null);
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row">
-      {/* Chap: O'quvchi ro'yxatdan o'tish */}
-      <div className="flex-1 flex flex-col justify-start py-10 px-6 sm:px-10 lg:px-14 xl:px-20 border-b lg:border-b-0 lg:border-r bg-secondary/20 overflow-y-auto">
-        <div className="mx-auto w-full max-w-sm">
-          <div className="flex justify-center mb-4">
-            <img src="/logo.png" alt="Talim Platform" className="h-14 w-auto object-contain" />
-          </div>
-          <div className="flex items-center gap-2 mb-1 justify-center">
-            <Users className="w-5 h-5 text-primary" />
-            <h2 className="text-xl font-bold">O'quvchi ro'yxatdan o'tish</h2>
-          </div>
-          <p className="text-sm text-muted-foreground text-center mb-6">Toshloq tumani 3-maktab</p>
-
-          {videoUrls.student && !studentVideoSeen && (
-            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 mb-5 flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Video className="w-5 h-5 text-primary" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm text-foreground">📹 Yoriqnoma video</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Ro'yxatdan o'tishdan oldin qisqa yo'riqnomani ko'ring
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 border-primary/40 text-primary hover:bg-primary/10"
-                  onClick={() => setVideoModal({ group: "student" })}
-                >
-                  Videoni ko'rish →
-                </Button>
-              </div>
-            </div>
-          )}
-          <StudentRegister />
-
-          <p className="text-center text-sm text-muted-foreground mt-5">
-            Akkauntingiz bormi?{" "}
-            <Link href="/login" className="font-medium text-primary hover:underline">
-              Tizimga kirish
-            </Link>
-          </p>
+    <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-gradient-to-br from-secondary/40 via-background to-primary/5">
+      <div className="w-full max-w-md">
+        <div className="flex justify-center mb-4">
+          <img src="/logo.png" alt="Ta'lim Platform" className="h-14 w-auto object-contain" />
         </div>
-      </div>
+        <p className="text-sm text-muted-foreground text-center mb-6">Toshloq tumani 3-maktab</p>
 
-      {/* O'ng: Mas'ul shaxslar */}
-      <div className="flex-1 flex flex-col py-10 px-6 sm:px-10 lg:px-14 xl:px-20 bg-card overflow-y-auto">
-        <div className="mx-auto w-full max-w-sm">
-          <div className="flex items-center gap-2 mb-1">
-            <Shield className="w-5 h-5 text-primary" />
-            <h2 className="text-xl font-bold">Mas'ul shaxslar</h2>
-          </div>
-          <p className="text-sm text-muted-foreground mb-5">O'z lavozimingiz kartochkasidan ro'yxatdan o'ting</p>
-
-          <div className="space-y-2.5">
-            {/* Fan o'qituvchisi */}
-            <RoleCard
-              role="teacher"
-              isFilled={false}
-              count={teacherCount}
-              personName={teacherCount > 0 ? `${teacherCount} ta o'qituvchi ro'yxatdan o'tgan` : null}
-              onClick={() => openModal("teacher")}
-            />
-
-            {/* Rahbariyat */}
-            <div className="pt-1">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
-                Maktab rahbariyati
-              </p>
-              <div className="space-y-2">
-                {SINGLE_SLOT_ROLES.map(role => {
-                  const person = getStaffForRole(role) as { full_name: string } | undefined;
-                  return (
-                    <RoleCard
-                      key={role}
-                      role={role}
-                      isFilled={!!person}
-                      personName={person?.full_name}
-                      onClick={() => openModal(role)}
-                    />
-                  );
-                })}
+        {choice === null && (
+          <div className="space-y-3 animate-in fade-in duration-300">
+            <h2 className="text-xl font-bold text-center mb-5">Kim bo'lib ro'yxatdan o'tmoqchisiz?</h2>
+            <button
+              onClick={() => setChoice("student")}
+              className="w-full flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary bg-card p-5 text-left transition-all hover:shadow-lg hover:-translate-y-0.5"
+            >
+              <div className="w-14 h-14 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
+                <GraduationCap className="w-7 h-7 text-blue-600" />
               </div>
-            </div>
-
-            {/* Sinf rahbarlari */}
-            {allClasses.length > 0 && (
-              <div className="pt-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
-                  Sinf rahbarlari
-                </p>
-                <div className="space-y-1.5">
-                  {allClasses.map(cls => {
-                    const rahbar = getSinfRahbariForClass(cls.id) as { full_name: string } | undefined;
-                    return (
-                      <SinfRahbariCard
-                        key={cls.id}
-                        cls={cls}
-                        rahbar={rahbar}
-                        onRegister={() => openModal("sinf_rahbari", cls.id)}
-                      />
-                    );
-                  })}
-                </div>
+              <div>
+                <p className="font-bold text-lg">O'quvchi</p>
+                <p className="text-sm text-muted-foreground">Sinfda o'qiyapsiz</p>
               </div>
-            )}
+            </button>
+            <button
+              onClick={() => setChoice("staff")}
+              className="w-full flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary bg-card p-5 text-left transition-all hover:shadow-lg hover:-translate-y-0.5"
+            >
+              <div className="w-14 h-14 rounded-xl bg-purple-100 flex items-center justify-center shrink-0">
+                <Shield className="w-7 h-7 text-purple-600" />
+              </div>
+              <div>
+                <p className="font-bold text-lg">O'qituvchi / Xodim</p>
+                <p className="text-sm text-muted-foreground">Direktor, zavuch, o'rinbosar, fan o'qituvchisi, sinf rahbari, kutubxonachi</p>
+              </div>
+            </button>
           </div>
-        </div>
+        )}
+
+        {choice !== null && (
+          <div className="animate-in fade-in slide-in-from-right-2 duration-300">
+            <button onClick={() => setChoice(null)} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 mb-4">
+              ← Orqaga
+            </button>
+            {choice === "student" ? <StudentRegister /> : <StaffRegister />}
+          </div>
+        )}
+
+        <p className="text-center text-sm text-muted-foreground mt-6">
+          Akkauntingiz bormi?{" "}
+          <Link href="/login" className="font-medium text-primary hover:underline">
+            Tizimga kirish
+          </Link>
+        </p>
       </div>
-
-      {modalRole && (
-        <StaffRegisterModal
-          open={!!modalRole}
-          onClose={closeModal}
-          role={modalRole}
-          roleLabel={ROLE_CONFIG[modalRole]?.label ?? modalRole}
-          classId={modalClassId}
-          className={(activeClass as { name?: string } | undefined)?.name}
-          onSuccess={() => void refetchStaff()}
-        />
-      )}
-
-      {videoModal && (() => {
-        const titles: Record<string, string> = {
-          student: "O'quvchilar uchun yoriqnoma",
-          teacher: "O'qituvchilar uchun yoriqnoma",
-          staff: "Xodimlar uchun yoriqnoma",
-        };
-        return (
-          <VideoModal
-            open={!!videoModal}
-            onClose={() => setVideoModal(null)}
-            onContinue={handleVideoContinue}
-            url={videoUrls[videoModal.group]}
-            title={titles[videoModal.group] ?? "Yoriqnoma"}
-          />
-        );
-      })()}
     </div>
   );
 }
