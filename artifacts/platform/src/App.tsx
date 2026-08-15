@@ -15,7 +15,6 @@ import { SkeletonPage } from "@/components/skeleton-page";
 
 const Login = lazy(() => import("@/pages/login"));
 const Register = lazy(() => import("@/pages/register"));
-const Welcome = lazy(() => import("@/pages/welcome"));
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const StudentsList = lazy(() => import("@/pages/students/index"));
 const NewStudent = lazy(() => import("@/pages/students/new"));
@@ -107,7 +106,7 @@ function Router() {
       <Route path="/">
         {user
           ? (user.role === "mudir" ? <Redirect to="/olimpiada" /> : <Redirect to="/dashboard" />)
-          : <Suspense fallback={<LoadingSpinner />}><Welcome /></Suspense>}
+          : <Redirect to="/login" />}
       </Route>
 
       <Route path="/dashboard">
