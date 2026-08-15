@@ -1,44 +1,37 @@
 import { useEffect } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 
-/**
- * MUHIM TUZATISH: avvalgi kod faqat r.update() chaqirar edi (bu shunchaki
- * "yangi versiya bormi?" deb serverdan so'raydi), lekin topilgan yangi
- * service-worker'ni HECH QACHON faollashtirmas va sahifani qayta
- * yuklamas edi. Natijada foydalanuvchi deploy qilingan yangi kodni
- * ko'rmasdi - eski keshlangan versiya cheksiz saqlanib qolardi.
- *
- * Endi: needRefresh true bo'lganda darhol updateServiceWorker(true)
- * chaqiriladi - bu yangi SW'ni faollashtirib, sahifani avtomatik
- * qayta yuklaydi. Shuningdek, ilova oldingi fonga qaytganda (masalan
- * telegram/brauzerdan qaytganda) ham darhol tekshiruv qilinadi -
- * 30 daqiqa kutish shart emas.
- */
+// Yangi versiya chiqqanda — kutib turmasdan, DARHOL majburan yangilaydi.
+// (Avvalgi "keyingi ochilishda yangilanadi" degan passiv usul ishonchli emas edi —
+// PWA keshi tufayli foydalanuvchilar uzoq vaqt eski versiyada qolib ketishardi.)
 export function PwaUpdatePrompt() {
-  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
+  const { needRefresh, updateServiceWorker } = useRegisterSW({
     onRegistered(r) {
-      if (!r) return;
-
-      // Sahifa ochilganda darhol tekshir (30 daqiqa kutmasdan)
-      r.update();
-
-      // Har 15 daqiqada fon rejimida tekshirib turish
-      setInterval(() => r.update(), 15 * 60 * 1000);
-
-      // Ilova qayta ko'rinadigan bo'lganda (foreground) ham tekshir -
-      // bu mobil foydalanuvchilar uchun eng muhim holat
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") r.update();
-      });
+      if (r) {
+        // Har 5 daqiqada yangi versiyani tekshiradi (avval 30 daqiqa edi — juda kam edi)
+        setInterval(() => r.update(), 5 * 60 * 1000);
+      }
     },
   });
 
   useEffect(() => {
     if (needRefresh) {
-      // Yangi versiya topildi - darhol faollashtiramiz va sahifani yangilaymiz
-      updateServiceWorker(true);
+      void updateServiceWorker(true);
     }
   }, [needRefresh, updateServiceWorker]);
+
+  // Yangi Service Worker boshqaruvni olishi bilan — sahifani bir marta majburan qayta yuklaydi
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    let reloaded = false;
+    const onControllerChange = () => {
+      if (reloaded) return;
+      reloaded = true;
+      window.location.reload();
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+    return () => navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+  }, []);
 
   return null;
 }
