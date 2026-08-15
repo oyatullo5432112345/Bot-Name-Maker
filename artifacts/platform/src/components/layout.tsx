@@ -9,7 +9,7 @@ import {
   Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays,
   MessageSquare, Library, Award,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
-  Wallet, ChevronRight, Settings, Sparkles,
+  Wallet, ChevronRight, Settings, Sparkles, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -144,14 +144,26 @@ function NavSection({ label, children }: { label?: string; children: React.React
 // Ta'lim Platform logotipi (matnli, sodda)
 // ===================================================
 function TalimTvLogo({ size = "default" }: { size?: "default" | "small" }) {
+  const { user } = useAuth();
   const isSmall = size === "small";
+  const proActive = user?.pro_expires_at && new Date(user.pro_expires_at).getTime() > Date.now();
+  const proDays = proActive ? Math.max(0, Math.ceil((new Date(user!.pro_expires_at!).getTime() - Date.now()) / 86400000)) : 0;
+
   return (
-    <div className="flex items-center select-none">
+    <div className="flex items-center gap-2 select-none">
       <span
         className={`font-black ${isSmall ? "text-base" : "text-lg"} leading-none tracking-tight text-foreground`}
       >
         Ta'lim <span className="text-blue-500">Platform</span>
       </span>
+      {proActive && (
+        <span
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0"
+          style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)", color: "white" }}
+        >
+          ⭐ Pro • {proDays}kun
+        </span>
+      )}
     </div>
   );
 }
@@ -379,7 +391,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {canViewStudents && <NavLink href="/students" icon={GraduationCap} label="O'quvchilar" active={isActive("/students")} />}
           {canViewClasses && <NavLink href="/classes" icon={School} label="Sinflar" active={isActive("/classes")} />}
           {canViewStaff && <NavLink href="/staff" icon={Users} label="Xodimlar" active={isActive("/staff")} />}
-          {isStudent && <NavLink href="/games" icon={Gamepad2} label="O'yinlar" active={isActive("/games")} />}
+          <NavLink href="/games" icon={Gamepad2} label="O'yinlar" active={isActive("/games")} />
         </NavSection>
 
         {!isMudir && (
@@ -391,13 +403,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <NavLink href="/library" icon={Library} label="Kutubxona" active={isActive("/library")} />
             <NavLink href="/certificate" icon={Award} label="Sertifikat" active={isActive("/certificate")} />
             <NavLink href="/olimpiada" icon={Trophy} label="Olimpiada.Uz" active={isActive("/olimpiada")} />
-          </NavSection>
-        )}
-
-        {!isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"].includes(user.role) && (
-          <NavSection label="Guruh o'yinlari">
-            <NavLink href="/games/board" icon={Gamepad2} label="Bilim Arenasi 🏆" active={isActive("/games/board")} />
-            <NavLink href="/games/wheel" icon={Sparkles} label="G'ildirak 🎡" active={isActive("/games/wheel")} />
           </NavSection>
         )}
 
@@ -419,6 +424,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {!isMudir && ["admin","director"].includes(user.role) && (
           <NavSection label="Sozlamalar">
             <NavLink href="/admin/codes" icon={KeyRound} label="Mahfiy kodlar" active={isActive("/admin/codes")} />
+            {user.role === "admin" && (
+              <NavLink href="/admin/reset" icon={AlertTriangle} label="Xavfli zona" active={isActive("/admin/reset")} />
+            )}
           </NavSection>
         )}
 

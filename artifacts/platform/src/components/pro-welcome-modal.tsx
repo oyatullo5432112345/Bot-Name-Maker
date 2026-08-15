@@ -98,7 +98,7 @@ export function ProWelcomeModal() {
             </div>
 
             <h2 className="text-2xl font-black text-white mb-2">
-              3 oy Pro faollashtirildi!
+              1 oy Pro faollashtirildi!
             </h2>
             <p className="text-sm mb-6" style={{ color: "rgba(255,255,255,0.65)" }}>
               Xush kelibsiz, <span className="font-semibold text-white">{user.full_name}</span>!<br />
