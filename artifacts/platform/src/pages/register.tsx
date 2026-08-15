@@ -799,53 +799,68 @@ export default function Register() {
   const [choice, setChoice] = useState<"student" | "staff" | null>(null);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-gradient-to-br from-secondary/40 via-background to-primary/5">
-      <div className="w-full max-w-md">
-        <div className="flex justify-center mb-4">
-          <img src="/logo.png" alt="Ta'lim Platform" className="h-14 w-auto object-contain" />
+    <div
+      className="dark min-h-screen flex items-center justify-center px-4 py-10 relative overflow-hidden"
+      style={{ background: "linear-gradient(145deg, #0a1628 0%, #111f3d 50%, #0d1b2a 100%)" }}
+    >
+      {/* Fon halqalari */}
+      {[0, 1, 2].map(i => (
+        <div
+          key={i}
+          className="absolute rounded-full pointer-events-none"
+          style={{
+            background: `rgba(99,102,241,${0.06 - i * 0.015})`,
+            width: `${260 + i * 180}px`, height: `${260 + i * 180}px`,
+            top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+          }}
+        />
+      ))}
+
+      <div className="w-full max-w-md relative z-10 animate-in fade-in duration-500">
+        <div className="text-center mb-8">
+          <div className="text-5xl mb-3" style={{ filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.4))" }}>🏫</div>
+          <p className="text-white/40 text-sm">Toshloq tumani 3-maktab</p>
         </div>
-        <p className="text-sm text-muted-foreground text-center mb-6">Toshloq tumani 3-maktab</p>
 
         {choice === null && (
           <div className="space-y-3 animate-in fade-in duration-300">
-            <h2 className="text-xl font-bold text-center mb-5">Kim bo'lib ro'yxatdan o'tmoqchisiz?</h2>
+            <h2 className="text-xl font-bold text-center mb-5 text-white">Kim bo'lib ro'yxatdan o'tmoqchisiz?</h2>
             <button
               onClick={() => setChoice("student")}
-              className="w-full flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary bg-card p-5 text-left transition-all hover:shadow-lg hover:-translate-y-0.5"
+              className="w-full flex items-center gap-4 rounded-2xl border-2 border-white/10 hover:border-primary bg-white/[0.04] backdrop-blur p-5 text-left transition-all hover:shadow-lg hover:-translate-y-0.5"
             >
-              <div className="w-14 h-14 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
-                <GraduationCap className="w-7 h-7 text-blue-600" />
+              <div className="w-14 h-14 rounded-xl bg-blue-500/15 flex items-center justify-center shrink-0">
+                <GraduationCap className="w-7 h-7 text-blue-400" />
               </div>
               <div>
-                <p className="font-bold text-lg">O'quvchi</p>
-                <p className="text-sm text-muted-foreground">Sinfda o'qiyapsiz</p>
+                <p className="font-bold text-lg text-white">O'quvchi</p>
+                <p className="text-sm text-white/40">Sinfda o'qiyapsiz</p>
               </div>
             </button>
             <button
               onClick={() => setChoice("staff")}
-              className="w-full flex items-center gap-4 rounded-2xl border-2 border-border hover:border-primary bg-card p-5 text-left transition-all hover:shadow-lg hover:-translate-y-0.5"
+              className="w-full flex items-center gap-4 rounded-2xl border-2 border-white/10 hover:border-primary bg-white/[0.04] backdrop-blur p-5 text-left transition-all hover:shadow-lg hover:-translate-y-0.5"
             >
-              <div className="w-14 h-14 rounded-xl bg-purple-100 flex items-center justify-center shrink-0">
-                <Shield className="w-7 h-7 text-purple-600" />
+              <div className="w-14 h-14 rounded-xl bg-purple-500/15 flex items-center justify-center shrink-0">
+                <Shield className="w-7 h-7 text-purple-400" />
               </div>
               <div>
-                <p className="font-bold text-lg">O'qituvchi / Xodim</p>
-                <p className="text-sm text-muted-foreground">Direktor, zavuch, o'rinbosar, fan o'qituvchisi, sinf rahbari, kutubxonachi</p>
+                <p className="font-bold text-lg text-white">O'qituvchi</p>
               </div>
             </button>
           </div>
         )}
 
         {choice !== null && (
-          <div className="animate-in fade-in slide-in-from-right-2 duration-300">
-            <button onClick={() => setChoice(null)} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 mb-4">
+          <div className="animate-in fade-in slide-in-from-right-2 duration-300 rounded-3xl bg-white/[0.04] backdrop-blur border border-white/10 p-6">
+            <button onClick={() => setChoice(null)} className="text-sm text-white/40 hover:text-white flex items-center gap-1 mb-4">
               ← Orqaga
             </button>
             {choice === "student" ? <StudentRegister /> : <StaffRegister />}
           </div>
         )}
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
+        <p className="text-center text-sm text-white/40 mt-6">
           Akkauntingiz bormi?{" "}
           <Link href="/login" className="font-medium text-primary hover:underline">
             Tizimga kirish
