@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import { query, queryOne } from "../lib/db.js";
@@ -187,7 +188,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   type StaffRow = { id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean; pro_expires_at?: string | null };
 
   const staff = await queryOne<StaffRow>(
-    "SELECT id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach, pro_expires_at FROM staff WHERE login = $1",
+    "SELECT id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach, pro_expires_at FROM staff WHERE LOWER(login) = LOWER($1)",
     [trimmedLogin]
   );
 
@@ -226,7 +227,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   type StudentRow = { id: string; telegram_id: number; full_name: string; class_name: string; login: string; password: string; pro_expires_at?: string | null };
 
   const student = await queryOne<StudentRow>(
-    "SELECT id, telegram_id, full_name, class_name, login, password, pro_expires_at FROM users WHERE login = $1",
+    "SELECT id, telegram_id, full_name, class_name, login, password, pro_expires_at FROM users WHERE LOWER(login) = LOWER($1)",
     [trimmedLogin]
   );
 
@@ -259,11 +260,42 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 });
 
 function generateStudentLogin(firstName: string): string {
-  return firstName
+  const base = firstName
     .toLowerCase()
     .replace(/[^a-z0-9]/g, ".")
     .replace(/\.+/g, ".")
     .replace(/^\.+|\.+$/g, "") || "student";
+  return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
+async function uniqueLogin(base: string): Promise<string> {
+  let login = base;
+  let suffix = 1;
+  while (true) {
+    const [a, b] = await Promise.all([
+      queryOne("SELECT login FROM staff WHERE LOWER(login) = LOWER($1)", [login]),
+      queryOne("SELECT login FROM users WHERE LOWER(login) = LOWER($1)", [login]),
+    ]);
+    if (!a && !b) return login;
+    login = `${base}${suffix}`;
+    suffix++;
+  }
+}
+
+const STAFF_ROLE_SLUG: Record<string, string> = {
+  director: "direktor",
+  mudir: "direktor",
+  zam_direktor: "zamdirektor",
+  zavuch: "zavuch",
+  kutubxonachi: "kutubxona",
+  teacher: "fan",
+};
+
+function generateStaffPassword(role: string, className: string | null): string {
+  if (role === "sinf_rahbari" && className) {
+    return "3maktab" + className.toLowerCase().replace(/\s+/g, "");
+  }
+  return "3maktab" + (STAFF_ROLE_SLUG[role] ?? role);
 }
 
 function generateStudentPassword(className: string): string {
@@ -298,22 +330,8 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   }
 
   const full_name = `${last_name.trim()} ${first_name.trim()}`;
-  let login = generateStudentLogin(first_name.trim());
+  const login = await uniqueLogin(generateStudentLogin(first_name.trim()));
   const password = generateStudentPassword(class_name.trim());
-
-  const ex1 = await queryOne("SELECT login FROM staff WHERE login = $1", [login]);
-  const ex2 = await queryOne("SELECT login FROM users WHERE login = $1", [login]);
-
-  if (ex1 || ex2) {
-    let suffix = 1;
-    while (true) {
-      const candidate = `${login}${suffix}`;
-      const a = await queryOne("SELECT login FROM staff WHERE login = $1", [candidate]);
-      const b = await queryOne("SELECT login FROM users WHERE login = $1", [candidate]);
-      if (!a && !b) { login = candidate; break; }
-      suffix++;
-    }
-  }
 
   const normalizedPhone = normalizePhone(phone_number);
   const phoneUsers = await query("SELECT login FROM users WHERE phone_number = $1", [normalizedPhone]);
@@ -354,23 +372,19 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       pro_expires_at,
     };
     const token = createToken(payload);
-    res.json(LoginResponse.parse({ ...payload, token }));
+    res.json({ ...LoginResponse.parse({ ...payload, token }), password });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message ?? "Xatolik yuz berdi" });
   }
 });
-
-// POST /api/auth/register-staff
 router.post("/auth/register-staff", async (req, res): Promise<void> => {
-  const { last_name, first_name, full_name: rawFullName, role, class_id, subjects, login: customLogin, password: customPassword, code_id } = req.body as {
+  const { last_name, first_name, full_name: rawFullName, role, class_id, subjects, code_id } = req.body as {
     last_name?: string;
     first_name?: string;
     full_name?: string;
     role?: string;
     class_id?: string | null;
     subjects?: string[];
-    login?: string;
-    password?: string;
     code_id?: string;
   };
 
@@ -417,26 +431,17 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     return;
   }
 
-  if (!customLogin || customLogin.trim().length < 3) {
-    res.status(400).json({ error: "Login kamida 3 ta belgidan iborat bo'lishi kerak" });
-    return;
-  }
-  if (!customPassword || customPassword.length < 4) {
-    res.status(400).json({ error: "Parol kamida 4 ta belgidan iborat bo'lishi kerak" });
-    return;
+  // Login va parol endi qo'lda kiritilmaydi — avtomatik generatsiya qilinadi
+  // (login: ismning bosh harfi katta bilan; parol: 3maktab + sinf yoki lavozim).
+  let classNameForPassword: string | null = null;
+  if (class_id) {
+    const cls = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [class_id]);
+    classNameForPassword = cls?.name ?? null;
   }
 
-  const login = customLogin.trim();
-  const password = customPassword.trim();
-
-  const [existLoginStaff, existLoginStudent] = await Promise.all([
-    queryOne("SELECT id FROM staff WHERE login = $1", [login]),
-    queryOne("SELECT login FROM users WHERE login = $1", [login]),
-  ]);
-  if (existLoginStaff || existLoginStudent) {
-    res.status(400).json({ error: "Bu login band. Boshqa login tanlang." });
-    return;
-  }
+  const loginFirstName = (first_name && first_name.trim()) || full_name.trim().split(" ")[0] || "xodim";
+  const login = await uniqueLogin(generateStudentLogin(loginFirstName));
+  const password = generateStaffPassword(role, classNameForPassword);
 
   const pro_expires_at_staff = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -462,8 +467,8 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
       );
     }
 
-    let class_name: string | null = null;
-    if (newStaff.class_id) {
+    let class_name: string | null = classNameForPassword;
+    if (!class_name && newStaff.class_id) {
       const cls = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [newStaff.class_id]);
       class_name = cls?.name ?? null;
     }
@@ -523,6 +528,50 @@ router.get("/auth/me", async (req, res): Promise<void> => {
 // POST /api/auth/logout
 router.post("/auth/logout", async (_req, res): Promise<void> => {
   res.json(LogoutResponse.parse({ ok: true }));
+});
+
+// PATCH /api/auth/update-credentials — login va/yoki parolni o'zgartirish
+// (avtomatik berilgan login/parol yoqmasa, foydalanuvchi o'zi tahrirlaydi).
+// Ishlaydi: o'quvchi, o'qituvchi/xodim va admin uchun ham.
+const UpdateCredentialsBody = z.object({
+  login: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9._]+$/, "Login faqat lotin harflar, raqam va nuqtadan iborat bo'lsin").optional(),
+  password: z.string().min(4).max(64).optional(),
+});
+
+router.patch("/auth/update-credentials", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  if (user["role"] === "admin") { res.status(400).json({ error: "Admin login/paroli bu yerdan o'zgartirilmaydi" }); return; }
+
+  const parsed = UpdateCredentialsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { login: newLogin, password: newPassword } = parsed.data;
+  if (!newLogin && !newPassword) { res.status(400).json({ error: "Hech narsa o'zgartirilmadi" }); return; }
+
+  const isStudent = user["role"] === "student";
+  const table = isStudent ? "users" : "staff";
+  const userId = user["id"] as string;
+
+  if (newLogin) {
+    const trimmed = newLogin.trim();
+    const [existStaff, existStudent] = await Promise.all([
+      queryOne("SELECT id FROM staff WHERE LOWER(login) = LOWER($1) AND id != $2", [trimmed, isStudent ? "" : userId]),
+      queryOne("SELECT id FROM users WHERE LOWER(login) = LOWER($1) AND id != $2", [trimmed, isStudent ? userId : ""]),
+    ]);
+    if (existStaff || existStudent) {
+      res.status(400).json({ error: "Bu login band. Boshqasini tanlang." });
+      return;
+    }
+    await query(`UPDATE ${table} SET login = $1 WHERE id = $2`, [trimmed, userId]);
+  }
+
+  if (newPassword) {
+    const hash = await hashPassword(newPassword);
+    await query(`UPDATE ${table} SET password = $1 WHERE id = $2`, [hash, userId]);
+  }
+
+  const fresh = await queryOne<{ login: string }>(`SELECT login FROM ${table} WHERE id = $1`, [userId]);
+  res.json({ ok: true, login: fresh?.login ?? user["login"] });
 });
 
 export default router;

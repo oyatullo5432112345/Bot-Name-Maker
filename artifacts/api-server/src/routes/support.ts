@@ -2,6 +2,8 @@ import { Router, type IRouter } from "express";
 import { getAuthUser } from "./auth.js";
 import { query, queryOne } from "../lib/db.js";
 
+const SUPPORT_STAFF_ROLES = ["admin", "director", "zam_direktor", "zavuch"];
+
 const router: IRouter = Router();
 
 // ─── Foydalanuvchi: o'z xabarlarini olish ────────────────────────────────────
@@ -60,7 +62,7 @@ router.get("/support/unread", async (req, res): Promise<void> => {
   const userId = String(user["id"]);
   const role = String(user["role"] ?? "");
 
-  if (role === "admin") {
+  if (SUPPORT_STAFF_ROLES.includes(role)) {
     const row = await queryOne<{ count: string }>(
       "SELECT COUNT(*)::text AS count FROM support_messages WHERE is_from_admin = FALSE AND is_read = FALSE"
     );
@@ -77,8 +79,8 @@ router.get("/support/unread", async (req, res): Promise<void> => {
 // ─── Admin: barcha foydalanuvchilar chatlari ──────────────────────────────────
 router.get("/support/chats", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || user["role"] !== "admin") {
-    res.status(403).json({ error: "Faqat admin uchun" });
+  if (!user || !SUPPORT_STAFF_ROLES.includes(user["role"] as string)) {
+    res.status(403).json({ error: "Faqat mas'ul xodimlar uchun" });
     return;
   }
 
@@ -106,8 +108,8 @@ router.get("/support/chats", async (req, res): Promise<void> => {
 // ─── Admin: muayyan foydalanuvchi xabarlarini olish ──────────────────────────
 router.get("/support/chats/:userId", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || user["role"] !== "admin") {
-    res.status(403).json({ error: "Faqat admin uchun" });
+  if (!user || !SUPPORT_STAFF_ROLES.includes(user["role"] as string)) {
+    res.status(403).json({ error: "Faqat mas'ul xodimlar uchun" });
     return;
   }
 
@@ -132,8 +134,8 @@ router.get("/support/chats/:userId", async (req, res): Promise<void> => {
 // ─── Admin: foydalanuvchiga javob berish ──────────────────────────────────────
 router.post("/support/chats/:userId/reply", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || user["role"] !== "admin") {
-    res.status(403).json({ error: "Faqat admin uchun" });
+  if (!user || !SUPPORT_STAFF_ROLES.includes(user["role"] as string)) {
+    res.status(403).json({ error: "Faqat mas'ul xodimlar uchun" });
     return;
   }
 

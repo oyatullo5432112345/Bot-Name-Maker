@@ -25,6 +25,7 @@ import olimpiadaAnnounceRouter from "./olimpiada-announce.js";
 import monitoringRouter from "./monitoring.js";
 import boardGamesRouter from "./board-games.js";
 import wheelGamesRouter from "./wheel-games.js";
+import adminResetRouter from "./admin-reset.js";
 
 const router: IRouter = Router();
 
@@ -54,5 +55,6 @@ router.use(olimpiadaAnnounceRouter);
 router.use(monitoringRouter);
 router.use(boardGamesRouter);
 router.use(wheelGamesRouter);
+router.use(adminResetRouter);
 
 export default router;
