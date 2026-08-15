@@ -22,11 +22,7 @@ const loginSchema = z.object({
 });
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-type Stage = "landing" | "platform-welcome" | "school-select" | "user-welcome";
-
-interface OlimpiyadaMaktab {
-  id: string; nomi: string; tuman: string; jami_ball: number;
-}
+type Stage = "landing" | "platform-welcome" | "auth-choice" | "user-welcome";
 
 const GLOBAL_CSS = `
   @keyframes tt-fade-up {
@@ -163,266 +159,6 @@ function PlatformWelcome({ onDone }: { onDone: () => void }) {
 }
 
 /* ─────────────────────────────────────────────
-   2. Olimpiada panel (o'ng tomon)
-───────────────────────────────────────────── */
-function OlimpiyadaPanel() {
-  const [maktablar, setMaktablar] = useState<OlimpiyadaMaktab[]>([]);
-  const [loading, setLoading] = useState(true);
-  const API = (import.meta.env.BASE_URL ?? "").replace(/\/$/, "") + "/api";
-  const MEDAL = ["🥇","🥈","🥉"];
-  const MEDAL_CLR = ["#F59E0B","#94A3B8","#B45309"];
-
-  useEffect(() => {
-    fetch(`${API}/olimpiada/maktablar`)
-      .then(r => r.ok ? r.json() : [])
-      .then((d: unknown) => { setMaktablar(Array.isArray(d) ? (d as OlimpiyadaMaktab[]) : []); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [API]);
-
-  const top3 = maktablar.slice(0, 3);
-  const rest = maktablar.slice(3);
-
-  return (
-    <div style={{
-      height: "100%", minHeight: 420, display: "flex", flexDirection: "column",
-      background: "linear-gradient(160deg, #0f2027 0%, #1a3344 55%, #203a43 100%)",
-      borderRadius: 20, overflow: "hidden",
-      border: "1px solid rgba(245,158,11,0.15)",
-      boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
-    }}>
-      {/* Header */}
-      <div style={{
-        padding: "18px 22px 14px",
-        background: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04))",
-        borderBottom: "1px solid rgba(245,158,11,0.15)",
-        display: "flex", alignItems: "center", gap: 12,
-      }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 12,
-          background: "linear-gradient(135deg, #f59e0b, #d97706)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 20, flexShrink: 0,
-        }}>🏆</div>
-        <div>
-          <div style={{ color: "white", fontWeight: 800, fontSize: 18 }}>Olimpiada.uz</div>
-          <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>
-            Toshloq tumani · 2026–2027 o'quv yili
-          </div>
-        </div>
-      </div>
-
-      {/* Body */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-        {loading ? (
-          <div style={{ display: "flex", justifyContent: "center", paddingTop: 40 }}>
-            <div style={{
-              width: 26, height: 26, borderRadius: "50%",
-              border: "2px solid rgba(245,158,11,0.25)", borderTopColor: "#f59e0b",
-              animation: "tt-spin 0.8s linear infinite",
-            }} />
-          </div>
-        ) : maktablar.length === 0 ? (
-          <div style={{ textAlign: "center", paddingTop: 36, color: "rgba(255,255,255,0.3)" }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>🏅</div>
-            <p style={{ fontSize: 13 }}>Ma'lumot yo'q</p>
-          </div>
-        ) : (
-          <>
-            {/* Stats */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {[
-                { label: "Jami maktab", val: maktablar.length, clr: "#60a5fa" },
-                { label: "Top ball", val: top3[0]?.jami_ball ?? 0, clr: "#f59e0b" },
-              ].map(s => (
-                <div key={s.label} style={{
-                  background: "rgba(255,255,255,0.05)", borderRadius: 12,
-                  padding: "10px 12px", border: "1px solid rgba(255,255,255,0.07)",
-                }}>
-                  <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 10, marginBottom: 2 }}>{s.label}</div>
-                  <div style={{ color: s.clr, fontSize: 22, fontWeight: 700 }}>{s.val}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Label */}
-            <div style={{
-              color: "rgba(255,255,255,0.4)", fontSize: 10,
-              letterSpacing: "0.08em", textTransform: "uppercase",
-            }}>
-              Yetakchi maktablar
-            </div>
-
-            {/* Top 3 */}
-            {top3.map((m, i) => (
-              <div key={m.id} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                background: "rgba(255,255,255,0.04)", borderRadius: 12,
-                padding: "10px 14px", border: `1px solid ${MEDAL_CLR[i]}22`,
-              }}>
-                <span style={{ fontSize: 20 }}>{MEDAL[i]}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    color: "white", fontSize: 13, fontWeight: 600,
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  }}>{m.nomi}</div>
-                  <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>{m.tuman}</div>
-                </div>
-                <div style={{ color: MEDAL_CLR[i], fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
-                  {m.jami_ball}
-                </div>
-              </div>
-            ))}
-
-            {/* Rest */}
-            {rest.map((m, i) => (
-              <div key={m.id} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                background: "rgba(255,255,255,0.025)", borderRadius: 10,
-                padding: "8px 14px", border: "1px solid rgba(255,255,255,0.05)",
-              }}>
-                <span style={{ color: "rgba(255,255,255,0.25)", fontSize: 11, fontWeight: 600, minWidth: 18 }}>
-                  {i + 4}
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    color: "rgba(255,255,255,0.75)", fontSize: 12,
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  }}>{m.nomi}</div>
-                </div>
-                <div style={{ color: "rgba(255,255,255,0.45)", fontWeight: 600, fontSize: 13 }}>
-                  {m.jami_ball}
-                </div>
-              </div>
-            ))}
-          </>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div style={{
-        padding: "10px 18px",
-        borderTop: "1px solid rgba(255,255,255,0.06)",
-        background: "rgba(0,0,0,0.25)",
-        color: "rgba(255,255,255,0.25)", fontSize: 11, textAlign: "center",
-      }}>
-        To'liq ko'rish uchun tizimga kiring
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   3. Maktab kartasi
-───────────────────────────────────────────── */
-interface SchoolCardProps {
-  name: string;
-  active?: boolean;
-  selected?: boolean;
-  onClick?: () => void;
-  onLogin?: () => void;
-  onRegister?: () => void;
-}
-
-function SchoolCard({ name, active, selected, onClick, onLogin, onRegister }: SchoolCardProps) {
-  return (
-    <div
-      onClick={active ? onClick : undefined}
-      style={{
-        borderRadius: 16, overflow: "hidden",
-        cursor: active ? "pointer" : "default",
-        border: selected
-          ? "2px solid #6366f1"
-          : active
-          ? "1px solid rgba(99,102,241,0.35)"
-          : "1px solid rgba(255,255,255,0.07)",
-        background: selected
-          ? "linear-gradient(135deg, #4338ca 0%, #6366f1 55%, #7c3aed 100%)"
-          : active
-          ? "linear-gradient(135deg, rgba(99,102,241,0.14) 0%, rgba(124,58,237,0.08) 100%)"
-          : "rgba(255,255,255,0.025)",
-        boxShadow: selected ? "0 8px 32px rgba(99,102,241,0.45)" : "none",
-        transform: selected ? "scale(1.02)" : "scale(1)",
-        transition: "all 0.22s ease",
-      }}
-    >
-      <div style={{ padding: "14px 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-            <span style={{ fontSize: 22 }}>{active ? "🏫" : "🏗️"}</span>
-            <div style={{ minWidth: 0 }}>
-              <div style={{
-                fontSize: 14, fontWeight: 700, lineHeight: 1.3,
-                color: selected ? "white" : active ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.35)",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-              }}>{name}</div>
-              <div style={{
-                fontSize: 10, marginTop: 1,
-                color: selected ? "rgba(255,255,255,0.65)"
-                  : active ? "rgba(255,255,255,0.45)"
-                  : "rgba(255,255,255,0.2)",
-              }}>
-                {active ? "Umumiy o'rta ta'lim maktabi" : "Tez orada ulash rejalashtirilgan"}
-              </div>
-            </div>
-          </div>
-          {active ? (
-            <div style={{
-              padding: "3px 10px", borderRadius: 24, flexShrink: 0,
-              background: selected ? "rgba(255,255,255,0.18)" : "rgba(99,102,241,0.22)",
-              color: selected ? "white" : "#a5b4fc",
-              fontSize: 10, fontWeight: 700,
-            }}>
-              ✓ Tayyor
-            </div>
-          ) : (
-            <div style={{
-              padding: "3px 10px", borderRadius: 24, flexShrink: 0,
-              background: "rgba(255,255,255,0.04)",
-              color: "rgba(255,255,255,0.22)",
-              fontSize: 10,
-            }}>
-              Tez orada
-            </div>
-          )}
-        </div>
-
-        {/* Expand on select */}
-        {selected && active && (
-          <div style={{
-            marginTop: 14, display: "flex", gap: 8,
-            animation: "tt-slide-up 0.3s ease both",
-          }}>
-            <button
-              onClick={e => { e.stopPropagation(); onLogin?.(); }}
-              style={{
-                flex: 1, padding: "10px 0", borderRadius: 10,
-                background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.3)",
-                color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              }}
-            >
-              <LogIn size={14} /> Kirish
-            </button>
-            <button
-              onClick={e => { e.stopPropagation(); onRegister?.(); }}
-              style={{
-                flex: 1, padding: "10px 0", borderRadius: 10,
-                background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)",
-                color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              }}
-            >
-              <UserPlus size={14} /> Ro'yxatdan o'tish
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
    4. Qo'llab-quvvatlash dialog
 ───────────────────────────────────────────── */
 function SupportDialog({
@@ -464,20 +200,6 @@ function SupportDialog({
 }
 
 /* ─────────────────────────────────────────────
-   Maktablar ro'yxati
-───────────────────────────────────────────── */
-const SCHOOLS = [
-  { id: "3", name: "Toshloq tumani 3-maktab", active: true },
-  { id: "1", name: "Toshloq tumani 1-maktab", active: false },
-  { id: "2", name: "Toshloq tumani 2-maktab", active: false },
-  { id: "4", name: "Toshloq tumani 4-maktab", active: false },
-  { id: "5", name: "Toshloq tumani 5-maktab", active: false },
-  { id: "6", name: "Toshloq tumani 6-maktab", active: false },
-  { id: "7", name: "Toshloq tumani 7-maktab", active: false },
-  { id: "8", name: "Toshloq tumani 8-maktab", active: false },
-];
-
-/* ─────────────────────────────────────────────
    Asosiy komponent
 ───────────────────────────────────────────── */
 export default function Login() {
@@ -486,7 +208,6 @@ export default function Login() {
   const { toast } = useToast();
 
   const [stage, setStage] = useState<Stage>("landing");
-  const [selectedSchool, setSelectedSchool] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [botLoginLoading, setBotLoginLoading] = useState(false);
   const [welcomeUser, setWelcomeUser] = useState<{ name: string; role: string } | null>(null);
@@ -575,112 +296,93 @@ export default function Login() {
     return (
       <>
         <style>{GLOBAL_CSS}</style>
-        <PlatformWelcome onDone={() => setStage("school-select")} />
+        <PlatformWelcome onDone={() => setStage("auth-choice")} />
       </>
     );
   }
 
-  /* ── Maktab tanlash sahifasi ── */
-  if (stage === "school-select") {
+  /* ── Kirish / Ro'yxatdan o'tish tanlash ── */
+  if (stage === "auth-choice") {
     return (
       <div style={{
         minHeight: "100vh",
         background: "linear-gradient(145deg, #0a1628 0%, #111f3d 50%, #0d1b2a 100%)",
         display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        padding: "24px", position: "relative", overflow: "hidden",
       }}>
         <style>{GLOBAL_CSS}</style>
 
-        {/* Top-bar */}
+        {/* Fon halqalari */}
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{
+            position: "absolute", borderRadius: "50%", pointerEvents: "none",
+            background: `rgba(99,102,241,${0.06 - i * 0.015})`,
+            width: `${260 + i * 180}px`, height: `${260 + i * 180}px`,
+            top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+          }} />
+        ))}
+
         <div style={{
-          padding: "14px 24px",
-          background: "rgba(0,0,0,0.25)",
-          borderBottom: "1px solid rgba(255,255,255,0.07)",
-          display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
+          position: "relative", zIndex: 1, width: "100%", maxWidth: 380,
+          animation: "tt-fade-up 0.5s ease both",
         }}>
-          <span style={{ fontSize: 22 }}>🏫</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ color: "white", fontWeight: 800, fontSize: 16, lineHeight: 1.2 }}>
-              Toshloq Tumani Platformasi
-            </div>
-            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 11 }}>
-              Farg'ona viloyati · Ta'lim boshqaruvi
-            </div>
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{ fontSize: 56, marginBottom: 14, filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.4))" }}>🏫</div>
+            <div style={{ color: "white", fontWeight: 800, fontSize: 22, marginBottom: 4 }}>Toshloq tumani 3-maktab</div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Davom etish uchun tanlang</div>
           </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <button
+              onClick={() => setLoginOpen(true)}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                background: "linear-gradient(135deg, #6366f1, #7c3aed)",
+                border: "none", borderRadius: 16, padding: "17px 24px",
+                color: "white", fontSize: 16, fontWeight: 700, cursor: "pointer",
+                boxShadow: "0 8px 32px rgba(99,102,241,0.4)",
+              }}
+            >
+              <LogIn size={19} /> Kirish
+            </button>
+            <button
+              onClick={() => setLocation("/register")}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(255,255,255,0.15)",
+                borderRadius: 16, padding: "17px 24px",
+                color: "white", fontSize: 16, fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              <UserPlus size={19} /> Ro'yxatdan o'tish
+            </button>
+          </div>
+
           <button
-            onClick={() => { setSupportOpen(true); setSupportDone(false); }}
+            onClick={() => setStage("landing")}
             style={{
-              background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 8, padding: "6px 12px", color: "rgba(255,255,255,0.55)",
-              fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+              display: "block", margin: "24px auto 0", background: "none", border: "none",
+              color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer",
             }}
           >
-            💬 <span>Yordam</span>
+            ← Orqaga
           </button>
         </div>
 
-        {/* Asosiy kontent */}
-        <div style={{
-          flex: 1, display: "flex", flexWrap: "wrap", gap: 20,
-          padding: "24px 20px", maxWidth: 1240, margin: "0 auto", width: "100%",
-          boxSizing: "border-box", alignItems: "flex-start",
-        }}>
+        <button
+          onClick={() => { setSupportOpen(true); setSupportDone(false); }}
+          style={{
+            position: "fixed", bottom: 20, right: 20,
+            background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: 10, padding: "8px 14px",
+            color: "rgba(255,255,255,0.45)", fontSize: 12, cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 6,
+          }}
+        >
+          💬 Qo'llab-quvvatlash
+        </button>
 
-          {/* Chap: Maktablar */}
-          <div style={{
-            flex: "1 1 380px", minWidth: 280,
-            display: "flex", flexDirection: "column", gap: 14,
-            animation: "tt-fade-up 0.5s ease both",
-          }}>
-            <div>
-              <h2 style={{
-                color: "white", fontWeight: 800, fontSize: "clamp(18px,3vw,26px)",
-                margin: "0 0 4px", lineHeight: 1.2,
-              }}>
-                Maktabni tanlang
-              </h2>
-              <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13, margin: 0 }}>
-                Toshloq tumani maktablari · Kirish uchun maktabingizni bosing
-              </p>
-            </div>
-
-            {/* Kartalar */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-              {SCHOOLS.map(s => (
-                <SchoolCard
-                  key={s.id}
-                  name={s.name}
-                  active={s.active}
-                  selected={selectedSchool === s.id}
-                  onClick={() => setSelectedSchool(prev => prev === s.id ? null : s.id)}
-                  onLogin={() => setLoginOpen(true)}
-                  onRegister={() => setLocation("/register")}
-                />
-              ))}
-            </div>
-
-            {/* Admin eslatmasi */}
-            <div style={{
-              padding: "11px 14px", borderRadius: 12,
-              background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
-              color: "rgba(255,255,255,0.3)", fontSize: 12,
-              display: "flex", alignItems: "center", gap: 8,
-            }}>
-              <span>ℹ️</span>
-              <span>Boshqa maktablarni ulash admin tomonidan amalga oshiriladi</span>
-            </div>
-          </div>
-
-          {/* O'ng: Olimpiada paneli */}
-          <div style={{
-            flex: "0 1 380px", minWidth: 280,
-            animation: "tt-fade-up 0.5s ease 0.12s both",
-            alignSelf: "stretch",
-          }}>
-            <OlimpiyadaPanel />
-          </div>
-        </div>
-
-        {/* Support dialog */}
         <SupportDialog
           open={supportOpen} done={supportDone}
           msg={supportMsg} name={supportName} loading={supportLoading}
