@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { 
   useListStudents, 
@@ -36,9 +36,13 @@ export default function StudentsList() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  
+  const searchParams = new URLSearchParams(useSearch());
+  const classFromUrl = searchParams.get("class");
+
   const isSinfRahbari = user?.role === "sinf_rahbari";
-  const classFilter = isSinfRahbari && user?.class_name ? { class_name: user.class_name } : {};
+  const classFilter = classFromUrl
+    ? { class_name: classFromUrl }
+    : (isSinfRahbari && user?.class_name ? { class_name: user.class_name } : {});
 
   const { data: students, isLoading } = useListStudents(classFilter, {
     query: {
@@ -79,17 +83,24 @@ export default function StudentsList() {
     s.class_name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const pageTitle = isSinfRahbari && user?.class_name
+  const pageTitle = classFromUrl
+    ? `${classFromUrl} sinfi o'quvchilari`
+    : isSinfRahbari && user?.class_name
     ? `${user.class_name} sinfi o'quvchilari`
     : "O'quvchilar";
 
   return (
     <div className="space-y-6">
+      {classFromUrl && (
+        <Link href="/classes" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit">
+          ← Sinflar ro'yxatiga qaytish
+        </Link>
+      )}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
           <p className="text-muted-foreground mt-1">
-            {isSinfRahbari ? "Sinfingiz o'quvchilari ro'yxati" : "Barcha o'quvchilar ro'yxati"}
+            {classFromUrl ? `To'liq ro'yxatdan o'tgan o'quvchilarning ma'lumotlari` : isSinfRahbari ? "Sinfingiz o'quvchilari ro'yxati" : "Barcha o'quvchilar ro'yxati"}
           </p>
         </div>
         
