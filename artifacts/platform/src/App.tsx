@@ -15,6 +15,7 @@ import { SkeletonPage } from "@/components/skeleton-page";
 
 const Login = lazy(() => import("@/pages/login"));
 const Register = lazy(() => import("@/pages/register"));
+const Welcome = lazy(() => import("@/pages/welcome"));
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const StudentsList = lazy(() => import("@/pages/students/index"));
 const NewStudent = lazy(() => import("@/pages/students/new"));
@@ -30,11 +31,6 @@ const BoardGameNew = lazy(() => import("@/pages/games/board/new"));
 const BoardGamePlay = lazy(() => import("@/pages/games/board/play"));
 const WheelList = lazy(() => import("@/pages/games/wheel/index"));
 const WheelSpin = lazy(() => import("@/pages/games/wheel/spin"));
-const SozOyini = lazy(() => import("@/pages/games/sozoyini"));
-const Jumboq = lazy(() => import("@/pages/games/jumboq"));
-const Arqon = lazy(() => import("@/pages/games/arqon"));
-const Poyga = lazy(() => import("@/pages/games/poyga"));
-const Reyting = lazy(() => import("@/pages/games/reyting"));
 const DarslikPage = lazy(() => import("@/pages/darslik/index"));
 const NewDarslikPage = lazy(() => import("@/pages/darslik/new"));
 const BaholashPage = lazy(() => import("@/pages/baholash/index"));
@@ -45,6 +41,7 @@ const LibraryLoansPage = lazy(() => import("@/pages/library/loans"));
 const CertificatePage = lazy(() => import("@/pages/certificate"));
 
 const AdminCodesPage = lazy(() => import("@/pages/admin/codes"));
+const AdminResetPage = lazy(() => import("@/pages/admin/reset"));
 const ReytingPage = lazy(() => import("@/pages/reyting/index"));
 const QollanmalarPage = lazy(() => import("@/pages/qollanmalar"));
 const OlimpiyadaPage = lazy(() => import("@/pages/olimpiada/index"));
@@ -108,7 +105,9 @@ function Router() {
         )}
       </Route>
       <Route path="/">
-        {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <Redirect to="/dashboard" />}
+        {user
+          ? (user.role === "mudir" ? <Redirect to="/olimpiada" /> : <Redirect to="/dashboard" />)
+          : <Suspense fallback={<LoadingSpinner />}><Welcome /></Suspense>}
       </Route>
 
       <Route path="/dashboard">
@@ -142,6 +141,7 @@ function Router() {
       <Route path="/olimpiada"><ProtectedRoute component={OlimpiyadaPage} /></Route>
 
       <Route path="/admin/codes"><ProtectedRoute component={AdminCodesPage} roles={["admin","director","mudir"]} /></Route>
+      <Route path="/admin/reset"><ProtectedRoute component={AdminResetPage} roles={["admin"]} /></Route>
       <Route path="/reyting"><ProtectedRoute component={ReytingPage} /></Route>
       <Route path="/tanga"><ProtectedRoute component={TangaPage} /></Route>
 
@@ -154,17 +154,12 @@ function Router() {
       <Route path="/announcements"><ProtectedRoute component={AnnouncementsPage} /></Route>
       <Route path="/chat"><ProtectedRoute component={ChatPage} /></Route>
 
-      <Route path="/games/sozoyini"><ProtectedRoute component={SozOyini} roles={["student"]} /></Route>
-      <Route path="/games/jumboq"><ProtectedRoute component={Jumboq} roles={["student"]} /></Route>
-      <Route path="/games/arqon"><ProtectedRoute component={Arqon} roles={["student"]} /></Route>
-      <Route path="/games/poyga"><ProtectedRoute component={Poyga} roles={["student"]} /></Route>
-      <Route path="/games/reyting"><ProtectedRoute component={Reyting} roles={["student"]} /></Route>
       <Route path="/games/board/new"><ProtectedRoute component={BoardGameNew} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
       <Route path="/games/board/:id"><ProtectedRoute component={BoardGamePlay} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
       <Route path="/games/board"><ProtectedRoute component={BoardGameList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
       <Route path="/games/wheel/:id"><ProtectedRoute component={WheelSpin} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
       <Route path="/games/wheel"><ProtectedRoute component={WheelList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
-      <Route path="/games"><ProtectedRoute component={GamesPage} roles={["student"]} /></Route>
+      <Route path="/games"><ProtectedRoute component={GamesPage} /></Route>
 
       <Route><Suspense fallback={<LoadingSpinner />}><NotFound /></Suspense></Route>
     </Switch>
