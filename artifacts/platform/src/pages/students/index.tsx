@@ -44,7 +44,7 @@ export default function StudentsList() {
     ? { class_name: classFromUrl }
     : (isSinfRahbari && user?.class_name ? { class_name: user.class_name } : {});
 
-  const { data: students, isLoading } = useListStudents(classFilter, {
+  const { data: students, isLoading, isError } = useListStudents(classFilter, {
     query: {
       queryKey: getListStudentsQueryKey(classFilter),
       staleTime: 15_000,
@@ -153,7 +153,13 @@ export default function StudentsList() {
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
                 </TableCell>
               </TableRow>
-            ) : filteredStudents?.length === 0 ? (
+            ) : isError ? (
+              <TableRow>
+                <TableCell colSpan={isAdmin ? 6 : 5} className="h-24 text-center text-destructive">
+                  Ma'lumotlarni yuklashda xatolik yuz berdi. Sahifani yangilab ko'ring.
+                </TableCell>
+              </TableRow>
+            ) : !filteredStudents || filteredStudents.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={isAdmin ? 6 : 5} className="h-24 text-center text-muted-foreground">
                   Ma'lumot topilmadi
