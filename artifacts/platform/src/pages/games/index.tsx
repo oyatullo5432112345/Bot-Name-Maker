@@ -110,12 +110,17 @@ export default function GamesPage() {
               <div className="group relative rounded-3xl border neon-border-blue bg-gradient-to-br from-blue-950/80 via-slate-900/90 to-slate-950 p-6 overflow-hidden transition-all duration-300 hover:scale-[1.02] game-card-glow-blue cursor-pointer h-full min-h-[220px] flex flex-col justify-between">
                 
                 {/* 3D Illyustratsiya foni */}
-                <img 
-                  src="/images/bamboozle-3d.png" 
-                  alt="Bamboozle 3D" 
-                  className="absolute -right-2 top-0 h-full w-auto object-cover opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none" 
-                  onError={(e) => (e.currentTarget.style.display = 'none')}
-                />
+                <div className="absolute -right-2 top-0 h-full w-[60%] pointer-events-none overflow-hidden">
+                  <img 
+                    src="/images/bamboozle-3d.png" 
+                    alt="Bamboozle 3D" 
+                    className="h-full w-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+                    onError={(e) => (e.currentTarget.style.display = 'none')}
+                  />
+                  {/* Chap tomondan karta foniga yumshoq eritish */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-950 via-blue-950/40 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-blue-950/90 via-transparent to-blue-950/30" />
+                </div>
 
                 <div className="relative z-10 max-w-[65%] space-y-3">
                   <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-400/40 p-2 flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.3)]">
@@ -124,10 +129,12 @@ export default function GamesPage() {
                       alt="Trophy" 
                       className="w-full h-full object-contain"
                       onError={(e) => {
+                        // Rasm topilmasa, o'rniga oddiy ikonka ko'rsatiladi
                         e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextElementSibling?.classList.remove('hidden');
                       }}
                     />
-                    <Trophy className="w-5 h-5 text-amber-400" />
+                    <Trophy className="w-5 h-5 text-amber-400 hidden" />
                   </div>
 
                   <h3 className="font-bold text-xl text-white tracking-tight">Bamboozle</h3>
@@ -152,12 +159,16 @@ export default function GamesPage() {
               <div className="group relative rounded-3xl border neon-border-purple bg-gradient-to-br from-purple-950/80 via-slate-900/90 to-slate-950 p-6 overflow-hidden transition-all duration-300 hover:scale-[1.02] game-card-glow-purple cursor-pointer h-full min-h-[220px] flex flex-col justify-between">
                 
                 {/* 3D Charxpalak foni */}
-                <img 
-                  src="/images/wheel-3d.png" 
-                  alt="Wheel 3D" 
-                  className="absolute -right-4 -bottom-4 h-48 w-auto object-contain opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none" 
-                  onError={(e) => (e.currentTarget.style.display = 'none')}
-                />
+                <div className="absolute -right-4 -bottom-4 h-56 w-56 pointer-events-none">
+                  <img 
+                    src="/images/wheel-3d.png" 
+                    alt="Wheel 3D" 
+                    className="h-full w-full object-contain opacity-90 group-hover:opacity-100 transition-opacity"
+                    onError={(e) => (e.currentTarget.style.display = 'none')}
+                  />
+                  {/* Chap-yuqori tomondan karta foniga yumshoq eritish */}
+                  <div className="absolute inset-0 bg-gradient-to-tl from-transparent via-transparent to-purple-950/60" style={{ background: "radial-gradient(circle at 30% 30%, transparent 35%, rgba(59,7,100,0.5) 70%)" }} />
+                </div>
 
                 <div className="relative z-10 max-w-[65%] space-y-3">
                   <div className="w-11 h-11 rounded-2xl bg-pink-500/20 border border-pink-400/40 p-2 flex items-center justify-center shadow-[0_0_15px_rgba(236,72,153,0.4)]">
