@@ -19,7 +19,7 @@ const authH = (): HeadersInit => {
 const CATEGORIES = [
   { key: "mahfiy_kodlar", label: "Mahfiy kodlar", desc: "Barcha yaratilgan ro'yxatdan o'tish kodlari", icon: KeyRound },
   { key: "sinflar", label: "Sinflar", desc: "Barcha sinflar (xodimlarning sinf biriktiruvi ham tozalanadi)", icon: School },
-  { key: "oyinlar", label: "O'yinlar", desc: "Bilim Arenasi va G'ildirak — barcha o'yinlar va ochkolar", icon: Gamepad2 },
+  { key: "oyinlar", label: "O'yinlar", desc: "Bamboozle va Omadli Charxpalak — barcha o'yinlar va ochkolar", icon: Gamepad2 },
   { key: "xodimlar", label: "Xodimlar ro'yxati", desc: "Admin'dan boshqa barcha xodimlar (o'qituvchi, direktor va h.k.)", icon: Users },
   { key: "monitoring", label: "Monitoring testlari", desc: "Barcha testlar, savollar va natijalar", icon: ClipboardCheck },
 ] as const;
