@@ -151,7 +151,7 @@ export default function BoardGameNewPage() {
           <ArrowLeft className="w-4 h-4" /> Orqaga
         </Link>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">🏆 Yangi Bilim Arenasi</h1>
+          <h1 className="text-2xl font-bold tracking-tight">🏆 Yangi Bamboozle</h1>
           <p className="text-muted-foreground text-sm mt-1">Avval jamoalar sonini va katakchalar sonini tanlang</p>
         </div>
 

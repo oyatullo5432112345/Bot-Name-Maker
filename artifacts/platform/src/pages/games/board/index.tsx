@@ -35,14 +35,23 @@ export default function BoardGameListPage() {
         <ArrowLeft className="w-4 h-4" /> O'yinlarga qaytish
       </Link>
 
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">🏆 Bilim Arenasi</h1>
-          <p className="text-muted-foreground text-sm mt-1">Jamoalar bo'lib o'ynaladigan savol-javob o'yini — bonus, jarima va o'g'irlash katakchalari bilan</p>
+      <div className="relative rounded-2xl overflow-hidden border border-blue-500/20 bg-gradient-to-br from-blue-950/40 via-card to-card p-6 sm:p-7">
+        <div className="absolute -top-20 -right-16 w-56 h-56 rounded-full bg-blue-500/[0.08] blur-3xl" />
+        <div className="relative flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
+              <Trophy className="w-6 h-6 text-blue-400" strokeWidth={1.75} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-blue-400/80 uppercase tracking-widest mb-1">Guruh o'yini</p>
+              <h1 className="text-2xl font-bold tracking-tight">Bamboozle</h1>
+              <p className="text-muted-foreground text-sm mt-1.5 max-w-md">Jamoalar bo'lib o'ynaladigan savol-javob o'yini — bonus, jarima va o'g'irlash katakchalari bilan</p>
+            </div>
+          </div>
+          <Link href="/games/board/new">
+            <Button className="gap-2"><Plus className="w-4 h-4" /> Yangi o'yin</Button>
+          </Link>
         </div>
-        <Link href="/games/board/new">
-          <Button className="gap-2"><Plus className="w-4 h-4" /> Yangi o'yin</Button>
-        </Link>
       </div>
 
       <div className="relative">
@@ -88,4 +97,4 @@ export default function BoardGameListPage() {
       )}
     </div>
   );
-              }
+}
