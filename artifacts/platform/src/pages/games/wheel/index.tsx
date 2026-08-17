@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, ArrowLeft, Loader2, Trash2, PlayCircle, Clock, X, Users, HelpCircle } from "lucide-react";
+import { Plus, ArrowLeft, Loader2, Trash2, PlayCircle, Clock, X, Users, HelpCircle, RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,12 +98,21 @@ export default function WheelListPage() {
         <ArrowLeft className="w-4 h-4" /> O'yinlarga qaytish
       </Link>
 
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">🎡 G'ildirak</h1>
-          <p className="text-muted-foreground text-sm mt-1">Aylanadigan g'ildirak — har bo'limga yashirin savol qo'shishingiz mumkin</p>
+      <div className="relative rounded-2xl overflow-hidden border border-rose-500/20 bg-gradient-to-br from-rose-950/30 via-card to-card p-6 sm:p-7">
+        <div className="absolute -top-20 -right-16 w-56 h-56 rounded-full bg-rose-500/[0.08] blur-3xl" />
+        <div className="relative flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center shrink-0">
+              <RefreshCw className="w-6 h-6 text-rose-400" strokeWidth={1.75} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-rose-400/80 uppercase tracking-widest mb-1">Guruh o'yini</p>
+              <h1 className="text-2xl font-bold tracking-tight">Omadli Charxpalak</h1>
+              <p className="text-muted-foreground text-sm mt-1.5 max-w-md">Aylanadigan g'ildirak — har bo'limga yashirin savol qo'shishingiz mumkin</p>
+            </div>
+          </div>
+          <Button onClick={() => setDialogOpen(true)} className="gap-2"><Plus className="w-4 h-4" /> Yangi g'ildirak</Button>
         </div>
-        <Button onClick={() => setDialogOpen(true)} className="gap-2"><Plus className="w-4 h-4" /> Yangi g'ildirak</Button>
       </div>
 
       {isLoading ? (
@@ -202,4 +211,4 @@ export default function WheelListPage() {
       </Dialog>
     </div>
   );
-    }
+}
