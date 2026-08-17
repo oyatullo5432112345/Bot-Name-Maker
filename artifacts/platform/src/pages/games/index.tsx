@@ -1,16 +1,85 @@
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { Gamepad2, Sparkles, Users, Grid3x3, ArrowUpRight, Trophy, Zap } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
 
 const STAFF_ROLES = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"];
 
+const GAME_IMAGES = [
+  "/images/hero-bg.png",
+  "/images/bamboozle-3d.png",
+  "/images/wheel-3d.png",
+  "/images/trophy-3d.png",
+];
+
+function preloadImages(urls: string[]): Promise<void[]> {
+  return Promise.all(
+    urls.map(
+      (src) =>
+        new Promise<void>((resolve) => {
+          const img = new Image();
+          img.src = src;
+          // Rasm muvaffaqiyatli yoki xato bilan tugasa ham davom etamiz —
+          // bitta rasm topilmasa butun sahifa "osilib qolmasin"
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+        })
+    )
+  );
+}
+
+function GamesLoadingScreen() {
+  return (
+    <div className="relative min-h-screen -m-6 p-6 bg-[#070b19] flex items-center justify-center overflow-hidden">
+      {/* Fon yulduzchalar effekti */}
+      <div className="absolute inset-0 opacity-30 pointer-events-none">
+        <div className="absolute top-10 left-10 w-1 h-1 rounded-full bg-white animate-pulse" />
+        <div className="absolute top-24 right-20 w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" style={{ animationDelay: "0.3s" }} />
+        <div className="absolute bottom-32 left-1/4 w-1 h-1 rounded-full bg-white animate-pulse" style={{ animationDelay: "0.6s" }} />
+        <div className="absolute bottom-20 right-1/3 w-1.5 h-1.5 rounded-full bg-purple-300 animate-pulse" style={{ animationDelay: "0.9s" }} />
+        <div className="absolute top-1/2 left-16 w-1 h-1 rounded-full bg-white animate-pulse" style={{ animationDelay: "0.4s" }} />
+      </div>
+
+      <div className="relative z-10 flex flex-col items-center gap-5">
+        <div className="relative w-16 h-16 flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full border-2 border-blue-500/20" />
+          <div className="absolute inset-0 rounded-full border-2 border-t-blue-400 border-r-purple-400 border-b-transparent border-l-transparent animate-spin shadow-[0_0_20px_rgba(96,165,250,0.5)]" />
+          <Gamepad2 className="w-6 h-6 text-blue-300" strokeWidth={1.75} />
+        </div>
+        <div className="text-center space-y-1">
+          <p className="text-white font-semibold text-sm tracking-wide">O'yinlar yuklanmoqda</p>
+          <p className="text-slate-400 text-xs">Iltimos, biroz kuting…</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GamesPage() {
   const { user } = useAuth();
   const isStaff = !!user && STAFF_ROLES.includes(user.role);
+  const [imagesReady, setImagesReady] = useState(false);
+
+  useEffect(() => {
+    if (!isStaff) return;
+    let cancelled = false;
+
+    preloadImages(GAME_IMAGES).then(() => {
+      if (!cancelled) setImagesReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isStaff]);
 
   if (isStaff) {
+    if (!imagesReady) {
+      return <GamesLoadingScreen />;
+    }
+
     return (
-      <div className="relative min-h-screen text-white pb-12 overflow-hidden -m-6 p-6 bg-[#070b19]">
+      <div className="relative min-h-screen text-white pb-12 overflow-hidden -m-6 p-6 bg-[#070b19] animate-fade-in-up">
         {/* Orqa fon banneri */}
         <div 
           className="absolute top-0 left-0 right-0 h-64 bg-cover bg-center opacity-40 pointer-events-none"
