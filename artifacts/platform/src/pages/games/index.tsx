@@ -1,215 +1,244 @@
-import { Link } from "wouter";
-import { Gamepad2, Sparkles, Users, Grid3x3, ArrowUpRight, BookOpen, Star, Compass } from "lucide-react";
-import { useAuth } from "@/lib/use-auth";
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ta'lim Platformasi</title>
+  <style>
+    :root {
+      --bg-dark: #070a14;
+      --card-bg: rgba(20, 26, 48, 0.7);
+      --border-blue: rgba(56, 189, 248, 0.35);
+      --border-purple: rgba(192, 132, 252, 0.35);
+      --text-main: #ffffff;
+      --text-muted: #8b9bb4;
+      --gold: #facc15;
+    }
 
-const STAFF_ROLES = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"];
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
 
-export default function GamesPage() {
-  const { user } = useAuth();
-  const isStaff = !!user && STAFF_ROLES.includes(user.role);
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+    }
 
-  if (isStaff) {
-    return (
-      <div
-        className="relative min-h-screen text-white pb-12 overflow-hidden -m-6 p-6"
-        style={{
-          background:
-            "radial-gradient(circle at 50% -10%, #161c38 0%, #080b18 55%, #050710 100%)",
-        }}
-      >
-        {/* Yengil yulduzcha fon (CSS-only, rasm fayli yo'q) */}
-        <div className="absolute inset-0 pointer-events-none opacity-70">
-          <div className="absolute top-8 left-8 w-1 h-1 rounded-full bg-white/80" />
-          <div className="absolute top-14 left-1/3 w-0.5 h-0.5 rounded-full bg-amber-200/70" />
-          <div className="absolute top-6 right-16 w-1 h-1 rounded-full bg-white/60" />
-          <div className="absolute top-24 right-1/4 w-0.5 h-0.5 rounded-full bg-white/70" />
-          <div className="absolute top-40 left-1/4 w-1 h-1 rounded-full bg-purple-200/60" />
-          <div className="absolute top-32 right-10 w-0.5 h-0.5 rounded-full bg-white/50" />
-          <div className="absolute top-52 left-14 w-0.5 h-0.5 rounded-full bg-white/60" />
+    .app-container {
+      width: 100%;
+      max-width: 480px;
+      padding: 24px 16px 90px 16px;
+      background: radial-gradient(circle at top, #131c38 0%, #070a14 75%);
+    }
 
-          {/* Suzib yuruvchi ikonalar */}
-          <BookOpen className="absolute top-10 right-8 w-6 h-6 text-blue-300/25 animate-float" />
-          <Star className="absolute top-4 left-1/2 w-4 h-4 text-amber-300/30 animate-float" style={{ animationDelay: "0.5s" }} />
-          <Compass className="absolute top-20 left-6 w-5 h-5 text-purple-300/20 animate-float" style={{ animationDelay: "1s" }} />
-        </div>
+    .header-sub {
+      color: var(--gold);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
 
-        <div className="relative z-10 max-w-3xl space-y-8">
-          {/* Header */}
-          <div>
-            <p className="text-[11px] font-bold text-amber-400 uppercase tracking-widest mb-1.5">
-              Interaktiv dars vositalari
-            </p>
-            <h1
-              className="text-3xl font-extrabold tracking-tight"
-              style={{
-                background: "linear-gradient(180deg, #ffffff 0%, #cfd9ec 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-              }}
-            >
-              Guruh o'yinlari
-            </h1>
-            <p className="text-slate-300 text-sm mt-1.5 max-w-md">
-              Sinf bilan jonli o'tkaziladigan, jamoaviy bilim musobaqalari
-            </p>
+    .header-title {
+      font-size: 28px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .header-desc {
+      color: var(--text-muted);
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 24px;
+    }
+
+    .cards-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .game-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border-radius: 20px;
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .card-blue {
+      border: 1px solid var(--border-blue);
+      box-shadow: 0 10px 30px rgba(56, 189, 248, 0.1);
+    }
+
+    .card-purple {
+      border: 1px solid var(--border-purple);
+      box-shadow: 0 10px 30px rgba(192, 132, 252, 0.1);
+    }
+
+    .card-content {
+      flex: 1;
+      padding-right: 12px;
+    }
+
+    .icon-badge {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    .badge-blue {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid var(--border-blue);
+    }
+
+    .badge-purple {
+      background: rgba(192, 132, 252, 0.15);
+      border: 1px solid var(--border-purple);
+    }
+
+    .card-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .card-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin-bottom: 14px;
+    }
+
+    .card-tags {
+      display: flex;
+      gap: 12px;
+      font-size: 12px;
+      color: #a0aec0;
+    }
+
+    /* PNG'siz Sof CSS Vizual Effectlar */
+    .visual-box {
+      width: 90px;
+      height: 90px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .visual-blue {
+      background: radial-gradient(circle, rgba(56,189,248,0.25) 0%, rgba(0,0,0,0) 70%);
+    }
+
+    .visual-purple {
+      background: radial-gradient(circle, rgba(192,132,252,0.25) 0%, rgba(0,0,0,0) 70%);
+    }
+
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 480px;
+      background: rgba(10, 14, 26, 0.95);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      justify-content: space-around;
+      padding: 12px 0;
+    }
+
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 10px;
+    }
+
+    .nav-item.active {
+      color: #ec4899;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    <div class="header-sub">INTERAKTIV DARS VOSITALARI</div>
+    <h1 class="header-title">Guruh o'yinlari</h1>
+    <p class="header-desc">Sinf bilan jonli o'tkaziladigan, jamoaviy bilim musobaqalari</p>
+
+    <div class="cards-wrapper">
+
+      <!-- Bamboozle Card -->
+      <a href="/bamboozle" class="game-card card-blue">
+        <div class="card-content">
+          <div class="icon-badge badge-blue">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#facc15"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94A5.01 5.01 0 0011 15.9V19H7v2h10v-2h-4v-3.1c2.19-.38 3.88-2.02 3.98-4.33C19.39 11.23 21 9.22 21 7V5c0-1.1-.9-2-2-2z"/></svg>
           </div>
-
-          {/* Cards */}
-          <div className="grid gap-4 sm:grid-cols-1">
-
-            {/* Bamboozle Card */}
-            <Link href="/games/board">
-              <div
-                className="group relative flex items-center justify-between rounded-3xl border p-5 overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.015] active:scale-[0.98]"
-                style={{
-                  background: "rgba(23, 27, 52, 0.55)",
-                  backdropFilter: "blur(14px)",
-                  WebkitBackdropFilter: "blur(14px)",
-                  borderColor: "rgba(62, 140, 255, 0.35)",
-                  boxShadow: "0 8px 28px -6px rgba(32, 80, 200, 0.35), inset 0 1px 1px rgba(255,255,255,0.06)",
-                }}
-              >
-                {/* Chap tomon: matn */}
-                <div className="relative z-10 flex-1 pr-4 space-y-2.5">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center"
-                    style={{
-                      background: "rgba(43, 114, 255, 0.18)",
-                      border: "1px solid rgba(66, 133, 244, 0.4)",
-                    }}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#ffb703">
-                      <path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94A5.01 5.01 0 0011 15.9V19H7v2h10v-2h-4v-3.1c2.19-.38 3.88-2.02 3.98-4.33C19.39 11.23 21 9.22 21 7V5c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z" />
-                    </svg>
-                  </div>
-
-                  <h3 className="font-bold text-lg text-white tracking-tight">Bamboozle</h3>
-                  <p className="text-xs text-slate-300 leading-relaxed max-w-[240px]">
-                    Jamoalar savol-javob orqali raqobatlashadi — bonus, jarima va o'g'irlash mexanikasi bilan
-                  </p>
-
-                  <div className="flex items-center gap-4 pt-2 text-slate-400 text-[11px]">
-                    <span className="flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-blue-400" /> 2–3 jamoa
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <Grid3x3 className="w-3.5 h-3.5 text-blue-400" /> 8–30 katak
-                    </span>
-                  </div>
-                </div>
-
-                {/* O'ng tomon: glow + SVG grafika */}
-                <div className="relative z-10 shrink-0 w-24 h-24 flex items-center justify-center">
-                  <div
-                    className="absolute inset-0 rounded-full"
-                    style={{
-                      background: "radial-gradient(circle, rgba(0,212,255,0.35) 0%, rgba(9,9,121,0) 72%)",
-                    }}
-                  />
-                  <svg
-                    width="56"
-                    height="56"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#4dd8ff"
-                    strokeWidth="1.4"
-                    className="relative drop-shadow-[0_0_10px_rgba(77,216,255,0.55)] group-hover:scale-110 transition-transform duration-300"
-                  >
-                    <rect x="3" y="3" width="18" height="18" rx="3" strokeDasharray="4 2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" fill="#4dd8ff" />
-                    <circle cx="15.5" cy="15.5" r="1.5" fill="#4dd8ff" />
-                    <path d="M12 8v8M8 12h8" strokeLinecap="round" />
-                  </svg>
-                </div>
-              </div>
-            </Link>
-
-            {/* Omadli Charxpalak Card */}
-            <Link href="/games/wheel">
-              <div
-                className="group relative flex items-center justify-between rounded-3xl border p-5 overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.015] active:scale-[0.98]"
-                style={{
-                  background: "rgba(23, 27, 52, 0.55)",
-                  backdropFilter: "blur(14px)",
-                  WebkitBackdropFilter: "blur(14px)",
-                  borderColor: "rgba(186, 62, 255, 0.35)",
-                  boxShadow: "0 8px 28px -6px rgba(140, 32, 200, 0.35), inset 0 1px 1px rgba(255,255,255,0.06)",
-                }}
-              >
-                <ArrowUpRight className="absolute top-4 right-4 w-4 h-4 text-slate-500 group-hover:text-pink-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all z-10" />
-
-                {/* Chap tomon: matn */}
-                <div className="relative z-10 flex-1 pr-4 space-y-2.5">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center"
-                    style={{
-                      background: "rgba(186, 62, 255, 0.18)",
-                      border: "1px solid rgba(186, 62, 255, 0.4)",
-                    }}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#ec4899">
-                      <path d="M7 2v11h3v9l7-12h-4l4-8z" />
-                    </svg>
-                  </div>
-
-                  <h3 className="font-bold text-lg text-white tracking-tight">Omadli Charxpalak</h3>
-                  <p className="text-xs text-slate-300 leading-relaxed max-w-[240px]">
-                    Tasodifiy tanlash mexanizmi — har bo'limga yashirin savol biriktirilishi mumkin
-                  </p>
-                </div>
-
-                {/* O'ng tomon: glow + aylanuvchi SVG charxpalak */}
-                <div className="relative z-10 shrink-0 w-24 h-24 flex items-center justify-center">
-                  <div
-                    className="absolute inset-0 rounded-full"
-                    style={{
-                      background: "radial-gradient(circle, rgba(236,72,153,0.35) 0%, rgba(9,9,121,0) 72%)",
-                    }}
-                  />
-                  <svg
-                    width="58"
-                    height="58"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#f472b6"
-                    strokeWidth="1.4"
-                    className="relative drop-shadow-[0_0_10px_rgba(244,114,182,0.55)] group-hover:rotate-45 transition-transform duration-500 ease-out"
-                  >
-                    <circle cx="12" cy="12" r="9" />
-                    <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4" />
-                    <circle cx="12" cy="12" r="2" fill="#f472b6" />
-                  </svg>
-                </div>
-              </div>
-            </Link>
-
-          </div>
-
-          {/* Footer Note */}
-          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md px-5 py-4 text-slate-300">
-            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-            <p className="text-xs">Yangi o'yinlar ustida ishlanmoqda — tez orada shu yerga qo'shiladi</p>
+          <div class="card-title">Bamboozle</div>
+          <div class="card-desc">Jamoalar savol-javob orqali raqobatlashadi — bonus va jarima mexanikasi bilan.</div>
+          <div class="card-tags">
+            <span>👥 2–3 jamoa</span>
+            <span>🧩 8–30 katak</span>
           </div>
         </div>
-      </div>
-    );
-  }
+        <div class="visual-box visual-blue">
+          <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M3 9h18M9 21V9"/></svg>
+        </div>
+      </a>
 
-  return (
-    <div className="flex flex-col items-center justify-center text-center py-24 px-6 max-w-sm mx-auto">
-      <div className="relative mb-7">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/15 to-purple-500/15 border border-primary/10 flex items-center justify-center">
-          <Gamepad2 className="w-7 h-7 text-primary/80" strokeWidth={1.75} />
+      <!-- Charxpalak Card -->
+      <a href="/charxpalak" class="game-card card-purple">
+        <div class="card-content">
+          <div class="icon-badge badge-purple">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#c084fc"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+          </div>
+          <div class="card-title">Omadli Charxpalak</div>
+          <div class="card-desc">Tasodifiy tanlash mexanizmi — har bo'limga yashirin savol biriktirish imkoniyati.</div>
         </div>
-        <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-amber-400/90 flex items-center justify-center">
-          <Sparkles className="w-3 h-3 text-white" />
+        <div class="visual-box visual-purple">
+          <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/><circle cx="12" cy="12" r="2" fill="#c084fc"/></svg>
         </div>
-      </div>
-      <h1 className="text-xl font-semibold tracking-tight">Tez kunda</h1>
-      <p className="text-muted-foreground text-sm mt-2 leading-relaxed">
-        Yangi o'yinlar ustida ishlanmoqda. Tayyor bo'lgach, shu yerda paydo bo'ladi.
-      </p>
+      </a>
+
     </div>
-  );
-}
+  </div>
+
+  <!-- Bottom Nav -->
+  <div class="bottom-nav">
+    <a href="#" class="nav-item">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+      <span>Monitoring</span>
+    </a>
+    <a href="#" class="nav-item">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10z"/></svg>
+      <span>Jadval</span>
+    </a>
+    <a href="#" class="nav-item active">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2z"/></svg>
+      <span>O'yinlar</span>
+    </a>
+  </div>
+
+</body>
+</html>
