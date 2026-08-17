@@ -15,7 +15,7 @@ import { requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
 
-const SELECT = "telegram_id, full_name, phone_number, class_name, login, password, registration_date";
+const SELECT = "telegram_id, full_name, phone_number, class_name, login, password, registration_date::text AS registration_date";
 
 // GET /api/students
 router.get("/students", requireAuth, async (req, res): Promise<void> => {
