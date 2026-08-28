@@ -30,6 +30,9 @@ const BoardGameNew = lazy(() => import("@/pages/games/board/new"));
 const BoardGamePlay = lazy(() => import("@/pages/games/board/play"));
 const WheelList = lazy(() => import("@/pages/games/wheel/index"));
 const WheelSpin = lazy(() => import("@/pages/games/wheel/spin"));
+const ZukkoLevels = lazy(() => import("@/pages/games/zukko/index"));
+const ZukkoPlay = lazy(() => import("@/pages/games/zukko/play"));
+const ProPage = lazy(() => import("@/pages/pro"));
 const DarslikPage = lazy(() => import("@/pages/darslik/index"));
 const NewDarslikPage = lazy(() => import("@/pages/darslik/new"));
 const BaholashPage = lazy(() => import("@/pages/baholash/index"));
@@ -158,6 +161,9 @@ function Router() {
       <Route path="/games/board"><ProtectedRoute component={BoardGameList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
       <Route path="/games/wheel/:id"><ProtectedRoute component={WheelSpin} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
       <Route path="/games/wheel"><ProtectedRoute component={WheelList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/games/zukko/:level"><ProtectedRoute component={ZukkoPlay} /></Route>
+      <Route path="/games/zukko"><ProtectedRoute component={ZukkoLevels} /></Route>
+      <Route path="/pro"><ProtectedRoute component={ProPage} /></Route>
       <Route path="/games"><ProtectedRoute component={GamesPage} /></Route>
 
       <Route><Suspense fallback={<LoadingSpinner />}><NotFound /></Suspense></Route>
