@@ -1,89 +1,156 @@
-import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Lock, Star, Crown, Loader2, Brain } from "lucide-react";
+import { useState } from "react";
+import { Link, useLocation } from "wouter";
+import { ArrowLeft, Play, Sparkles, GraduationCap, Grid } from "lucide-react";
 
-const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
-const getToken = () => localStorage.getItem("talim_auth_token");
-const authH = (): HeadersInit => {
-  const t = getToken();
-  return t ? { Authorization: `Bearer ${t}` } : {};
-};
+const GRADE_CATEGORIES = [
+  {
+    id: "5-7",
+    title: "5–7-sinflar",
+    subtitle: "Boshlang'ich mantiq, topishmoqlar va qiziqarli darsliklar",
+    icon: "🌱",
+    color: "from-emerald-600 to-teal-800",
+    borderColor: "border-emerald-500/30",
+    badgeColor: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  },
+  {
+    id: "8-9",
+    title: "8–9-sinflar",
+    subtitle: "Fanlararo chuqurlashtirilgan interaktiv savollar",
+    icon: "🚀",
+    color: "from-blue-600 to-indigo-800",
+    borderColor: "border-blue-500/30",
+    badgeColor: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  },
+  {
+    id: "10-11",
+    title: "10–11-sinflar",
+    subtitle: "Murakkab mantiq va ilmiy-amaliy testlar",
+    icon: "🎓",
+    color: "from-violet-600 to-purple-900",
+    borderColor: "border-violet-500/30",
+    badgeColor: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+  },
+];
 
-interface LevelInfo { level: number; question_count: number; best_stars: number; locked: boolean }
-interface LevelsResponse { levels: LevelInfo[]; is_pro: boolean; free_level_limit: number }
+export default function ZukkoIndex() {
+  const [, setLocation] = useLocation();
+  const [selectedGrade, setSelectedGrade] = useState("5-7");
+  const [viewMode, setViewMode] = useState<"menu" | "levels">("menu");
 
-export default function ZukkoLevelsPage() {
-  const { data, isLoading } = useQuery<LevelsResponse>({
-    queryKey: ["riddles-levels"],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/riddles/levels`, { headers: authH() });
-      if (!r.ok) throw new Error("Xatolik");
-      return r.json();
-    },
-  });
+  const activeCat = GRADE_CATEGORIES.find((c) => c.id === selectedGrade)!;
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <Link href="/games" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit">
-        <ArrowLeft className="w-4 h-4" /> O'yinlarga qaytish
-      </Link>
+    <div className="space-y-6 max-w-2xl pb-8">
+      
+      {/* Tepadagi Boshqaruv Paneli */}
+      <div className="flex items-center justify-between">
+        <Link href="/games">
+          <button className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-secondary/80 hover:bg-secondary text-xs font-bold transition-all cursor-pointer">
+            <ArrowLeft className="w-4 h-4" />
+            <span>O'yinlarga qaytish</span>
+          </button>
+        </Link>
 
-      <div className="relative rounded-2xl overflow-hidden border border-violet-500/20 bg-gradient-to-br from-violet-950/30 via-card to-card p-6 sm:p-7">
-        <div className="absolute -top-20 -right-16 w-56 h-56 rounded-full bg-violet-500/[0.08] blur-3xl" />
-        <div className="relative flex items-start gap-4">
-          <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0">
-            <Brain className="w-6 h-6 text-violet-400" strokeWidth={1.75} />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-violet-400/80 uppercase tracking-widest mb-1">Individual o'yin</p>
-            <h1 className="text-2xl font-bold tracking-tight">Zukko</h1>
-            <p className="text-muted-foreground text-sm mt-1.5 max-w-md">Topishmoq va mantiq savollari — bosqichma-bosqich, o'zingiz xohlagan vaqtda</p>
-          </div>
+        <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full text-amber-400 text-xs font-extrabold">
+          <Sparkles className="w-3.5 h-3.5 fill-amber-400" />
+          <span>Zukko Intellect</span>
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-      ) : (
-        <>
-          {!data?.is_pro && (
-            <div className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-              <Crown className="w-4 h-4 text-amber-400 shrink-0" />
-              <p className="text-sm text-muted-foreground">
-                Bepul rejada {data?.free_level_limit ?? 2} ta bosqich ochiq. Barcha bosqichlar uchun{" "}
-                <Link href="/pro" className="text-amber-400 font-medium hover:underline">Pro versiyaga o'ting</Link>.
-              </p>
-            </div>
-          )}
+      {/* 1. SINF TOIFALARINI TANLASH */}
+      <div className="space-y-2">
+        <p className="text-[11px] font-bold text-muted-foreground/70 uppercase tracking-wider">Sinf toifasini tanlang</p>
+        
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          {GRADE_CATEGORIES.map((cat) => {
+            const isActive = selectedGrade === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedGrade(cat.id)}
+                className={`relative flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                  isActive
+                    ? `bg-gradient-to-b ${cat.color} border-white/40 shadow-lg text-white scale-[1.02]`
+                    : "bg-card/60 hover:bg-card border-border/50 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span className="text-2xl mb-1">{cat.icon}</span>
+                <span className="font-black text-xs sm:text-sm tracking-tight">{cat.title}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            {data?.levels.map(l => (
-              <Link key={l.level} href={l.locked ? "/pro" : `/games/zukko/${l.level}`}>
-                <div className={`rounded-xl border p-4 flex items-center gap-4 transition-all ${
-                  l.locked ? "border-border/40 opacity-60" : "border-border/60 hover:border-violet-500/40 hover:-translate-y-0.5 cursor-pointer"
-                }`}>
-                  <div className={`w-11 h-11 rounded-lg flex items-center justify-center font-bold shrink-0 ${
-                    l.locked ? "bg-muted text-muted-foreground" : "bg-violet-500/10 text-violet-400 border border-violet-500/20"
-                  }`}>
-                    {l.locked ? <Lock className="w-4 h-4" /> : l.level}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold">{l.level}-bosqich</p>
-                    <p className="text-xs text-muted-foreground">{l.question_count} ta savol</p>
-                  </div>
-                  {!l.locked && (
-                    <div className="flex items-center gap-0.5">
-                      {[1, 2, 3].map(s => (
-                        <Star key={s} className={`w-4 h-4 ${s <= l.best_stars ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"}`} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </Link>
+      {/* 2. TANLANGAN SINF BANNERI VA TUGMALAR */}
+      <div className={`p-5 rounded-3xl border ${activeCat.borderColor} bg-gradient-to-br from-slate-900/90 via-card to-card shadow-xl space-y-5`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-secondary flex items-center justify-center text-2xl shadow-inner">
+              <GraduationCap className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-black text-lg text-white">{activeCat.title}</h2>
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${activeCat.badgeColor}`}>
+                  Maktab dasturi
+                </span>
+              </div>
+              <p className="text-xs text-slate-300/80 mt-0.5 max-w-sm">{activeCat.subtitle}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ASOSIY 2 TA TUGMA: PLAY VA BOSQICHLAR */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border/40">
+          
+          {/* PLAY TUGMASI (To'g'ridan-to'g'ri o'yinga kirish) */}
+          <button
+            onClick={() => setLocation(`/games/zukko/play?grade=${selectedGrade}&level=1`)}
+            className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-black text-sm shadow-lg active:scale-95 transition-all cursor-pointer"
+          >
+            <span>O'YINNI BOSHLASH</span>
+            <Play className="w-4 h-4 fill-white" />
+          </button>
+
+          {/* BOSQICHLAR TUGMASI */}
+          <button
+            onClick={() => setViewMode(viewMode === "levels" ? "menu" : "levels")}
+            className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl bg-secondary hover:bg-secondary/80 text-foreground font-bold text-sm border border-border/60 transition-all cursor-pointer"
+          >
+            <Grid className="w-4 h-4 text-primary" />
+            <span>{viewMode === "levels" ? "Yopish" : "Bosqichlarni ko'rish"}</span>
+          </button>
+
+        </div>
+      </div>
+
+      {/* 3. AGAR "BOSQICHLAR" BOSILSA: 1..15 BOSQICHLAR GRIDI OCHILADI */}
+      {viewMode === "levels" && (
+        <div className="space-y-3 pt-2">
+          <p className="text-[11px] font-bold text-muted-foreground/70 uppercase tracking-wider">
+            {activeCat.title} — Bosqichlar
+          </p>
+
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((lvl) => (
+              <button
+                key={lvl}
+                onClick={() => setLocation(`/games/zukko/play?grade=${selectedGrade}&level=${lvl}`)}
+                className="p-3 rounded-2xl border border-sky-500/20 bg-card/60 hover:bg-sky-500/10 hover:border-sky-500/40 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1 group"
+              >
+                <span className="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-400 font-extrabold text-xs flex items-center justify-center group-hover:scale-110 transition-transform">
+                  {lvl}
+                </span>
+                <span className="text-[10px] font-bold text-muted-foreground group-hover:text-foreground">
+                  {lvl}-Bosqich
+                </span>
+              </button>
             ))}
           </div>
-        </>
+        </div>
       )}
+
     </div>
   );
 }
