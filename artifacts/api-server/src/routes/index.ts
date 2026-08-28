@@ -26,6 +26,7 @@ import monitoringRouter from "./monitoring.js";
 import boardGamesRouter from "./board-games.js";
 import wheelGamesRouter from "./wheel-games.js";
 import adminResetRouter from "./admin-reset.js";
+import riddlesRouter from "./riddles.js";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(monitoringRouter);
 router.use(boardGamesRouter);
 router.use(wheelGamesRouter);
 router.use(adminResetRouter);
+router.use(riddlesRouter);
 
 export default router;

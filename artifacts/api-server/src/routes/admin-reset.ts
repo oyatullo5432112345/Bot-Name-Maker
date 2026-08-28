@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
 import { getAuthUser } from "./auth.js";
+import { z } from "zod";
 
 const router: IRouter = Router();
 
@@ -69,6 +70,27 @@ router.post("/admin/reset/:category", async (req, res): Promise<void> => {
   } catch (err) {
     res.status(500).json({ error: (err as Error).message ?? "Xatolik yuz berdi" });
   }
+});
+
+// POST /api/admin/grant-pro — admin foydalanuvchiga Pro versiya beradi (to'lovsiz, qo'lda)
+const GrantProBody = z.object({
+  login: z.string().min(1),
+  is_student: z.boolean(),
+  months: z.number().int().min(1).max(24).default(12),
+});
+router.post("/admin/grant-pro", async (req, res): Promise<void> => {
+  const user = requireAdmin(req.headers.authorization);
+  if (!user) { res.status(403).json({ error: "Faqat admin uchun" }); return; }
+
+  const parsed = GrantProBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { login, is_student, months } = parsed.data;
+
+  const table = is_student ? "users" : "staff";
+  const expires = new Date(Date.now() + months * 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  await query(`UPDATE ${table} SET pro_expires_at = $1 WHERE LOWER(login) = LOWER($2)`, [expires, login]);
+  res.json({ ok: true, pro_expires_at: expires });
 });
 
 export default router;
