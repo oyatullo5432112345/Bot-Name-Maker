@@ -1,18 +1,17 @@
 import { Link } from "wouter";
-import { Users, Grid3x3, PlayCircle, Trophy, Zap, Play } from "lucide-react";
+import { Users, Grid3x3, PlayCircle, Trophy, Zap, Gamepad2, ArrowRight, Play, Star } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
 
 const STAFF_ROLES = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"];
 
-// Rasmga 1:1 mos keluvchi 3D pulsatsiya va tugma effektlari
-const gameCardStyles = `
-  @keyframes playPulse3D {
-    0% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(37, 99, 235, 0.5)); }
-    50% { transform: scale(1.05); filter: drop-shadow(0 0 15px rgba(56, 189, 248, 0.8)); }
-    100% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(37, 99, 235, 0.5)); }
+const gameStyles = `
+  @keyframes playPulseMini {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
+    50% { transform: scale(1.04); box-shadow: 0 0 14px 2px rgba(59, 130, 246, 0.4); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
   }
-  .animate-zukko-play-3d {
-    animation: playPulse3D 1.8s infinite ease-in-out;
+  .animate-zukko-play-btn {
+    animation: playPulseMini 2s infinite ease-in-out;
   }
 `;
 
@@ -21,131 +20,136 @@ export default function GamesPage() {
   const isStaff = !!user && STAFF_ROLES.includes(user.role);
 
   return (
-    <div className="space-y-10 max-w-3xl">
-      <style>{gameCardStyles}</style>
+    <div className="space-y-6 max-w-3xl pb-6">
+      <style>{gameStyles}</style>
 
+      {/* Sarlavha qismi */}
       <div>
-        <p className="text-xs font-semibold text-primary/70 uppercase tracking-widest mb-1.5">Interaktiv dars vositalari</p>
-        <h1 className="text-3xl font-bold tracking-tight">O'yinlar</h1>
-        <p className="text-muted-foreground text-sm mt-1.5 max-w-md">Bilim va zavq bir joyda — o'zingiz yoki sinf bilan birga</p>
+        <p className="text-[11px] font-bold text-primary/80 uppercase tracking-widest mb-1">Interaktiv dars vositalari</p>
+        <h1 className="text-2xl font-extrabold tracking-tight">O'yinlar</h1>
+        <p className="text-muted-foreground text-xs mt-0.5 max-w-md">Bilim va zavq bir joyda — o'zingiz yoki sinf bilan birga</p>
       </div>
 
-      {/* ZUKKO KARTASI — RASMDAGI BILAN BIKR BIR XIL */}
-      <div className="space-y-3">
-        <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">Hamma uchun</p>
+      {/* 1. INDIVIDUAL O'YIN: ZUKKO (IXCHAM, YULDUZCHALI VA NEON USLUB) */}
+      <div className="space-y-2">
+        <p className="text-[11px] font-bold text-muted-foreground/70 uppercase tracking-wider">Hamma uchun</p>
 
-        <div className="relative rounded-3xl border-4 border-sky-300/40 bg-gradient-to-b from-sky-400 via-sky-600 to-indigo-900 p-6 sm:p-8 overflow-hidden shadow-2xl">
+        <div className="relative rounded-2xl border border-violet-500/30 bg-gradient-to-r from-sky-950/40 via-indigo-950/50 to-card p-4 sm:p-5 overflow-hidden shadow-md hover:border-violet-500/50 transition-all">
           
-          {/* Fondagi kosmik va porlash effektlari */}
-          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-amber-300/20 via-transparent to-transparent pointer-events-none" />
+          {/* Orqa fon nur effekti */}
+          <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-cyan-500/10 blur-xl pointer-events-none" />
 
-          <div className="relative z-10 flex flex-col items-center text-center gap-5">
+          <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             
-            {/* Tepadagi Logotip va "Zukko" Yozuvi */}
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-400 to-yellow-200 border-4 border-white shadow-xl flex items-center justify-center text-3xl">
-                🧠
-              </div>
-              <h2 className="text-4xl font-black text-amber-300 drop-shadow-[0_3px_5px_rgba(0,0,0,0.4)] tracking-wide">
-                Zukko
-              </h2>
-            </div>
-
-            {/* Tavsif matni */}
-            <p className="text-white text-sm sm:text-base font-semibold max-w-md leading-snug drop-shadow-sm">
-              Topishmoq va mantiq savollari — bosqichma-bosqich, o'zingiz xohlagan vaqtda yeching
-            </p>
-
-            {/* Avatarlar va Yulduzchalar qatori */}
-            <div className="flex items-center justify-center gap-4 py-1">
-              <div className="flex -space-x-3">
-                <div className="w-10 h-10 rounded-full border-2 border-white bg-pink-300 flex items-center justify-center text-lg shadow-md">👧</div>
-                <div className="w-10 h-10 rounded-full border-2 border-white bg-amber-200 flex items-center justify-center text-lg shadow-md">👦</div>
+            {/* Chap tomon: Yangilangan ikonka, nom, yulduzchalar va tavsif */}
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-500 border border-cyan-300/30 flex items-center justify-center shrink-0 shadow-md">
+                <Gamepad2 className="w-6 h-6 text-cyan-200" strokeWidth={2} />
               </div>
 
-              <div className="flex items-center gap-0.5 text-amber-300 text-lg drop-shadow">
-                ★ ★ ★ ★ <span className="text-white/40">★</span>
-              </div>
-
-              <div className="flex -space-x-3">
-                <div className="w-10 h-10 rounded-full border-2 border-white bg-emerald-300 flex items-center justify-center text-lg shadow-md">👧🏽</div>
-                <div className="w-10 h-10 rounded-full border-2 border-white bg-cyan-300 flex items-center justify-center text-lg shadow-md">👦🏻</div>
-              </div>
-            </div>
-
-            {/* RASMDAGIDEK KATTA 3D KAPSULA PLAY TUGMASI */}
-            <div className="flex flex-col sm:flex-row items-center gap-3 w-full justify-center pt-2">
-              
-              {/* Katta 3D Ko'k Play Tugma */}
-              <Link href="/games/zukko" className="w-full sm:w-auto">
-                <button className="animate-zukko-play-3d w-full sm:w-64 flex items-center justify-center gap-3 px-8 py-4 rounded-full bg-gradient-to-b from-blue-400 via-blue-600 to-blue-800 border-2 border-cyan-200 text-white font-black text-2xl tracking-wider shadow-[0_8px_0_#1e3a8a,_0_15px_20px_rgba(0,0,0,0.4)] active:translate-y-1 active:shadow-[0_3px_0_#1e3a8a] transition-all cursor-pointer">
-                  <span>PLAY</span>
-                  <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                    <Play className="w-5 h-5 fill-white text-white translate-x-0.5" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-lg tracking-tight text-white">Zukko</h3>
+                  
+                  {/* Yulduzchalar bloki */}
+                  <div className="flex items-center gap-0.5 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full text-amber-400 text-xs">
+                    <Star className="w-3 h-3 fill-amber-400" />
+                    <Star className="w-3 h-3 fill-amber-400" />
+                    <Star className="w-3 h-3 fill-amber-400" />
+                    <Star className="w-3 h-3 fill-amber-400" />
+                    <Star className="w-3 h-3 text-amber-400/40" />
                   </div>
+                </div>
+
+                <p className="text-xs text-slate-300/90 mt-1 leading-relaxed max-w-sm">
+                  Topishmoq va mantiqiy savollar — bosqichma-bosqich yechib, bilimingizni sinang.
+                </p>
+              </div>
+            </div>
+
+            {/* O'ng tomon: Ixcham Ko'k va Sariq Play Tugmalari */}
+            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-border/40">
+              <Link href="/games/zukko" className="flex-1 sm:flex-initial">
+                <button className="animate-zukko-play-btn w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-black text-xs shadow-md hover:from-blue-500 hover:to-cyan-400 active:scale-95 transition-all cursor-pointer">
+                  <span>PLAY</span>
+                  <Play className="w-3.5 h-3.5 fill-white" />
                 </button>
               </Link>
 
-              {/* Yonidagi Kichik Sariq Kapsula Tugma */}
-              <Link href="/games/zukko" className="w-full sm:w-auto">
-                <button className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-6 py-3 rounded-full bg-gradient-to-b from-amber-300 to-amber-500 border-2 border-white text-slate-900 font-extrabold text-sm uppercase tracking-wide shadow-[0_4px_0_#b45309] active:translate-y-1 transition-all cursor-pointer">
-                  <span>Bosqichlar</span> ➔
+              <Link href="/games/zukko">
+                <button className="px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 hover:bg-amber-500/25 text-amber-300 font-bold text-xs transition-all cursor-pointer flex items-center gap-1">
+                  <span>Bosqichlar</span>
+                  <ArrowRight className="w-3 h-3" />
                 </button>
               </Link>
-
             </div>
 
           </div>
         </div>
       </div>
 
-      {/* GURUH O'YINLARI (Tegilmaydi) */}
+      {/* 2. GURUH O'YINLARI (BAMBOOZLE VA CHARXPALAK UCHUN ALOHIDA CHIROYLI DIZAYNLAR) */}
       {isStaff && (
-        <div className="space-y-3">
-          <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">Guruh o'yinlari</p>
-          <div className="grid gap-5 sm:grid-cols-2">
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-muted-foreground/70 uppercase tracking-wider">Guruh o'yinlari</p>
+          
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            
+            {/* BAMBOOZLE (Kubok / Musobaqa Dizayni) */}
             <Link href="/games/board">
-              <div className="group relative rounded-2xl border border-border/60 bg-gradient-to-b from-card to-card/50 p-6 overflow-hidden transition-all duration-300 hover:border-blue-500/40 hover:shadow-[0_8px_40px_-12px_rgba(59,130,246,0.25)] cursor-pointer h-full">
-                <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-blue-500/[0.07] blur-2xl group-hover:bg-blue-500/[0.12] transition-colors" />
-                <div className="relative flex items-start justify-between mb-8">
-                  <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-                    <Trophy className="w-5 h-5 text-blue-400" strokeWidth={1.75} />
+              <div className="group relative rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-950/20 via-card to-card p-4.5 overflow-hidden transition-all duration-300 hover:border-amber-500/40 hover:-translate-y-0.5 cursor-pointer h-full flex flex-col justify-between shadow-sm">
+                <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-amber-500/10 blur-xl pointer-events-none" />
+
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/30 flex items-center justify-center shadow-inner">
+                      <Trophy className="w-5 h-5 text-amber-400" strokeWidth={2} />
+                    </div>
+                    <span className="text-xs font-bold text-amber-400 flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 group-hover:bg-amber-500/20 transition-all">
+                      O'ynash <ArrowRight className="w-3 h-3" />
+                    </span>
                   </div>
+
+                  <h3 className="font-bold text-base tracking-tight text-foreground">Bamboozle</h3>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    Jamoaviy musobaqa — bonus, jarima va o'g'irlash kataklari bilan raqobatlashing.
+                  </p>
                 </div>
-                <h3 className="font-semibold text-lg tracking-tight">Bamboozle</h3>
-                <p className="text-sm text-muted-foreground/80 mt-1.5 leading-relaxed">
-                  Jamoalar savol-javob orqali raqobatlashadi — bonus, jarima va o'g'irlash mexanikasi bilan
-                </p>
-                <div className="flex items-center gap-4 mt-6 pt-5 border-t border-border/50">
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
-                    <Users className="w-3.5 h-3.5" /> 2–3 jamoa
-                  </span>
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
-                    <Grid3x3 className="w-3.5 h-3.5" /> 8–30 katak
-                  </span>
+
+                <div className="flex items-center gap-3 mt-4 pt-3 border-t border-border/40 text-[11px] text-amber-200/70 font-medium">
+                  <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 text-amber-400" /> 2–3 jamoa</span>
+                  <span className="flex items-center gap-1.5"><Grid3x3 className="w-3.5 h-3.5 text-amber-400" /> 8–30 katak</span>
                 </div>
               </div>
             </Link>
 
+            {/* OMADLI CHARXPALAK (Energiya / Charxpalak Dizayni) */}
             <Link href="/games/wheel">
-              <div className="group relative rounded-2xl border border-border/60 bg-gradient-to-b from-card to-card/50 p-6 overflow-hidden transition-all duration-300 hover:border-rose-500/40 hover:shadow-[0_8px_40px_-12px_rgba(244,63,94,0.25)] cursor-pointer h-full">
-                <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-rose-500/[0.07] blur-2xl group-hover:bg-rose-500/[0.12] transition-colors" />
-                <div className="relative flex items-start justify-between mb-8">
-                  <div className="w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
-                    <Zap className="w-5 h-5 text-rose-400" strokeWidth={1.75} />
+              <div className="group relative rounded-2xl border border-rose-500/20 bg-gradient-to-br from-rose-950/20 via-card to-card p-4.5 overflow-hidden transition-all duration-300 hover:border-rose-500/40 hover:-translate-y-0.5 cursor-pointer h-full flex flex-col justify-between shadow-sm">
+                <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-rose-500/10 blur-xl pointer-events-none" />
+
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/20 to-pink-500/10 border border-rose-500/30 flex items-center justify-center shadow-inner">
+                      <Zap className="w-5 h-5 text-rose-400" strokeWidth={2} />
+                    </div>
+                    <span className="text-xs font-bold text-rose-400 flex items-center gap-1 bg-rose-500/10 px-2.5 py-1 rounded-lg border border-rose-500/20 group-hover:bg-rose-500/20 transition-all">
+                      Aylantirish <ArrowRight className="w-3 h-3" />
+                    </span>
                   </div>
+
+                  <h3 className="font-bold text-base tracking-tight text-foreground">Omadli Charxpalak</h3>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    Sinfda o'quvchi yoki yashirin savollarni tasodifiy charxpalak orqali tanlang.
+                  </p>
                 </div>
-                <h3 className="font-semibold text-lg tracking-tight">Omadli Charxpalak</h3>
-                <p className="text-sm text-muted-foreground/80 mt-1.5 leading-relaxed">
-                  Tasodifiy tanlash mexanizmi — har bo'limga yashirin savol biriktirilishi mumkin
-                </p>
-                <div className="flex items-center gap-4 mt-6 pt-5 border-t border-border/50">
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
-                    <PlayCircle className="w-3.5 h-3.5" /> Tasodifiy tanlash
-                  </span>
+
+                <div className="flex items-center gap-3 mt-4 pt-3 border-t border-border/40 text-[11px] text-rose-200/70 font-medium">
+                  <span className="flex items-center gap-1.5"><PlayCircle className="w-3.5 h-3.5 text-rose-400" /> Tasodifiy tanlov</span>
                 </div>
               </div>
             </Link>
+
           </div>
         </div>
       )}
