@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Search, Trash2, Users, CreditCard } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, Users, CreditCard, Crown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -44,7 +44,7 @@ export default function StudentsList() {
     ? { class_name: classFromUrl }
     : (isSinfRahbari && user?.class_name ? { class_name: user.class_name } : {});
 
-  const { data: students, isLoading, isError } = useListStudents(classFilter, {
+  const { data: students, isLoading } = useListStudents(classFilter, {
     query: {
       queryKey: getListStudentsQueryKey(classFilter),
       staleTime: 15_000,
@@ -77,6 +77,29 @@ export default function StudentsList() {
   };
 
   const isAdmin = user?.role === "admin";
+
+  const [grantingLogin, setGrantingLogin] = useState<string | null>(null);
+  const getToken = () => localStorage.getItem("talim_auth_token");
+  const handleGrantPro = async (login: string) => {
+    setGrantingLogin(login);
+    try {
+      const t = getToken();
+      const r = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/admin/grant-pro`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) },
+        body: JSON.stringify({ login, is_student: true, months: 12 }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        toast({ variant: "destructive", title: "Xatolik", description: j.error ?? "Pro berishda xatolik" });
+        return;
+      }
+      toast({ title: "Pro versiya berildi", description: "1 yillik Pro faollashtirildi" });
+      queryClient.invalidateQueries({ queryKey: getListStudentsQueryKey({}) });
+    } finally {
+      setGrantingLogin(null);
+    }
+  };
 
   const filteredStudents = students?.filter(s => 
     s.full_name.toLowerCase().includes(search.toLowerCase()) || 
@@ -153,13 +176,7 @@ export default function StudentsList() {
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
                 </TableCell>
               </TableRow>
-            ) : isError ? (
-              <TableRow>
-                <TableCell colSpan={isAdmin ? 6 : 5} className="h-24 text-center text-destructive">
-                  Ma'lumotlarni yuklashda xatolik yuz berdi. Sahifani yangilab ko'ring.
-                </TableCell>
-              </TableRow>
-            ) : !filteredStudents || filteredStudents.length === 0 ? (
+            ) : filteredStudents?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={isAdmin ? 6 : 5} className="h-24 text-center text-muted-foreground">
                   Ma'lumot topilmadi
@@ -184,6 +201,17 @@ export default function StudentsList() {
                           <CreditCard className="w-4 h-4 text-primary" />
                         </Link>
                       </Button>
+                      {isAdmin && (
+                        <Button
+                          variant="ghost" size="icon" title="Pro versiya berish (1 yil)"
+                          onClick={() => void handleGrantPro(student.login)}
+                          disabled={grantingLogin === student.login}
+                        >
+                          {grantingLogin === student.login
+                            ? <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+                            : <Crown className="w-4 h-4 text-amber-500" />}
+                        </Button>
+                      )}
                       {isAdmin && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
