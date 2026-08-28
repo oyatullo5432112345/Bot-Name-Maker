@@ -1,92 +1,88 @@
 import { Link } from "wouter";
-import { Users, Grid3x3, PlayCircle, ArrowUpRight, Trophy, Zap, Brain } from "lucide-react";
-import { useAuth } from "@/lib/use-auth";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, Lock, Star, Crown, Loader2, Brain } from "lucide-react";
 
-const STAFF_ROLES = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"];
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
+const getToken = () => localStorage.getItem("talim_auth_token");
+const authH = (): HeadersInit => {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+};
 
-export default function GamesPage() {
-  const { user } = useAuth();
-  const isStaff = !!user && STAFF_ROLES.includes(user.role);
+interface LevelInfo { level: number; question_count: number; best_stars: number; locked: boolean }
+interface LevelsResponse { levels: LevelInfo[]; is_pro: boolean; free_level_limit: number }
+
+export default function ZukkoLevelsPage() {
+  const { data, isLoading } = useQuery<LevelsResponse>({
+    queryKey: ["riddles-levels"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/riddles/levels`, { headers: authH() });
+      if (!r.ok) throw new Error("Xatolik");
+      return r.json();
+    },
+  });
 
   return (
-    <div className="space-y-10 max-w-3xl">
-      <div>
-        <p className="text-xs font-semibold text-primary/70 uppercase tracking-widest mb-1.5">Interaktiv dars vositalari</p>
-        <h1 className="text-3xl font-bold tracking-tight">O'yinlar</h1>
-        <p className="text-muted-foreground text-sm mt-1.5 max-w-md">Bilim va zavq bir joyda — o'zingiz yoki sinf bilan birga</p>
-      </div>
+    <div className="space-y-6 max-w-2xl">
+      <Link href="/games" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit">
+        <ArrowLeft className="w-4 h-4" /> O'yinlarga qaytish
+      </Link>
 
-      {/* Hamma o'ynay oladigan, individual o'yin */}
-      <div className="space-y-3">
-        <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">Hamma uchun</p>
-        <Link href="/games/zukko">
-          <div className="group relative rounded-2xl border border-border/60 bg-gradient-to-b from-card to-card/50 p-6 overflow-hidden transition-all duration-300 hover:border-violet-500/40 hover:shadow-[0_8px_40px_-12px_rgba(139,92,246,0.25)] cursor-pointer">
-            <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-violet-500/[0.07] blur-2xl group-hover:bg-violet-500/[0.12] transition-colors" />
-            <div className="relative flex items-start justify-between mb-8">
-              <div className="w-11 h-11 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
-                <Brain className="w-5 h-5 text-violet-400" strokeWidth={1.75} />
-              </div>
-              <ArrowUpRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-violet-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-            </div>
-            <h3 className="font-semibold text-lg tracking-tight">Zukko</h3>
-            <p className="text-sm text-muted-foreground/80 mt-1.5 leading-relaxed max-w-sm">
-              Topishmoq va mantiq savollari — bosqichma-bosqich, o'zingiz xohlagan vaqtda yeching
-            </p>
+      <div className="relative rounded-2xl overflow-hidden border border-violet-500/20 bg-gradient-to-br from-violet-950/30 via-card to-card p-6 sm:p-7">
+        <div className="absolute -top-20 -right-16 w-56 h-56 rounded-full bg-violet-500/[0.08] blur-3xl" />
+        <div className="relative flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0">
+            <Brain className="w-6 h-6 text-violet-400" strokeWidth={1.75} />
           </div>
-        </Link>
-      </div>
-
-      {/* Sinf bilan birga o'ynaladigan o'yinlar — faqat xodimlar uchun */}
-      {isStaff && (
-        <div className="space-y-3">
-          <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">Guruh o'yinlari</p>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Link href="/games/board">
-              <div className="group relative rounded-2xl border border-border/60 bg-gradient-to-b from-card to-card/50 p-6 overflow-hidden transition-all duration-300 hover:border-blue-500/40 hover:shadow-[0_8px_40px_-12px_rgba(59,130,246,0.25)] cursor-pointer h-full">
-                <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-blue-500/[0.07] blur-2xl group-hover:bg-blue-500/[0.12] transition-colors" />
-                <div className="relative flex items-start justify-between mb-8">
-                  <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-                    <Trophy className="w-5 h-5 text-blue-400" strokeWidth={1.75} />
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-blue-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-                </div>
-                <h3 className="font-semibold text-lg tracking-tight">Bamboozle</h3>
-                <p className="text-sm text-muted-foreground/80 mt-1.5 leading-relaxed">
-                  Jamoalar savol-javob orqali raqobatlashadi — bonus, jarima va o'g'irlash mexanikasi bilan
-                </p>
-                <div className="flex items-center gap-4 mt-6 pt-5 border-t border-border/50">
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
-                    <Users className="w-3.5 h-3.5" /> 2–3 jamoa
-                  </span>
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
-                    <Grid3x3 className="w-3.5 h-3.5" /> 8–30 katak
-                  </span>
-                </div>
-              </div>
-            </Link>
-
-            <Link href="/games/wheel">
-              <div className="group relative rounded-2xl border border-border/60 bg-gradient-to-b from-card to-card/50 p-6 overflow-hidden transition-all duration-300 hover:border-rose-500/40 hover:shadow-[0_8px_40px_-12px_rgba(244,63,94,0.25)] cursor-pointer h-full">
-                <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-rose-500/[0.07] blur-2xl group-hover:bg-rose-500/[0.12] transition-colors" />
-                <div className="relative flex items-start justify-between mb-8">
-                  <div className="w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
-                    <Zap className="w-5 h-5 text-rose-400" strokeWidth={1.75} />
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-rose-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-                </div>
-                <h3 className="font-semibold text-lg tracking-tight">Omadli Charxpalak</h3>
-                <p className="text-sm text-muted-foreground/80 mt-1.5 leading-relaxed">
-                  Tasodifiy tanlash mexanizmi — har bo'limga yashirin savol biriktirilishi mumkin
-                </p>
-                <div className="flex items-center gap-4 mt-6 pt-5 border-t border-border/50">
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
-                    <PlayCircle className="w-3.5 h-3.5" /> Tasodifiy tanlash
-                  </span>
-                </div>
-              </div>
-            </Link>
+          <div>
+            <p className="text-xs font-semibold text-violet-400/80 uppercase tracking-widest mb-1">Individual o'yin</p>
+            <h1 className="text-2xl font-bold tracking-tight">Zukko</h1>
+            <p className="text-muted-foreground text-sm mt-1.5 max-w-md">Topishmoq va mantiq savollari — bosqichma-bosqich, o'zingiz xohlagan vaqtda</p>
           </div>
         </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <>
+          {!data?.is_pro && (
+            <div className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+              <Crown className="w-4 h-4 text-amber-400 shrink-0" />
+              <p className="text-sm text-muted-foreground">
+                Bepul rejada {data?.free_level_limit ?? 2} ta bosqich ochiq. Barcha bosqichlar uchun{" "}
+                <Link href="/pro" className="text-amber-400 font-medium hover:underline">Pro versiyaga o'ting</Link>.
+              </p>
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {data?.levels.map(l => (
+              <Link key={l.level} href={l.locked ? "/pro" : `/games/zukko/${l.level}`}>
+                <div className={`rounded-xl border p-4 flex items-center gap-4 transition-all ${
+                  l.locked ? "border-border/40 opacity-60" : "border-border/60 hover:border-violet-500/40 hover:-translate-y-0.5 cursor-pointer"
+                }`}>
+                  <div className={`w-11 h-11 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                    l.locked ? "bg-muted text-muted-foreground" : "bg-violet-500/10 text-violet-400 border border-violet-500/20"
+                  }`}>
+                    {l.locked ? <Lock className="w-4 h-4" /> : l.level}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold">{l.level}-bosqich</p>
+                    <p className="text-xs text-muted-foreground">{l.question_count} ta savol</p>
+                  </div>
+                  {!l.locked && (
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3].map(s => (
+                        <Star key={s} className={`w-4 h-4 ${s <= l.best_stars ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"}`} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
