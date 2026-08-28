@@ -93,7 +93,7 @@ export default function GamesPage() {
         </div>
       </div>
 
-      {/* 2. GURUH O'YINLARI (BAMBOOZLE & OMADLI CHARXPALAK) */}
+      {/* 2. GURUH O'YINLARI */}
       {isStaff && (
         <div className="space-y-2">
           <p className="text-[11px] font-bold text-muted-foreground/70 uppercase tracking-wider">Guruh o'yinlari</p>
@@ -155,7 +155,7 @@ export default function GamesPage() {
 
                 <p className="text-xs text-slate-300/90 leading-relaxed min-h-[36px]">
                   Sinfda o'quvchi yoki yashirin savollarni tasodifiy charxpalak orqali tanlang.
-                </button>
+                </p>
               </div>
 
               <div className="pt-3 mt-2 border-t border-border/40">
