@@ -21,7 +21,7 @@ export const ZUKKO_QUESTIONS: Record<string, LevelData[]> = {
           question: "O'zbekistonda eng teran va eng yirik suv omborlaridan biri qaysi?",
           options: ["Chorvoq", "Kattaqo'rg'on", "Tuyamo'yin", "Andijon"],
           correct: 0,
-          hint: "U Toshkent viloyatida joylashgan va tog'lar bilan o'ralgan.",
+          hint: "U Toshkent viloyatida joylashgan bo'lib, tog'lar bilan o'ralgan.",
         },
         {
           id: 2,
@@ -35,7 +35,7 @@ export const ZUKKO_QUESTIONS: Record<string, LevelData[]> = {
           question: "Alisher Navoiy qaysi yili tavallud topgan?",
           options: ["1441-yil", "1336-yil", "1219-yil", "1501-yil"],
           correct: 0,
-          hint: "XV asrning birinchi yarmida Xirotda tug'ilgan.",
+          hint: "XV asrning birinchi yarmida Xirot shahrida tug'ilgan.",
         },
         {
           id: 4,
@@ -82,7 +82,7 @@ export const ZUKKO_QUESTIONS: Record<string, LevelData[]> = {
           question: "'Sariq devni minib' asari muallifi kim?",
           options: ["Xudoyberdi To'xtaboyev", "G'afur G'ulom", "O'tkir Hoshimov", "Said Ahmad"],
           correct: 0,
-          hint: "Bolalar sevgan mashhur o'zbek adibi va satirigi.",
+          hint: "Bolalar sevgan mashhur o'zbek adibi.",
         },
         {
           id: 5,
@@ -94,6 +94,7 @@ export const ZUKKO_QUESTIONS: Record<string, LevelData[]> = {
       ],
     },
   ],
+
   "8-9": [
     {
       level: 1,
@@ -117,11 +118,11 @@ export const ZUKKO_QUESTIONS: Record<string, LevelData[]> = {
           question: "Atom yadrosi qanday zarralardan tashkil topgan?",
           options: ["Proton va Neytron", "Proton va Elektron", "Neytron va Elektron", "Faqat Elektronlar"],
           correct: 0,
-          hint: "Musbat zaryadli zarra va zaryadsiz zarra birgalikda.",
+          hint: "Musbat zaryadli va zaryadsiz zarra birgalikda.",
         },
         {
           id: 4,
-          question: "'O'tkan kunlar' romanidagi kumushning otasining ismi nima edi?",
+          question: "'O'tkan kunlar' romanidagi Kumushning otasining ismi nima?",
           options: ["Mirzakarim qutidor", "Hasanali", "Otabek", "Homid"],
           correct: 0,
           hint: "Marg'ilonlik obro'li savdogar kishi.",
@@ -131,18 +132,59 @@ export const ZUKKO_QUESTIONS: Record<string, LevelData[]> = {
           question: "Yerning tortishish kuchi tezlanishi (g) taxminan nechaga teng?",
           options: ["9.8 m/s²", "5.5 m/s²", "12.1 m/s²", "3.14 m/s²"],
           correct: 0,
-          hint: "Fizikada hisob-kitoblar uchun ko'pincha 10 deb ham olinadi.",
+          hint: "Fizikada hisob-kitoblar uchun ko'pincha 10 deb olinadi.",
+        },
+      ],
+    },
+    {
+      level: 2,
+      questions: [
+        {
+          id: 1,
+          question: "Kvadrat tenglamaning diskriminant formulasi qanday?",
+          options: ["D = b² - 4ac", "D = a² + b²", "D = 2ab - c", "D = b² + 4ac"],
+          correct: 0,
+          hint: "Burchak koeffitsienti va ildizlar sonini aniqlashda ishlatiladi.",
+        },
+        {
+          id: 2,
+          question: "Dunyo okeanidagi eng chuqur botiq qaysi?",
+          options: ["Mariana botiqligi", "Sond botiqligi", "Puerto-Riko", "Yava botiqligi"],
+          correct: 0,
+          hint: "Tinch okeanida joylashgan, chuqurligi 11 km dan ortiq.",
+        },
+        {
+          id: 3,
+          question: "Jaloliddin Manguberdi qaysi sulola vakili edi?",
+          options: ["Anushteginiylar (Xorazmshohlar)", "Temuriylar", "Qoraxoniylar", "G'aznaviylar"],
+          correct: 0,
+          hint: "Mo'g'ullarga qarshi mardona kashfiyot ko'rsatgan buyuk hukmdor.",
+        },
+        {
+          id: 4,
+          question: "Davriy sistemadagi eng yengil kimyoviy element qaysi?",
+          options: ["Vodorod", "Geliy", "Litiy", "Kislorod"],
+          correct: 0,
+          hint: "Tartib raqami 1 ga teng va bitta protondan iborat.",
+        },
+        {
+          id: 5,
+          question: "Inson yuragi nechta kameradan iborat?",
+          options: ["4 ta", "2 ta", "3 ta", "6 ta"],
+          correct: 0,
+          hint: "Ikkita bo'lmacha va ikkita qorunchadan tashkil topgan.",
         },
       ],
     },
   ],
+
   "10-11": [
     {
       level: 1,
       questions: [
         {
           id: 1,
-          question: "Dmitriy Mendeleyev kimyoviy elementlar davriy sistemasini qaysi yili kashf etgan?",
+          question: "Dmitriy Mendeleyev elementlar davriy sistemasini qaysi yili kashf etgan?",
           options: ["1869-yil", "1905-yil", "1789-yil", "1921-yil"],
           correct: 0,
           hint: "XIX asrning ikkinchi yarmida.",
@@ -156,10 +198,10 @@ export const ZUKKO_QUESTIONS: Record<string, LevelData[]> = {
         },
         {
           id: 3,
-          question: "DNK zanjiridagi komplementarlik qoidasiga ko'ra Adeninga qaysi azotli asos mos keladi?",
+          question: "DNK zanjirida Adeninga qaysi azotli asos komplementar bo'ladi?",
           options: ["Timin", "Guanin", "Sitozin", "Urasil"],
           correct: 0,
-          hint: "A-T va G-C juftligi.",
+          hint: "A-T va G-C juftligi qoidasiga ko'ra.",
         },
         {
           id: 4,
@@ -174,6 +216,46 @@ export const ZUKKO_QUESTIONS: Record<string, LevelData[]> = {
           options: ["Urinmaning burchak koeffitsienti", "Egri chiziq uzunligi", "Yuzani", "Tezlanishni"],
           correct: 0,
           hint: "Urinmaning og'ish burchagi tangensi ($k = \\tan\\alpha$).",
+        },
+      ],
+    },
+    {
+      level: 2,
+      questions: [
+        {
+          id: 1,
+          question: "Nyutonning ikkinchi qonuni formulasi qanday yoziladi?",
+          options: ["F = m * a", "F = m * g * h", "E = m * c²", "P = U * I"],
+          correct: 0,
+          hint: "Kuch massa va tezlanish ko'paytmasiga teng.",
+        },
+        {
+          id: 2,
+          question: "O'zbekiston Birlashgan Millatlar Tashkilotiga (BMT) qachon a'zo bo'lgan?",
+          options: ["1992-yil 2-mart", "1991-yil 1-sentabr", "1993-yil 10-dekabr", "1995-yil 5-may"],
+          correct: 0,
+          hint: "Mustaqillikning ikkinchi yilida bahorda.",
+        },
+        {
+          id: 3,
+          question: "Logarifm $log_2(32)$ nimaga teng?",
+          options: ["5", "4", "6", "8"],
+          correct: 0,
+          hint: "2 ning nechanchi darajasi 32 ga teng bo'ladi?",
+        },
+        {
+          id: 4,
+          question: "O'simlik hujayrasini hayvon hujayrasidan ajratib turuvchi asosiy tuzilma qaysi?",
+          options: ["Hujayra devori (Sellyuloza)", "Yadro", "Ribosoma", "Mitoxondriya"],
+          correct: 0,
+          hint: "Pishiq, mustahkam tashqi qobilt sohibi.",
+        },
+        {
+          id: 5,
+          question: "Qaysi xalqaro tashkilotning bosh qarorgohi Jenevada joylashgan?",
+          options: ["Jahon Sog'liqni Saqlash Tashkiloti (JSST)", "BMT Bosh Assambleyasi", "YUNESKO", "NATO"],
+          correct: 0,
+          hint: "Sog'liqni saqlash va tibbiyot bilan shug'ullanadi.",
         },
       ],
     },
