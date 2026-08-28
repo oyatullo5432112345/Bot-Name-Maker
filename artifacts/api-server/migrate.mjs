@@ -38,6 +38,7 @@ const SQL_FILES = [
   "005_monitoring_v3.sql",
   "006_board_and_wheel_games.sql",
   "007_wheel_teams.sql",
+  "008_zukko_game.sql",
 ];
 
 // Qo'shimcha ustunlar (agar mavjud bo'lmasa qo'shiladi)
