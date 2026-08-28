@@ -3,7 +3,8 @@ import { Link, useSearch, useLocation } from "wouter";
 import { ArrowLeft, HelpCircle, CheckCircle2, XCircle, RotateCcw, Award, Star, Snowflake, ArrowRight } from "lucide-react";
 import { ZUKKO_QUESTIONS } from "./zukkoData";
 
-const playSound = (type: "correct" | "wrong" | "freeze" | "win") => {
+// Ovozli effektlar (Web Audio API orqali)
+const playSound = (type: "correct" | "wrong" | "freeze" | "win" | "click") => {
   try {
     const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     const osc = ctx.createOscillator();
@@ -12,32 +13,76 @@ const playSound = (type: "correct" | "wrong" | "freeze" | "win") => {
     gain.connect(ctx.destination);
 
     if (type === "correct") {
+      // G'alaba qisqa musiqasi (C5 -> E5 -> G5)
       osc.frequency.setValueAtTime(523.25, ctx.currentTime);
       osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.45);
       osc.start();
-      osc.stop(ctx.currentTime + 0.3);
+      osc.stop(ctx.currentTime + 0.45);
     } else if (type === "wrong") {
+      // Xato ovozi (Buzzer)
       osc.type = "sawtooth";
       osc.frequency.setValueAtTime(180, ctx.currentTime);
+      osc.frequency.setValueAtTime(110, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } else if (type === "win") {
+      // Bosqich tugaganda baland g'alaba akkordi
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.15);
+      osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.3);
+      osc.frequency.setValueAtTime(1046.5, ctx.currentTime + 0.45);
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.7);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.7);
+    } else if (type === "freeze") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.2);
       gain.gain.setValueAtTime(0.2, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
       osc.start();
       osc.stop(ctx.currentTime + 0.3);
-    } else if (type === "win") {
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      osc.frequency.setValueAtTime(554.37, ctx.currentTime + 0.15);
-      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.3);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+    } else {
+      osc.frequency.setValueAtTime(400, ctx.currentTime);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
       osc.start();
-      osc.stop(ctx.currentTime + 0.6);
+      osc.stop(ctx.currentTime + 0.05);
     }
   } catch {
-    // Audio xatosi bo'lsa e'tiborsiz qoldiriladi
+    // Brauzer audio qo'llab-quvvatlamasa jim o'tadi
   }
 };
+
+const customStyles = `
+  @keyframes shakeEffect {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-8px); }
+    40%, 80% { transform: translateX(8px); }
+  }
+
+  @keyframes pulseGreen {
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+    70% { box-shadow: 0 0 25px 10px rgba(34, 197, 94, 0.25); }
+    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+  }
+
+  @keyframes pulseRed {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+    70% { box-shadow: 0 0 25px 10px rgba(239, 68, 68, 0.25); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  }
+
+  .animate-shake { animation: shakeEffect 0.4s ease-in-out; }
+  .glow-correct { animation: pulseGreen 0.8s ease-in-out infinite; }
+  .glow-wrong { animation: pulseRed 0.8s ease-in-out infinite; }
+`;
 
 export default function ZukkoPlayPage() {
   const searchString = useSearch();
@@ -59,6 +104,7 @@ export default function ZukkoPlayPage() {
   const [isFinished, setIsFinished] = useState(false);
   const [timeLeft, setTimeLeft] = useState(25);
   const [shakeCard, setShakeCard] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   const q = questionsList[currentIndex];
 
@@ -78,15 +124,17 @@ export default function ZukkoPlayPage() {
 
     if (index === q.correct) {
       playSound("correct");
+      setShowConfetti(true);
       updatedScore = score + 1;
       setScore(updatedScore);
     } else {
       playSound("wrong");
       setShakeCard(true);
-      setTimeout(() => setShakeCard(false), 400);
+      setTimeout(() => setShakeCard(false), 450);
     }
 
     setTimeout(() => {
+      setShowConfetti(false);
       if (currentIndex + 1 < questionsList.length) {
         setCurrentIndex((i) => i + 1);
         setSelectedOption(null);
@@ -95,24 +143,20 @@ export default function ZukkoPlayPage() {
         setIsFrozen(false);
         setTimeLeft(25);
       } else {
-        // Bosqich tugadi -> Natijani saqlash
         setIsFinished(true);
         saveProgress(updatedScore);
       }
-    }, 1200);
+    }, 1400);
   };
 
-  // Natija va yulduzchalarni hisoblash hamda LocalStorage'ga yozish
   const saveProgress = (finalScore: number) => {
     if (finalScore >= 4) {
       playSound("win");
-      const starsEarned = finalScore === 5 ? 3 : 2; // 5/5 -> 3 yulduz, 4/5 -> 2 yulduz
-
+      const starsEarned = finalScore === 5 ? 3 : 2;
       const saved = localStorage.getItem("zukko_progress");
       const progress = saved ? JSON.parse(saved) : {};
       const key = `${grade}_lvl_${levelNum}`;
 
-      // Oldingi rekorddan yuqori bo'lsa yangilaydi
       if (!progress[key] || progress[key] < starsEarned) {
         progress[key] = starsEarned;
         localStorage.setItem("zukko_progress", JSON.stringify(progress));
@@ -122,6 +166,7 @@ export default function ZukkoPlayPage() {
 
   const handleFiftyFifty = () => {
     if (disabledOptions.length > 0) return;
+    playSound("click");
     const wrongIndexes = q.options.map((_, idx) => idx).filter((idx) => idx !== q.correct);
     const shuffled = wrongIndexes.sort(() => 0.5 - Math.random());
     setDisabledOptions([shuffled[0], shuffled[1]]);
@@ -131,10 +176,26 @@ export default function ZukkoPlayPage() {
   const starsEarned = score === 5 ? 3 : score === 4 ? 2 : 0;
 
   return (
-    <div className="space-y-6 max-w-xl mx-auto pb-10">
+    <div className="space-y-6 max-w-xl mx-auto pb-10 relative">
+      <style>{customStyles}</style>
+
+      {/* KONFETTI (ZAR) EFEKTI */}
+      {showConfetti && (
+        <div className="fixed inset-0 pointer-events-none z-50 flex items-center justify-center">
+          <div className="text-4xl animate-bounce flex gap-3">
+            <span>🎉</span>
+            <span>⭐</span>
+            <span>✨</span>
+            <span>🌟</span>
+            <span>🎉</span>
+          </div>
+        </div>
+      )}
+
+      {/* Tepadagi Panel */}
       <div className="flex items-center justify-between">
         <Link href="/games/zukko">
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-secondary text-xs font-bold transition-all cursor-pointer">
+          <button onClick={() => playSound("click")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-secondary text-xs font-bold transition-all cursor-pointer">
             <ArrowLeft className="w-4 h-4" />
             <span>Chiqish</span>
           </button>
@@ -146,7 +207,7 @@ export default function ZukkoPlayPage() {
 
       {!isFinished ? (
         <div className="space-y-5">
-          {/* Progress */}
+          {/* Progress va Taymer */}
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs font-extrabold text-muted-foreground">
               <span>Savol: {currentIndex + 1}/{questionsList.length}</span>
@@ -154,9 +215,9 @@ export default function ZukkoPlayPage() {
                 {isFrozen ? "❄️ Muzlatildi" : `⏱️ ${timeLeft}s`}
               </span>
             </div>
-            <div className="w-full h-2.5 bg-secondary rounded-full overflow-hidden">
+            <div className="w-full h-2.5 bg-secondary rounded-full overflow-hidden p-0.5 border border-border/40">
               <div 
-                className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-300"
+                className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 rounded-full transition-all duration-300"
                 style={{ width: `${((currentIndex + 1) / questionsList.length) * 100}%` }}
               />
             </div>
@@ -167,21 +228,27 @@ export default function ZukkoPlayPage() {
             <button
               onClick={handleFiftyFifty}
               disabled={disabledOptions.length > 0}
-              className="px-3.5 py-1.5 rounded-xl bg-violet-500/15 border border-violet-500/30 text-violet-300 font-black text-xs disabled:opacity-30 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl bg-violet-500/15 border border-violet-500/30 text-violet-300 font-black text-xs disabled:opacity-30 cursor-pointer transition-all active:scale-95"
             >
               🪄 50/50
             </button>
             <button
-              onClick={() => setIsFrozen(true)}
+              onClick={() => {
+                playSound("freeze");
+                setIsFrozen(true);
+              }}
               disabled={isFrozen}
-              className="px-3.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-black text-xs disabled:opacity-30 cursor-pointer flex items-center gap-1"
+              className="px-3.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-black text-xs disabled:opacity-30 cursor-pointer transition-all active:scale-95 flex items-center gap-1"
             >
               <Snowflake className="w-3.5 h-3.5" />
               <span>Muzlatish</span>
             </button>
             <button
-              onClick={() => setShowHint(!showHint)}
-              className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 font-black text-xs cursor-pointer flex items-center gap-1"
+              onClick={() => {
+                playSound("click");
+                setShowHint(!showHint);
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 font-black text-xs cursor-pointer transition-all active:scale-95 flex items-center gap-1"
             >
               <HelpCircle className="w-3.5 h-3.5" />
               <span>Maslahat</span>
@@ -189,14 +256,20 @@ export default function ZukkoPlayPage() {
           </div>
 
           {showHint && (
-            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs font-medium">
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs font-semibold animate-fadeIn">
               💡 {q.hint}
             </div>
           )}
 
-          {/* Savol Karta */}
-          <div className={`p-6 rounded-3xl border bg-card text-center transition-all ${shakeCard ? "border-rose-500 bg-rose-950/20" : "border-border"}`}>
-            <h3 className="font-extrabold text-base sm:text-lg text-foreground">{q.question}</h3>
+          {/* Savol Kartochkasi (Yashil/Qizil neon va silkinish bilan) */}
+          <div 
+            className={`p-6 sm:p-7 rounded-3xl border transition-all duration-300 text-center bg-card shadow-xl relative overflow-hidden ${
+              shakeCard ? "animate-shake border-rose-500 bg-rose-950/20 glow-wrong" : ""
+            } ${selectedOption !== null && selectedOption === q.correct ? "border-emerald-500 bg-emerald-950/20 glow-correct" : "border-border/80"}`}
+          >
+            <h3 className="font-black text-base sm:text-xl text-foreground leading-snug">
+              {q.question}
+            </h3>
           </div>
 
           {/* Variantlar */}
@@ -207,9 +280,13 @@ export default function ZukkoPlayPage() {
               const isCorrect = idx === q.correct;
 
               let btnStyle = "bg-card border-border/70 text-foreground hover:bg-secondary";
+              
               if (selectedOption !== null) {
-                if (isCorrect) btnStyle = "bg-emerald-500/20 border-emerald-500 text-emerald-300 font-black";
-                else if (isSelected) btnStyle = "bg-rose-500/20 border-rose-500 text-rose-300 font-black";
+                if (isCorrect) {
+                  btnStyle = "bg-emerald-500/25 border-emerald-500 text-emerald-300 font-black shadow-lg shadow-emerald-500/10 scale-[1.01]";
+                } else if (isSelected) {
+                  btnStyle = "bg-rose-500/25 border-rose-500 text-rose-300 font-black shadow-lg shadow-rose-500/10";
+                }
               }
 
               return (
@@ -218,19 +295,25 @@ export default function ZukkoPlayPage() {
                   disabled={isDisabled || selectedOption !== null}
                   onClick={() => handleAnswer(idx)}
                   className={`w-full p-4 rounded-2xl border text-left text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-between ${btnStyle} ${
-                    isDisabled ? "opacity-20 cursor-not-allowed border-dashed" : ""
+                    isDisabled ? "opacity-20 cursor-not-allowed border-dashed" : "active:scale-[0.99]"
                   }`}
                 >
-                  <span>{opt}</span>
-                  {selectedOption !== null && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-                  {selectedOption !== null && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-rose-400" />}
+                  <span className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-secondary text-muted-foreground flex items-center justify-center text-xs font-black shrink-0">
+                      {String.fromCharCode(65 + idx)}
+                    </span>
+                    <span>{opt}</span>
+                  </span>
+
+                  {selectedOption !== null && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
+                  {selectedOption !== null && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-rose-400 shrink-0" />}
                 </button>
               );
             })}
           </div>
         </div>
       ) : (
-        /* BOSQICH YAKUNI (Yulduzcha va O'tish sharti) */
+        /* BOSQICH YAKUNI */
         <div className="p-7 rounded-3xl border border-sky-500/30 bg-card text-center space-y-5 shadow-2xl">
           <div className="w-20 h-20 rounded-3xl bg-sky-500/10 border border-sky-500/30 text-sky-400 flex items-center justify-center mx-auto">
             <Award className="w-10 h-10" />
@@ -243,7 +326,6 @@ export default function ZukkoPlayPage() {
             </p>
           </div>
 
-          {/* Yulduzchalar */}
           {isPassed ? (
             <div className="space-y-2">
               <div className="flex justify-center gap-2">
@@ -265,6 +347,7 @@ export default function ZukkoPlayPage() {
           <div className="flex gap-2.5 justify-center pt-2">
             <button
               onClick={() => {
+                playSound("click");
                 setCurrentIndex(0);
                 setScore(0);
                 setIsFinished(false);
@@ -280,6 +363,7 @@ export default function ZukkoPlayPage() {
             {isPassed && (
               <button
                 onClick={() => {
+                  playSound("click");
                   setLocation(`/games/zukko/play?grade=${grade}&level=${levelNum + 1}`);
                   setCurrentIndex(0);
                   setScore(0);
