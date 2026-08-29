@@ -16,7 +16,9 @@ const authH = (): HeadersInit => {
 // Web Audio API yordamida dinamik sound effektlar
 const playWheelSound = (type: "spin" | "correct" | "wrong" | "win" | "tick") => {
   try {
-    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
@@ -118,30 +120,34 @@ export default function WheelSpinPage() {
       clearInterval(audioInterval);
     }, 3800);
 
-    const r = await fetch(`${API_BASE}/wheel-games/${params.id}/spin`, { method: "POST", headers: authH() });
-    const json = await r.json();
-    const idx = json.winner_index as number;
+    try {
+      const r = await fetch(`${API_BASE}/wheel-games/${params.id}/spin`, { method: "POST", headers: authH() });
+      const json = await r.json();
+      const idx = json.winner_index as number;
 
-    const segAngle = 360 / game.segments.length;
-    const targetAngle = 360 - (idx * segAngle + segAngle / 2);
-    spinCountRef.current += 1;
-    const fullSpins = 6 + spinCountRef.current;
-    const finalRotation = rotation + fullSpins * 360 + targetAngle - (rotation % 360);
-    setRotation(finalRotation);
+      const segAngle = 360 / game.segments.length;
+      const targetAngle = 360 - (idx * segAngle + segAngle / 2);
+      spinCountRef.current += 1;
+      const fullSpins = 6 + spinCountRef.current;
+      const finalRotation = rotation + fullSpins * 360 + targetAngle - (rotation % 360);
+      setRotation(finalRotation);
 
-    setTimeout(() => {
-      const w = json.winner as Segment;
-      setWinner(w);
-      setJudgePoints(w.points ?? 10);
-      playWheelSound("correct");
+      setTimeout(() => {
+        const w = json.winner as Segment;
+        setWinner(w);
+        setJudgePoints(w.points ?? 10);
+        playWheelSound("correct");
 
-      if (w.question) {
-        setPhase("revealed");
-        if (game.time_limit_seconds) setTimeLeft(game.time_limit_seconds);
-      } else {
-        setPhase("idle");
-      }
-    }, 4200);
+        if (w.question) {
+          setPhase("revealed");
+          if (game.time_limit_seconds) setTimeLeft(game.time_limit_seconds);
+        } else {
+          setPhase("idle");
+        }
+      }, 4200);
+    } catch {
+      setPhase("idle");
+    }
   };
 
   const startAnswering = () => {
