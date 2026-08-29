@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
@@ -93,51 +93,59 @@ export default function WheelListPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <Link href="/games" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit">
+    <div className="space-y-6 max-w-2xl mx-auto pb-10">
+      <Link className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground w-fit bg-secondary/50 px-3 py-1.5 rounded-xl border border-border/50" href="/games">
         <ArrowLeft className="w-4 h-4" /> O'yinlarga qaytish
       </Link>
 
-      <div className="relative rounded-2xl overflow-hidden border border-rose-500/20 bg-gradient-to-br from-rose-950/30 via-card to-card p-6 sm:p-7">
-        <div className="absolute -top-20 -right-16 w-56 h-56 rounded-full bg-rose-500/[0.08] blur-3xl" />
+      <div className="relative rounded-3xl overflow-hidden border border-rose-500/25 bg-gradient-to-br from-rose-950/40 via-card to-card p-6 sm:p-7 shadow-xl">
+        <div className="absolute -top-20 -right-16 w-56 h-56 rounded-full bg-rose-500/10 blur-3xl pointer-events-none" />
         <div className="relative flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center shrink-0">
-              <RefreshCw className="w-6 h-6 text-rose-400" strokeWidth={1.75} />
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0 text-rose-400">
+              <RefreshCw className="w-6 h-6 animate-spin-slow" strokeWidth={2} />
             </div>
             <div>
-              <p className="text-xs font-semibold text-rose-400/80 uppercase tracking-widest mb-1">Guruh o'yini</p>
-              <h1 className="text-2xl font-bold tracking-tight">Omadli Charxpalak</h1>
-              <p className="text-muted-foreground text-sm mt-1.5 max-w-md">Aylanadigan g'ildirak — har bo'limga yashirin savol qo'shishingiz mumkin</p>
+              <p className="text-[11px] font-black text-rose-400 uppercase tracking-widest mb-1">Guruh o'yini</p>
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Omadli Charxpalak</h1>
+              <p className="text-muted-foreground text-xs sm:text-sm mt-1 max-w-md font-medium">
+                Aylanadigan charxpalak — har bir bo'limga yashirin savol va ballar biriktirishingiz mumkin.
+              </p>
             </div>
           </div>
-          <Button onClick={() => setDialogOpen(true)} className="gap-2"><Plus className="w-4 h-4" /> Yangi g'ildirak</Button>
+          <Button onClick={() => setDialogOpen(true)} className="gap-2 font-bold rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 shadow-lg shadow-rose-500/20">
+            <Plus className="w-4 h-4" /> Yangi g'ildirak
+          </Button>
         </div>
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center py-12"><Loader2 className="w-7 h-7 animate-spin text-rose-500" /></div>
       ) : wheels.length === 0 ? (
-        <Card className="border-dashed"><CardContent className="py-10 text-center text-muted-foreground text-sm">Hali g'ildirak yaratilmagan</CardContent></Card>
+        <Card className="border-dashed border-2 rounded-2xl"><CardContent className="py-12 text-center text-muted-foreground text-sm font-semibold">Hali charxpalak yaratilmagan</CardContent></Card>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
           {wheels.map(w => {
             const questionCount = w.segments.filter(s => s.question).length;
             return (
-              <Card key={w.id}>
-                <CardContent className="p-4 space-y-2">
-                  <h3 className="font-bold">{w.title}</h3>
-                  <p className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
-                    <span>{w.segments.length} bo'lim</span>
-                    <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {w.team_count} jamoa</span>
-                    {questionCount > 0 && <span className="flex items-center gap-1"><HelpCircle className="w-3 h-3" /> {questionCount} savol</span>}
-                    {w.time_limit_seconds && <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {w.time_limit_seconds}s</span>}
-                  </p>
-                  <div className="flex items-center gap-2 pt-1">
-                    <Link href={`/games/wheel/${w.id}`} className="flex-1">
-                      <Button size="sm" className="w-full gap-1.5"><PlayCircle className="w-3.5 h-3.5" /> O'ynash</Button>
+              <Card className="rounded-2xl border-border/60 hover:border-rose-500/40 transition-all duration-300 shadow-md" key={w.id}>
+                <CardContent className="p-5 space-y-3">
+                  <h3 className="font-black text-lg text-foreground">{w.title}</h3>
+                  <div className="flex items-center gap-2 flex-wrap text-xs font-bold text-muted-foreground">
+                    <span className="bg-secondary px-2.5 py-1 rounded-lg border border-border/40">{w.segments.length} bo'lim</span>
+                    <span className="bg-secondary px-2.5 py-1 rounded-lg border border-border/40 flex items-center gap-1"><Users className="w-3 h-3 text-sky-400" /> {w.team_count} jamoa</span>
+                    {questionCount > 0 && <span className="bg-secondary px-2.5 py-1 rounded-lg border border-border/40 flex items-center gap-1"><HelpCircle className="w-3 h-3 text-amber-400" /> {questionCount} savol</span>}
+                    {w.time_limit_seconds && <span className="bg-secondary px-2.5 py-1 rounded-lg border border-border/40 flex items-center gap-1"><Clock className="w-3 h-3 text-emerald-400" /> {w.time_limit_seconds}s</span>}
+                  </div>
+                  <div className="flex items-center gap-2 pt-2">
+                    <Link className="flex-1" href={`/games/wheel/${w.id}`}>
+                      <Button className="w-full gap-1.5 font-bold rounded-xl bg-gradient-to-r from-rose-500 to-pink-600" size="sm">
+                        <PlayCircle className="w-4 h-4" /> O'ynash
+                      </Button>
                     </Link>
-                    <button onClick={() => handleDelete(w.id)} className="text-red-500"><Trash2 className="w-4 h-4" /></button>
+                    <button onClick={() => handleDelete(w.id)} className="p-2 text-muted-foreground hover:text-rose-500 transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </CardContent>
               </Card>
@@ -146,67 +154,80 @@ export default function WheelListPage() {
         </div>
       )}
 
+      {/* CHARXPALAK YARATISH MODAL OYNASI */}
       <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) resetForm(); }}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Yangi g'ildirak</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Nomi</Label>
-              <Input placeholder="Masalan: Kim javob beradi?" value={title} onChange={e => setTitle(e.target.value)} />
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto rounded-3xl p-6">
+          <DialogHeader><DialogTitle className="font-black text-xl">Yangi Charxpalak Yaratish</DialogTitle></DialogHeader>
+          <div className="space-y-5 pt-2">
+            <div className="space-y-2">
+              <Label className="font-bold text-xs">O'yin Nomi</Label>
+              <Input placeholder="Masalan: Tarix va Geografiya bilagʻonlari" value={title} onChange={e => setTitle(e.target.value)} className="rounded-xl" />
             </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Jamoalar soni</Label>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5 font-bold text-xs"><Users className="w-3.5 h-3.5 text-rose-400" /> Jamoalar soni</Label>
                 <div className="flex gap-1.5">
                   {[2, 3, 4].map(n => (
-                    <button key={n} onClick={() => setTeamCount(n)} className={`flex-1 py-1.5 rounded-lg border-2 text-sm font-semibold ${teamCount === n ? "border-primary bg-primary/5" : "border-border"}`}>
+                    <button key={n} onClick={() => setTeamCount(n)} className={`flex-1 py-2 rounded-xl border-2 text-xs font-black transition-all ${teamCount === n ? "border-rose-500 bg-rose-500/10 text-rose-400" : "border-border"}`}>
                       {n}
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> Javob vaqti (s)</Label>
-                <Input type="number" placeholder="30" value={timeLimit} onChange={e => setTimeLimit(e.target.value)} />
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5 font-bold text-xs"><Clock className="w-3.5 h-3.5 text-rose-400" /> Javob vaqti (sekund)</Label>
+                <Input placeholder="30" type="number" value={timeLimit} onChange={e => setTimeLimit(e.target.value)} className="rounded-xl text-xs font-bold" />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Bo'limlar</Label>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="font-bold text-xs">Bo'limlar va Savollar</Label>
+                <Button size="sm" variant="outline" onClick={() => setSegments(ss => [...ss, emptySegment()])} className="h-7 text-xs font-bold rounded-lg gap-1">
+                  <Plus className="w-3 h-3" /> Bo'lim qo'shish
+                </Button>
+              </div>
+
               {segments.map((s, i) => (
-                <div key={i} className="rounded-xl border p-3 space-y-2">
+                <div key={i} className="rounded-2xl border border-border/70 p-3.5 space-y-3 bg-secondary/20">
                   <div className="flex items-center gap-2">
-                    <Input placeholder={`Bo'lim ${i + 1} nomi`} value={s.label} onChange={e => updateSegment(i, { label: e.target.value })} className="flex-1 h-8 text-sm" />
-                    <Input
-                      type="number" min={1} max={100} value={s.weight}
-                      onChange={e => updateSegment(i, { weight: Number(e.target.value) })}
-                      className="w-16 h-8 text-xs" title="Shans (og'irlik)"
-                    />
-                    <button onClick={() => setSegments(ss => ss.filter((_, si) => si !== i))} className="text-red-500 shrink-0"><X className="w-4 h-4" /></button>
+                    <Input placeholder={`Bo'lim ${i + 1} nomi`} value={s.label} onChange={e => updateSegment(i, { label: e.target.value })} className="flex-1 h-9 text-xs font-bold rounded-xl" />
+                    <Input type="number" min={1} max={100} value={s.weight} onChange={e => updateSegment(i, { weight: Number(e.target.value) })} className="w-16 h-9 text-xs font-bold text-center rounded-xl" title="Ehtimollik (Shans)" />
+                    <button onClick={() => setSegments(ss => ss.filter((_, si) => si !== i))} className="p-1.5 text-muted-foreground hover:text-rose-500">
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <input type="checkbox" checked={s.hasQuestion} onChange={e => updateSegment(i, { hasQuestion: e.target.checked })} />
-                    Bu bo'limga yashirin savol qo'shish
-                  </label>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={s.hasQuestion}
+                        onChange={e => updateSegment(i, { hasQuestion: e.target.checked })}
+                        className="rounded accent-rose-500"
+                      />
+                      <span>Yashirin savol biriktirish</span>
+                    </label>
+                  </div>
+
                   {s.hasQuestion && (
-                    <div className="pl-5 space-y-1.5">
-                      <Input placeholder="Savol matni" value={s.question} onChange={e => updateSegment(i, { question: e.target.value })} className="h-7 text-xs" />
-                      <div className="flex items-center gap-1.5">
-                        <Input placeholder="To'g'ri javob" value={s.correct_answer} onChange={e => updateSegment(i, { correct_answer: e.target.value })} className="h-7 text-xs flex-1" />
-                        <Input type="number" min={1} max={100} value={s.points} onChange={e => updateSegment(i, { points: Number(e.target.value) })} className="h-7 w-16 text-xs" title="Ball" />
+                    <div className="space-y-2 pt-1 pl-2 border-l-2 border-rose-500/40 animate-in fade-in">
+                      <Input placeholder="Savol matni..." value={s.question} onChange={e => updateSegment(i, { question: e.target.value })} className="h-8 text-xs rounded-lg" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input placeholder="To'g'ri javob..." value={s.correct_answer} onChange={e => updateSegment(i, { correct_answer: e.target.value })} className="h-8 text-xs rounded-lg" />
+                        <Input placeholder="Ball (masalan: 10)" type="number" value={s.points} onChange={e => updateSegment(i, { points: Number(e.target.value) })} className="h-8 text-xs rounded-lg" />
                       </div>
                     </div>
                   )}
                 </div>
               ))}
-              <button onClick={() => setSegments(ss => [...ss, emptySegment()])} className="text-sm text-primary font-medium">+ Bo'lim qo'shish</button>
-              <p className="text-xs text-muted-foreground">Bo'lim nomi yonidagi son — shans og'irligi (teng shans uchun hammasida bir xil son qoldiring).</p>
             </div>
+
+            <Button className="w-full py-5 rounded-xl font-black bg-gradient-to-r from-rose-500 to-pink-600 shadow-lg shadow-rose-500/25" disabled={saving} onClick={handleCreate}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "G'ildirakni Yaratish"}
+            </Button>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Bekor qilish</Button>
-            <Button onClick={handleCreate} disabled={saving}>{saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Yaratish</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
