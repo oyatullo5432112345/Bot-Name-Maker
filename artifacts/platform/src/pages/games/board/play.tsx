@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { playSound } from "@/lib/game-sounds";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -50,6 +51,18 @@ export default function BoardGamePlayPage() {
     refetchInterval: 4000,
   });
 
+  const playedWinSoundRef = useRef(false);
+  useEffect(() => {
+    if (data?.game.session_status === "finished") {
+      if (!playedWinSoundRef.current) {
+        playedWinSoundRef.current = true;
+        playSound("win");
+      }
+    } else {
+      playedWinSoundRef.current = false;
+    }
+  }, [data?.game.session_status]);
+
   const startSession = async () => {
     await fetch(`${API_BASE}/board-games/${params.id}/session/start`, { method: "POST", headers: authH() });
     qc.invalidateQueries({ queryKey: ["board-game", params.id] });
@@ -68,6 +81,13 @@ export default function BoardGamePlayPage() {
     if (!activeCell) return;
     setResolving(true);
     try {
+      if (outcome === "correct") playSound("correct");
+      else if (outcome === "incorrect") playSound("wrong");
+      else if (outcome === "steal") playSound("steal");
+      else if (activeCell.type === "lose") playSound("lose");
+      else if (activeCell.type === "bonus") playSound("win");
+      else playSound("click");
+
       await fetch(`${API_BASE}/board-games/${params.id}/cells/${activeCell.id}/resolve`, {
         method: "POST", headers: authH(), body: JSON.stringify({ outcome, target_team: targetTeam }),
       });
