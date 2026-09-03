@@ -14,48 +14,6 @@ const authH = (): HeadersInit => {
 };
 
 // Web Audio API yordamida dinamik sound effektlar
-const playWheelSound = (type: "spin" | "correct" | "wrong" | "win" | "tick") => {
-  try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    if (type === "tick") {
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(600, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.04);
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.04);
-    } else if (type === "correct" || type === "win") {
-      const now = ctx.currentTime;
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(523.25, now);
-      osc.frequency.setValueAtTime(659.25, now + 0.12);
-      osc.frequency.setValueAtTime(783.99, now + 0.24);
-      osc.frequency.setValueAtTime(1046.5, now + 0.36);
-      gain.gain.setValueAtTime(0.35, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.7);
-      osc.start();
-      osc.stop(now + 0.7);
-    } else if (type === "wrong") {
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(160, ctx.currentTime);
-      osc.frequency.setValueAtTime(90, ctx.currentTime + 0.2);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.4);
-    }
-  } catch {
-    // Audio renderlash muammosi bo'lganda e'tiborsiz qoldiriladi
-  }
-};
 
 interface Segment { label: string; weight: number; color: string; question?: string; correct_answer?: string; points?: number }
 interface WheelGame {

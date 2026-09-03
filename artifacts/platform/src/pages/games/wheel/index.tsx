@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, ArrowLeft, Loader2, Trash2, PlayCircle, Clock, X, Users, HelpCircle, RefreshCw } from "lucide-react";
+import { Plus, ArrowLeft, Loader2, Trash2, PlayCircle, Clock, X, Users, HelpCircle, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/use-auth";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -20,6 +21,7 @@ const authH = (): HeadersInit => {
 interface WheelGame {
   id: string; title: string; segments: { label: string; weight: number; color: string; question?: string }[];
   time_limit_seconds: number | null; team_count: number;
+  created_by_login: string | null; play_count: number; last_played_at: string | null;
 }
 interface DraftSegment {
   label: string; weight: number; hasQuestion: boolean; question: string; correct_answer: string; points: number;
@@ -28,6 +30,7 @@ interface DraftSegment {
 const emptySegment = (): DraftSegment => ({ label: "", weight: 1, hasQuestion: false, question: "", correct_answer: "", points: 10 });
 
 export default function WheelListPage() {
+  const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -36,11 +39,15 @@ export default function WheelListPage() {
   const [timeLimit, setTimeLimit] = useState<string>("30");
   const [segments, setSegments] = useState<DraftSegment[]>([emptySegment(), emptySegment(), emptySegment()]);
   const [saving, setSaving] = useState(false);
+  const [mineOnly, setMineOnly] = useState(false);
+  const [statsOpenId, setStatsOpenId] = useState<string | null>(null);
 
   const { data: wheels = [], isLoading } = useQuery<WheelGame[]>({
-    queryKey: ["wheel-games"],
+    queryKey: ["wheel-games", mineOnly],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/wheel-games`, { headers: authH() });
+      const params = new URLSearchParams();
+      if (mineOnly) params.set("mine", "true");
+      const r = await fetch(`${API_BASE}/wheel-games?${params.toString()}`, { headers: authH() });
       if (!r.ok) return [];
       return r.json();
     },
@@ -88,7 +95,12 @@ export default function WheelListPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("O'chirilsinmi?")) return;
-    await fetch(`${API_BASE}/wheel-games/${id}`, { method: "DELETE", headers: authH() });
+    const r = await fetch(`${API_BASE}/wheel-games/${id}`, { method: "DELETE", headers: authH() });
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      toast({ variant: "destructive", title: "Xatolik", description: json.error ?? "O'chirib bo'lmadi" });
+      return;
+    }
     qc.invalidateQueries({ queryKey: ["wheel-games"] });
   };
 
@@ -119,14 +131,27 @@ export default function WheelListPage() {
         </div>
       </div>
 
+      <div className="flex justify-end">
+        <Button
+          variant={mineOnly ? "default" : "outline"}
+          size="sm"
+          onClick={() => setMineOnly(m => !m)}
+          className="rounded-xl font-bold text-xs"
+        >
+          Mening o'yinlarim
+        </Button>
+      </div>
+
       {isLoading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-7 h-7 animate-spin text-rose-500" /></div>
       ) : wheels.length === 0 ? (
-        <Card className="border-dashed border-2 rounded-2xl"><CardContent className="py-12 text-center text-muted-foreground text-sm font-semibold">Hali charxpalak yaratilmagan</CardContent></Card>
+        <Card className="border-dashed border-2 rounded-2xl"><CardContent className="py-12 text-center text-muted-foreground text-sm font-semibold">{mineOnly ? "Siz hali charxpalak yaratmagansiz" : "Hali charxpalak yaratilmagan"}</CardContent></Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {wheels.map(w => {
             const questionCount = w.segments.filter(s => s.question).length;
+            const isOwner = w.created_by_login === user?.login;
+            const statsOpen = statsOpenId === w.id;
             return (
               <Card className="rounded-2xl border-border/60 hover:border-rose-500/40 transition-all duration-300 shadow-md" key={w.id}>
                 <CardContent className="p-5 space-y-3">
@@ -143,10 +168,26 @@ export default function WheelListPage() {
                         <PlayCircle className="w-4 h-4" /> O'ynash
                       </Button>
                     </Link>
-                    <button onClick={() => handleDelete(w.id)} className="p-2 text-muted-foreground hover:text-rose-500 transition-colors">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {isOwner && (
+                      <button onClick={() => handleDelete(w.id)} className="p-2 text-muted-foreground hover:text-rose-500 transition-colors">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
+                  <button
+                    onClick={() => setStatsOpenId(statsOpen ? null : w.id)}
+                    className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground pt-1"
+                  >
+                    <PlayCircle className="w-3.5 h-3.5" /> {w.play_count ?? 0} marta o'ynalgan
+                    {statsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                  {statsOpen && (
+                    <div className="text-xs text-muted-foreground bg-secondary/40 rounded-lg px-3 py-2 font-semibold">
+                      {w.last_played_at
+                        ? `Oxirgi marta: ${new Date(w.last_played_at).toLocaleString("uz-UZ", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                        : "Hali o'ynalmagan"}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );
