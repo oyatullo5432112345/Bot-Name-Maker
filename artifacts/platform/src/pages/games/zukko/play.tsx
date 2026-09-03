@@ -2,63 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useSearch, useLocation } from "wouter";
 import { ArrowLeft, HelpCircle, CheckCircle2, XCircle, RotateCcw, Award, Star, Snowflake, ArrowRight } from "lucide-react";
 import { ZUKKO_QUESTIONS } from "./zukkoData";
-
-// Ovozli effektlar (Web Audio API orqali)
-const playSound = (type: "correct" | "wrong" | "freeze" | "win" | "click") => {
-  try {
-    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    if (type === "correct") {
-      // G'alaba qisqa musiqasi (C5 -> E5 -> G5)
-      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
-      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
-      osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.45);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.45);
-    } else if (type === "wrong") {
-      // Xato ovozi (Buzzer)
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(180, ctx.currentTime);
-      osc.frequency.setValueAtTime(110, ctx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.35);
-    } else if (type === "win") {
-      // Bosqich tugaganda baland g'alaba akkordi
-      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
-      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.15);
-      osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.3);
-      osc.frequency.setValueAtTime(1046.5, ctx.currentTime + 0.45);
-      gain.gain.setValueAtTime(0.4, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.7);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.7);
-    } else if (type === "freeze") {
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(800, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.2);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.3);
-    } else {
-      osc.frequency.setValueAtTime(400, ctx.currentTime);
-      gain.gain.setValueAtTime(0.1, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.05);
-    }
-  } catch {
-    // Brauzer audio qo'llab-quvvatlamasa jim o'tadi
-  }
-};
+import { playSound } from "@/lib/game-sounds";
 
 const customStyles = `
   @keyframes shakeEffect {
