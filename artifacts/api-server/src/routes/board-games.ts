@@ -25,12 +25,15 @@ router.get("/board-games", async (req, res): Promise<void> => {
   if (!user) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
   const search = (req.query["search"] as string | undefined)?.trim();
-  const rows = search
-    ? await query(
-        `SELECT * FROM board_games WHERE title ILIKE $1 OR subject ILIKE $1 ORDER BY created_at DESC`,
-        [`%${search}%`]
-      )
-    : await query(`SELECT * FROM board_games ORDER BY created_at DESC`);
+  const mine = req.query["mine"] === "true";
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (search) { params.push(`%${search}%`); conditions.push(`(title ILIKE $${params.length} OR subject ILIKE $${params.length})`); }
+  if (mine) { params.push(user["login"] as string); conditions.push(`created_by_login = $${params.length}`); }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const rows = await query(`SELECT * FROM board_games ${where} ORDER BY created_at DESC`, params);
   res.json(rows);
 });
 
@@ -109,6 +112,16 @@ router.get("/board-games/:id", async (req, res): Promise<void> => {
 router.delete("/board-games/:id", async (req, res): Promise<void> => {
   const user = requireStaff(req.headers.authorization);
   if (!user) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+
+  const game = await queryOne<{ created_by_login: string | null }>(
+    "SELECT created_by_login FROM board_games WHERE id = $1", [req.params["id"]]
+  );
+  if (!game) { res.status(404).json({ error: "Topilmadi" }); return; }
+  if (game.created_by_login !== (user["login"] as string)) {
+    res.status(403).json({ error: "Faqat o'yinni yaratgan kishi o'chira oladi" });
+    return;
+  }
+
   await query("DELETE FROM board_games WHERE id = $1", [req.params["id"]]);
   res.json({ ok: true });
 });
@@ -129,7 +142,8 @@ router.post("/board-games/:id/session/start", async (req, res): Promise<void> =>
 
   const teamScores = names.map(n => ({ name: n, score: 0 }));
   await query(
-    `UPDATE board_games SET session_status = 'playing', team_scores = $1, current_team = 0 WHERE id = $2`,
+    `UPDATE board_games SET session_status = 'playing', team_scores = $1, current_team = 0,
+       play_count = play_count + 1, last_played_at = NOW() WHERE id = $2`,
     [JSON.stringify(teamScores), req.params["id"]]
   );
   await query(`UPDATE board_cells SET revealed = false, claimed_by_team = null WHERE game_id = $1`, [req.params["id"]]);

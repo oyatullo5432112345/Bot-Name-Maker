@@ -14,13 +14,20 @@ function requireStaff(authHeader: string | undefined) {
 
 const SEGMENT_COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#22c55e", "#06b6d4", "#ef4444", "#a855f7"];
 
+// GET /api/wheel-games?search=&mine=true — ro'yxat (mine=true bo'lsa faqat o'zi yaratganlari)
 router.get("/wheel-games", async (req, res): Promise<void> => {
   const user = requireStaff(req.headers.authorization);
   if (!user) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const search = (req.query["search"] as string | undefined)?.trim();
-  const rows = search
-    ? await query(`SELECT * FROM wheel_games WHERE title ILIKE $1 ORDER BY created_at DESC`, [`%${search}%`])
-    : await query(`SELECT * FROM wheel_games ORDER BY created_at DESC`);
+  const mine = req.query["mine"] === "true";
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (search) { params.push(`%${search}%`); conditions.push(`title ILIKE $${params.length}`); }
+  if (mine) { params.push(user["login"] as string); conditions.push(`created_by_login = $${params.length}`); }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const rows = await query(`SELECT * FROM wheel_games ${where} ORDER BY created_at DESC`, params);
   res.json(rows);
 });
 
@@ -67,14 +74,25 @@ router.get("/wheel-games/:id", async (req, res): Promise<void> => {
   res.json(game);
 });
 
+// DELETE /api/wheel-games/:id — faqat o'yinni yaratgan kishi o'chira oladi
 router.delete("/wheel-games/:id", async (req, res): Promise<void> => {
   const user = requireStaff(req.headers.authorization);
   if (!user) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+
+  const game = await queryOne<{ created_by_login: string | null }>(
+    "SELECT created_by_login FROM wheel_games WHERE id = $1", [req.params["id"]]
+  );
+  if (!game) { res.status(404).json({ error: "Topilmadi" }); return; }
+  if (game.created_by_login !== (user["login"] as string)) {
+    res.status(403).json({ error: "Faqat o'yinni yaratgan kishi o'chira oladi" });
+    return;
+  }
+
   await query("DELETE FROM wheel_games WHERE id = $1", [req.params["id"]]);
   res.json({ ok: true });
 });
 
-// POST /api/wheel-games/:id/session/start — o'yinni (qayta) boshlash
+// POST /api/wheel-games/:id/session/start — o'yinni (qayta) boshlash, o'ynalish statistikasini yozadi
 router.post("/wheel-games/:id/session/start", async (req, res): Promise<void> => {
   const user = requireStaff(req.headers.authorization);
   if (!user) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
@@ -82,7 +100,10 @@ router.post("/wheel-games/:id/session/start", async (req, res): Promise<void> =>
   if (!game) { res.status(404).json({ error: "Topilmadi" }); return; }
   const teamScores = Array.from({ length: game.team_count }, (_, i) => ({ name: `${i + 1}-jamoa`, score: 0 }));
   await query(
-    "UPDATE wheel_games SET session_status = 'playing', team_scores = $1, current_team = 0 WHERE id = $2",
+    `UPDATE wheel_games
+     SET session_status = 'playing', team_scores = $1, current_team = 0,
+         play_count = play_count + 1, last_played_at = NOW()
+     WHERE id = $2`,
     [JSON.stringify(teamScores), req.params["id"]]
   );
   res.json({ ok: true });
@@ -96,6 +117,7 @@ router.post("/wheel-games/:id/spin", async (req, res): Promise<void> => {
     "SELECT segments, current_team FROM wheel_games WHERE id = $1", [req.params["id"]]
   );
   if (!game) { res.status(404).json({ error: "Topilmadi" }); return; }
+  if (game.segments.length === 0) { res.status(400).json({ error: "Barcha bo'limlar tugadi" }); return; }
 
   const totalWeight = game.segments.reduce((s, seg) => s + seg.weight, 0);
   let r = Math.random() * totalWeight;
@@ -105,10 +127,15 @@ router.post("/wheel-games/:id/spin", async (req, res): Promise<void> => {
     if (r <= 0) { winnerIndex = i; break; }
   }
   const winner = game.segments[winnerIndex]!;
+
+  // Keyingi baholashda (judge) aynan shu bo'limni topib, kerak bo'lsa olib tashlash uchun eslab qolamiz
+  await query("UPDATE wheel_games SET current_segment_index = $1 WHERE id = $2", [winnerIndex, req.params["id"]]);
+
   res.json({ winner_index: winnerIndex, winner, current_team: game.current_team });
 });
 
-// POST /api/wheel-games/:id/judge — javobni baholash (ball berish/ayirish) va navbatni o'tkazish
+// POST /api/wheel-games/:id/judge — javobni baholash, navbatni o'tkazish va
+// javob berilgan SAVOLLI bo'limni barabandan olib tashlash (qayta tushmasligi uchun)
 const JudgeBody = z.object({
   outcome: z.enum(["correct", "incorrect", "skip"]),
   points: z.number().int().min(0).max(100).default(0),
@@ -119,8 +146,12 @@ router.post("/wheel-games/:id/judge", async (req, res): Promise<void> => {
   const parsed = JudgeBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const game = await queryOne<{ team_scores: { name: string; score: number }[]; current_team: number; team_count: number }>(
-    "SELECT team_scores, current_team, team_count FROM wheel_games WHERE id = $1", [req.params["id"]]
+  const game = await queryOne<{
+    team_scores: { name: string; score: number }[]; current_team: number; team_count: number;
+    segments: { label: string; weight: number; color: string; question?: string; correct_answer?: string; points?: number }[];
+    current_segment_index: number | null;
+  }>(
+    "SELECT team_scores, current_team, team_count, segments, current_segment_index FROM wheel_games WHERE id = $1", [req.params["id"]]
   );
   if (!game) { res.status(404).json({ error: "Topilmadi" }); return; }
 
@@ -132,8 +163,21 @@ router.post("/wheel-games/:id/judge", async (req, res): Promise<void> => {
     scores[cur]!.score = Math.max(0, scores[cur]!.score - parsed.data.points);
   }
   const nextTeam = (cur + 1) % game.team_count;
-  await query("UPDATE wheel_games SET team_scores = $1, current_team = $2 WHERE id = $3", [JSON.stringify(scores), nextTeam, req.params["id"]]);
-  res.json({ team_scores: scores, current_team: nextTeam });
+
+  // Savolli bo'lim javob berilgach — barabandan olib tashlanadi (qayta chiqmasligi uchun)
+  let segments = game.segments;
+  if (game.current_segment_index !== null && parsed.data.outcome !== "skip") {
+    const targetSegment = segments[game.current_segment_index];
+    if (targetSegment?.question) {
+      segments = segments.filter((_, i) => i !== game.current_segment_index);
+    }
+  }
+
+  await query(
+    "UPDATE wheel_games SET team_scores = $1, current_team = $2, segments = $3, current_segment_index = NULL WHERE id = $4",
+    [JSON.stringify(scores), nextTeam, JSON.stringify(segments), req.params["id"]]
+  );
+  res.json({ team_scores: scores, current_team: nextTeam, segments });
 });
 
 // POST /api/wheel-games/:id/session/finish — o'yinni yakunlash (g'olibni e'lon qilish uchun)
