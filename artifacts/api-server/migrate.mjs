@@ -45,6 +45,15 @@ const SQL_FILES = [
 
 // Qo'shimcha ustunlar (agar mavjud bo'lmasa qo'shiladi)
 const EXTRA_SQL = `
+-- "users" jadvali dastlab faqat telegram_id (BIGINT) ni PRIMARY KEY qilib
+-- yaratilgan va "id" ustuni umuman bo'lmagan. Ammo login/register/
+-- update-credentials so'rovlari "id" ustunini o'qiydi/yozadi — shu sabab
+-- bazada "id" ustuni yo'q bo'lgan muhitlarda O'QUVCHI (student) kirishi
+-- har doim "column \"id\" does not exist" xatosi bilan qulab tushar, frontend
+-- esa buni "Login yoki parol noto'g'ri" deb ko'rsatib, sababni yashirar edi.
+ALTER TABLE users  ADD COLUMN IF NOT EXISTS id UUID NOT NULL DEFAULT gen_random_uuid();
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_id_unique ON users(id);
+
 ALTER TABLE users  ADD COLUMN IF NOT EXISTS pro_expires_at TIMESTAMPTZ;
 ALTER TABLE staff  ADD COLUMN IF NOT EXISTS pro_expires_at TIMESTAMPTZ;
 ALTER TABLE users  ADD COLUMN IF NOT EXISTS birthday DATE;
