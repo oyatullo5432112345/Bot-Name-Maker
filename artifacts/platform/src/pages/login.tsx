@@ -264,8 +264,16 @@ export default function Login() {
         setLoginOpen(false);
         setWelcomeUser({ name: String(result.full_name ?? "Foydalanuvchi"), role: String(result.role ?? "") });
       },
-      onError: () => {
-        toast({ variant: "destructive", title: "Xatolik", description: "Login yoki parol noto'g'ri" });
+      onError: (err: unknown) => {
+        // Serverdan kelgan haqiqiy xabarni ko'rsatamiz (masalan, DB xatosi
+        // bo'lsa ham), aks holda har doim "Login yoki parol noto'g'ri"
+        // deb ko'rsatilib, haqiqiy sabab yashirinib qolardi.
+        const apiErr = err as { status?: number; data?: { error?: string } } | undefined;
+        const serverMessage = apiErr?.data?.error;
+        const description = apiErr?.status === 401 || !serverMessage
+          ? "Login yoki parol noto'g'ri"
+          : serverMessage;
+        toast({ variant: "destructive", title: "Xatolik", description });
       },
     });
   };
