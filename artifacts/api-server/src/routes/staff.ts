@@ -12,7 +12,7 @@ import { requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
 
-const SELECT = "id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach";
+const SELECT = "id, full_name, role, class_id, login, password, telegram_id::float8 AS telegram_id, subjects, can_teach";
 
 async function enrichStaff(staff: {
   id: string; full_name: string; role: string; class_id?: string | null;
