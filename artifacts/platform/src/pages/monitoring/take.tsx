@@ -45,7 +45,7 @@ interface TestData {
 }
 
 export default function MonitoringTakePage() {
-  const [, params] = useRoute("/monitoring/take/:id");
+  const [, params] = useRoute("/monitoring/:id");
   const [, setLocation] = useLocation();
   const testId = params?.id;
 
