@@ -8,6 +8,16 @@ types.setTypeParser(1184, (val: string) => val);
 types.setTypeParser(1114, (val: string) => val);
 types.setTypeParser(1082, (val: string) => val);
 
+// BIGINT (OID 20) — masalan telegram_id ustuni. "pg" kutubxonasi BIGINT'ni
+// standart holda STRING sifatida qaytaradi (JS number 64-bitni to'liq
+// sig'dira olmasligi mumkinligi uchun). Ammo LoginResponse/GetMeResponse
+// zod sxemasi telegram_id'ni number deb kutadi — shu nomuvofiqlik
+// tufayli LoginResponse.parse() xato (ZodError) berib, kirish 500 xatosi
+// bilan qulab tushardi (frontendda esa bu "Login yoki parol noto'g'ri"
+// deb ko'rsatilardi). Telegram ID'lar JS xavfsiz butun son doirasidan
+// chiqmagani uchun uni songa aylantiramiz.
+types.setTypeParser(20, (val: string) => parseInt(val, 10));
+
 if (!process.env["DATABASE_URL"]) {
   throw new Error("DATABASE_URL environment variable is required");
 }
