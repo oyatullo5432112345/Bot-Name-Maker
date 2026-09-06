@@ -1,358 +1,386 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Edit2, Trash2, FileText, Check, Loader2, Sparkles } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useRoute, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Clock, CheckCircle2, Trophy, Loader2, Play, Sparkles, ArrowRight, ShieldAlert
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
-const getToken = () => localStorage.getItem("talim_auth_token");
+
+// Tokenni barcha mumkin bo'lgan kalit so'zlardan izlash
+const getToken = () => 
+  localStorage.getItem("talim_auth_token") || 
+  localStorage.getItem("token") || 
+  localStorage.getItem("auth_token") || 
+  "";
+
 const authH = (): HeadersInit => {
   const t = getToken();
   const base: Record<string, string> = { "Content-Type": "application/json" };
   return t ? { ...base, Authorization: `Bearer ${t}` } : base;
 };
 
-interface QuestionItem {
-  id?: string;
+interface Question {
+  id: string;
   question: string;
   options: string[];
-  correct_index: number;
+  difficulty: "oson" | "orta" | "qiyin";
+  time_seconds: number | null;
 }
 
 interface TestData {
   id: string;
   title: string;
   subject: string;
-  quarter: number;
   duration_minutes: number;
   has_options: boolean;
   is_anonymous: boolean;
   timed: boolean;
   pause_seconds: number;
-  is_open: boolean;
-  questions: QuestionItem[];
+  questions: Question[];
 }
 
-export default function MonitoringAdminPage() {
-  const { toast } = useToast();
-  const qc = useQueryClient();
+export default function MonitoringTakePage() {
+  const [, params] = useRoute("/monitoring/take/:id");
+  const [, setLocation] = useLocation();
+  const testId = params?.id;
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingTestId, setEditingTestId] = useState<string | null>(null);
+  // Foydalanuvchi ma'lumotlari
+  const userString = localStorage.getItem("talim_user") || localStorage.getItem("user");
+  const currentUser = userString ? JSON.parse(userString) : null;
+  const studentName = currentUser?.name || currentUser?.full_name || "O'quvchi";
 
-  // Form states
-  const [title, setTitle] = useState("");
-  const [subject, setSubject] = useState("");
-  const [quarter, setQuarter] = useState(1);
-  const [durationMinutes, setDurationMinutes] = useState(30);
-  const [hasOptions, setHasOptions] = useState(true);
-  const [isAnonymous, setIsAnonymous] = useState(false);
-  const [timed, setTimed] = useState(true);
-  const [pauseSeconds, setPauseSeconds] = useState(0);
+  // Test Holatlari: "intro" -> "countdown" -> "testing" -> "completed"
+  const [stage, setStage] = useState<"intro" | "countdown" | "testing" | "completed">("intro");
+  const [countdown, setCountdown] = useState<number>(5);
 
-  // Raw text import & Manual questions
-  const [rawText, setRawText] = useState("");
-  const [questions, setQuestions] = useState<QuestionItem[]>([
-    { question: "", options: ["", "", "", ""], correct_index: 0 },
-  ]);
+  const [currentQIndex, setCurrentQIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [textAnswer, setTextAnswer] = useState("");
+  const [questionTimeLeft, setQuestionTimeLeft] = useState<number | null>(null);
+  const [inPause, setInPause] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [resultData, setResultData] = useState<any>(null);
 
-  const { data: tests = [], isLoading } = useQuery<TestData[]>({
-    queryKey: ["admin-monitoring-tests"],
+  const { data: test, isLoading, error } = useQuery<TestData>({
+    queryKey: ["monitoring-take", testId],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/monitoring/tests`, { headers: authH() });
-      if (!r.ok) return [];
-      return r.json();
-    },
-  });
+      if (!testId) throw new Error("Test ID topilmadi");
 
-  // Matnni avtomatik savollarga ajratish (Smart Parser)
-  const handleParseText = () => {
-    if (!rawText.trim()) return;
-
-    const blocks = rawText.split(/\n\s*\n/);
-    const parsed: QuestionItem[] = [];
-
-    for (const block of blocks) {
-      const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
-      if (lines.length < 2) continue;
-
-      let qText = lines[0].replace(/^\d+[\.\)]\s*/, "");
-      let opts: string[] = [];
-      let cIdx = 0;
-
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i];
-        if (/^(javob|ans|correct):/i.test(line)) {
-          const ansChar = line.split(":")[1]?.trim().toUpperCase();
-          if (ansChar) {
-            const code = ansChar.charCodeAt(0) - 65; // A -> 0, B -> 1
-            if (code >= 0 && code < 4) cIdx = code;
-          }
-        } else if (/^[a-d][\.\)]/i.test(line)) {
-          opts.push(line.replace(/^[a-d][\.\)]\s*/i, ""));
-        }
-      }
-
-      if (opts.length === 0) opts = ["", "", "", ""];
-      parsed.push({ question: qText, options: opts, correct_index: cIdx });
-    }
-
-    if (parsed.length > 0) {
-      setQuestions(parsed);
-      toast({ title: "Muvaffaqiyatli!", description: `${parsed.length} ta savol ajratib olindi.` });
-    } else {
-      toast({ title: "Xatolik", description: "Matn formatini aniqlab bo'lmadi.", variant: "destructive" });
-    }
-  };
-
-  const openCreateDialog = () => {
-    setEditingTestId(null);
-    setTitle("");
-    setSubject("");
-    setQuarter(1);
-    setDurationMinutes(30);
-    setHasOptions(true);
-    setIsAnonymous(false);
-    setTimed(true);
-    setPauseSeconds(0);
-    setRawText("");
-    setQuestions([{ question: "", options: ["", "", "", ""], correct_index: 0 }]);
-    setDialogOpen(true);
-  };
-
-  const openEditDialog = (t: TestData) => {
-    setEditingTestId(t.id);
-    setTitle(t.title);
-    setSubject(t.subject);
-    setQuarter(t.quarter);
-    setDurationMinutes(t.duration_minutes);
-    setHasOptions(t.has_options);
-    setIsAnonymous(t.is_anonymous);
-    setTimed(t.timed);
-    setPauseSeconds(t.pause_seconds || 0);
-    setQuestions(t.questions && t.questions.length > 0 ? t.questions : [{ question: "", options: ["", "", "", ""], correct_index: 0 }]);
-    setDialogOpen(true);
-  };
-
-  const handleSaveTest = async () => {
-    if (!title || !subject) {
-      toast({ title: "Xatolik", description: "Mavzu va Fan nomini kiriting.", variant: "destructive" });
-      return;
-    }
-
-    const payload = {
-      title,
-      subject,
-      quarter: Number(quarter),
-      duration_minutes: Number(durationMinutes),
-      has_options: hasOptions,
-      is_anonymous: isAnonymous,
-      timed,
-      pause_seconds: Number(pauseSeconds),
-      questions,
-    };
-
-    const url = editingTestId ? `${API_BASE}/monitoring/tests/${editingTestId}` : `${API_BASE}/monitoring/tests`;
-    const method = editingTestId ? "PUT" : "POST";
-
-    try {
-      const r = await fetch(url, {
-        method,
-        headers: authH(),
-        body: JSON.stringify(payload),
+      const r = await fetch(`${API_BASE}/monitoring/tests/${testId}`, { 
+        headers: authH() 
       });
 
-      if (!r.ok) throw new Error("Saqlashda xatolik");
+      if (!r.ok) {
+        const errJson = await r.json().catch(() => ({}));
+        throw new Error(errJson.error || errJson.message || "Test topilmadi yoki test yopilgan.");
+      }
 
-      toast({ title: "Muvaffaqiyatli!", description: editingTestId ? "Test tahrirlandi" : "Yangi test yaratildi" });
-      setDialogOpen(false);
-      qc.invalidateQueries({ queryKey: ["admin-monitoring-tests"] });
-    } catch {
-      toast({ title: "Xatolik", description: "Serverga saqlashda muammo yuz berdi", variant: "destructive" });
+      return r.json();
+    },
+    enabled: !!testId,
+  });
+
+  // 5 soniyalik countdown taymeri
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (stage === "countdown") {
+      if (countdown > 0) {
+        timer = setTimeout(() => setCountdown(prev => prev - 1), 1000);
+      } else {
+        setStage("testing");
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [stage, countdown]);
+
+  // Savol taymeri
+  useEffect(() => {
+    if (stage !== "testing" || !test || inPause) return;
+    const q = test.questions?.[currentQIndex];
+    if (!test.timed || !q?.time_seconds) return;
+
+    setQuestionTimeLeft(q.time_seconds);
+    const interval = setInterval(() => {
+      setQuestionTimeLeft((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(interval);
+          handleNextQuestion(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentQIndex, stage, inPause, test]);
+
+  const handleStartCountdown = () => {
+    setStage("countdown");
+    setCountdown(5);
+  };
+
+  const handleNextQuestion = (isAuto = false) => {
+    if (!test || !test.questions) return;
+    const q = test.questions[currentQIndex];
+
+    const currentAns = test.has_options ? selectedOption : textAnswer;
+    const newAnswers = { ...answers, [q.id]: currentAns };
+    setAnswers(newAnswers);
+
+    setSelectedOption(null);
+    setTextAnswer("");
+
+    if (currentQIndex < test.questions.length - 1) {
+      if (test.pause_seconds > 0 && !isAuto) {
+        setInPause(true);
+        setTimeout(() => {
+          setInPause(false);
+          setCurrentQIndex(prev => prev + 1);
+        }, test.pause_seconds * 1000);
+      } else {
+        setCurrentQIndex(prev => prev + 1);
+      }
+    } else {
+      finishTest(newAnswers);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Haqiqatdan ham bu testni o'chirmoqchimisiz?")) return;
+  const finishTest = async (finalAnswers: Record<string, any>) => {
+    setSubmitting(true);
     try {
-      await fetch(`${API_BASE}/monitoring/tests/${id}`, { method: "DELETE", headers: authH() });
-      toast({ title: "O'chirildi" });
-      qc.invalidateQueries({ queryKey: ["admin-monitoring-tests"] });
-    } catch {
-      toast({ title: "Xatolik", description: "O'chirishda muammo", variant: "destructive" });
+      const r = await fetch(`${API_BASE}/monitoring/tests/${testId}/submit`, {
+        method: "POST",
+        headers: authH(),
+        body: JSON.stringify({ answers: finalAnswers }),
+      });
+      const data = await r.json();
+      setResultData(data);
+      setStage("completed");
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  return (
-    <div className="max-w-5xl mx-auto space-y-6 p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Monitoring Testlar Boshqaruvi</h1>
-          <p className="text-sm text-muted-foreground">Testlar yaratish, tahrirlash va matndan avto-yuklash</p>
-        </div>
-        <Button onClick={openCreateDialog} className="gap-2">
-          <Plus className="w-4 h-4" /> Yangi Test
+  if (isLoading) {
+    return (
+      <div className="min-h-[80vh] flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+        <p className="text-muted-foreground animate-pulse">Monitoring testi yuklanmoqda...</p>
+      </div>
+    );
+  }
+
+  if (error || !test) {
+    return (
+      <div className="min-h-[80vh] flex flex-col items-center justify-center text-center p-4">
+        <ShieldAlert className="w-12 h-12 text-destructive mb-2" />
+        <h2 className="text-xl font-bold">Testni yuklab bo'lmadi</h2>
+        <p className="text-muted-foreground text-sm mt-1">
+          {error instanceof Error ? error.message : "Test yopilgan, qulflangan yoki mavjud emas."}
+        </p>
+        <Button onClick={() => setLocation("/monitoring")} className="mt-4">
+          Orqaga qaytish
         </Button>
       </div>
+    );
+  }
 
-      {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {tests.map((t) => (
-            <Card key={t.id} className="relative group">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">{t.subject}</CardTitle>
-                <p className="text-xs text-muted-foreground">{t.title} • {t.quarter}-chorak</p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <p>Savollar soni: <b>{t.questions?.length || 0} ta</b></p>
-                  <p>Vaqt: <b>{t.duration_minutes} daqiqa</b></p>
-                </div>
-                <div className="flex gap-2 pt-2 border-t">
-                  <Button variant="outline" size="sm" className="flex-1 gap-1" onClick={() => openEditDialog(t)}>
-                    <Edit2 className="w-3.5 h-3.5" /> Tahrirlash
-                  </Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(t.id)}>
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+  // 1. ISMNI CHIROLI EFEKT VA INTRO
+  if (stage === "intro") {
+    return (
+      <div className="min-h-[85vh] flex items-center justify-center p-4">
+        <Card className="w-full max-w-xl border-primary/20 bg-gradient-to-b from-card/80 to-card backdrop-blur-xl shadow-2xl overflow-hidden relative">
+          <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/20 rounded-full blur-3xl" />
+          <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl" />
 
-      {/* Test Yaratish / Tahrirlash Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingTestId ? "Testni Tahrirlash" : "Yangi Test Yaratish"}</DialogTitle>
-          </DialogHeader>
+          <CardContent className="p-8 text-center space-y-8 relative z-10">
+            <div className="space-y-3">
+              <span className="text-xs font-semibold tracking-widest text-primary uppercase bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
+                {test.subject} • {test.quarter}-Chorak Monitoringi
+              </span>
+              <h1 className="text-2xl font-black">{test.title}</h1>
+            </div>
 
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Fan Nomi</Label>
-                <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Matematika" />
-              </div>
-              <div>
-                <Label>Mavzu / Sarlovha</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="1-ch chorak nazorati" />
+            <div className="relative group mx-auto max-w-md">
+              <div className="absolute -inset-1 bg-gradient-to-r from-primary via-indigo-500 to-purple-500 rounded-2xl blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-gradient-x" />
+              <div className="relative px-6 py-6 bg-card rounded-xl border border-primary/20 flex flex-col items-center justify-center space-y-1">
+                <Sparkles className="w-6 h-6 text-primary animate-bounce mb-1" />
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Test topshiruvchi</p>
+                <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-600 tracking-wide">
+                  {studentName}
+                </h2>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3 text-left text-xs bg-muted/40 p-4 rounded-xl border border-border/50">
               <div>
-                <Label>Chorak</Label>
-                <Input type="number" value={quarter} onChange={(e) => setQuarter(Number(e.target.value))} />
-              </div>
-              <div>
-                <Label>Davomiyligi (Daqiqa)</Label>
-                <Input type="number" value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} />
+                <p className="text-muted-foreground">Savollar soni:</p>
+                <p className="font-bold text-sm">{test.questions?.length || 0} ta</p>
               </div>
               <div>
-                <Label>Pauza (Sekund)</Label>
-                <Input type="number" value={pauseSeconds} onChange={(e) => setPauseSeconds(Number(e.target.value))} />
+                <p className="text-muted-foreground">Vaqt tartibi:</p>
+                <p className="font-bold text-sm">{test.timed ? "Sekundli taymer" : "Vaqt cheklovsiz"}</p>
               </div>
             </div>
 
-            <div className="flex gap-6 pt-2">
-              <div className="flex items-center gap-2">
-                <Switch checked={hasOptions} onCheckedChange={setHasOptions} id="opts" />
-                <Label htmlFor="opts">Variantli Test</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch checked={timed} onCheckedChange={setTimed} id="time" />
-                <Label htmlFor="time">Vaqt Cheklovi</Label>
-              </div>
-            </div>
-
-            {/* Smart Text Importer */}
-            <div className="border rounded-xl p-3 bg-muted/20 space-y-2">
-              <Label className="flex items-center gap-1.5 font-bold text-primary">
-                <Sparkles className="w-4 h-4" /> Matndan Avtomatik Yuklash (Smart Importer)
-              </Label>
-              <Textarea
-                rows={4}
-                placeholder={`1. O'zbekiston poytaxti qaysi?\na) Samarqand\nb) Toshkent\nc) Buxoro\nd) Xiva\nJavob: B`}
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-              />
-              <Button type="button" size="sm" variant="secondary" onClick={handleParseText} className="gap-1.5">
-                <FileText className="w-4 h-4" /> Matnni Savollarga Ajratish
-              </Button>
-            </div>
-
-            {/* Savollar Ro'yxati */}
-            <div className="space-y-4 pt-2">
-              <Label className="font-bold text-base">Savollar Ro'yxati ({questions.length} ta)</Label>
-              {questions.map((q, qIdx) => (
-                <Card key={qIdx} className="p-3 space-y-2 relative">
-                  <Input
-                    placeholder={`${qIdx + 1}-savol matni...`}
-                    value={q.question}
-                    onChange={(e) => {
-                      const copy = [...questions];
-                      copy[qIdx].question = e.target.value;
-                      setQuestions(copy);
-                    }}
-                  />
-                  {hasOptions && (
-                    <div className="grid grid-cols-2 gap-2 pt-2">
-                      {q.options.map((opt, oIdx) => (
-                        <div key={oIdx} className="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name={`q_${qIdx}`}
-                            checked={q.correct_index === oIdx}
-                            onChange={() => {
-                              const copy = [...questions];
-                              copy[qIdx].correct_index = oIdx;
-                              setQuestions(copy);
-                            }}
-                          />
-                          <Input
-                            placeholder={`Variant ${String.fromCharCode(65 + oIdx)}`}
-                            value={opt}
-                            onChange={(e) => {
-                              const copy = [...questions];
-                              copy[qIdx].options[oIdx] = e.target.value;
-                              setQuestions(copy);
-                            }}
-                            className="text-xs"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              ))}
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setQuestions([...questions, { question: "", options: ["", "", "", ""], correct_index: 0 }])}
-                className="w-full gap-1"
-              >
-                <Plus className="w-4 h-4" /> Qo'lda Savol Qo'shish
-              </Button>
-            </div>
-
-            <Button onClick={handleSaveTest} className="w-full mt-4 font-bold">
-              {editingTestId ? "O'zgarishlarni Saqlash" : "Testni E'lon Qilish"}
+            <Button size="lg" onClick={handleStartCountdown} className="w-full text-base font-bold gap-2 shadow-lg shadow-primary/25 hover:scale-[1.02] transition-transform">
+              <Play className="w-5 h-5 fill-current" /> Testni Boshlash
             </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // 2. 5 SONYALIK DYNAMIC COUNTDOWN
+  if (stage === "countdown") {
+    return (
+      <div className="min-h-[85vh] flex flex-col items-center justify-center p-4">
+        <div className="relative flex items-center justify-center">
+          <div className="w-48 h-48 rounded-full border-4 border-primary/30 animate-ping absolute" />
+          <div className="w-44 h-44 rounded-full border-4 border-primary bg-primary/10 flex flex-col items-center justify-center shadow-2xl backdrop-blur-md z-10">
+            <span className="text-7xl font-black text-primary animate-pulse">{countdown}</span>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+        <h2 className="text-2xl font-bold mt-8 animate-bounce">Tayyormisiz?</h2>
+        <p className="text-muted-foreground text-sm mt-1">Test bir ozdan so'ng boshlanadi...</p>
+      </div>
+    );
+  }
+
+  // 3. YAKUNLANGAN NATIJA SAHIFASI
+  if (stage === "completed" && resultData) {
+    const percentage = resultData.percentage || Math.round((resultData.score / resultData.total) * 100);
+    return (
+      <div className="min-h-[85vh] flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg border-primary/20 text-center shadow-2xl">
+          <CardContent className="p-8 space-y-6">
+            <div className="w-20 h-20 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20">
+              <Trophy className="w-10 h-10 animate-bounce" />
+            </div>
+
+            <div className="space-y-1">
+              <h2 className="text-2xl font-black">Test Yakunlandi!</h2>
+              <p className="text-sm text-muted-foreground">{studentName}, natijangiz bilan tanishing</p>
+            </div>
+
+            <div className="py-6 bg-muted/30 rounded-2xl border border-border/50">
+              <span className="text-5xl font-black text-primary">{percentage}%</span>
+              <p className="text-xs text-muted-foreground mt-2 font-medium">
+                To'g'ri javoblar: <span className="text-foreground font-bold">{resultData.score}</span> / {resultData.total}
+              </p>
+            </div>
+
+            <Button onClick={() => setLocation("/monitoring")} className="w-full">
+              Bosh sahifaga qaytish
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // 4. TEST TOPSHIRISH (TESTING)
+  const q = test.questions?.[currentQIndex];
+  const totalQuestions = test.questions?.length || 1;
+  const progressPercent = ((currentQIndex + 1) / totalQuestions) * 100;
+
+  if (!q) return null;
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-6 py-6 px-4">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
+          <span>Savol {currentQIndex + 1} / {totalQuestions}</span>
+          {test.timed && questionTimeLeft !== null && (
+            <span className={`flex items-center gap-1 font-mono text-sm px-2.5 py-0.5 rounded-full border ${
+              questionTimeLeft <= 5 ? "bg-red-500/10 border-red-500 text-red-500 animate-pulse" : "bg-muted border-border"
+            }`}>
+              <Clock className="w-3.5 h-3.5" /> {questionTimeLeft}s
+            </span>
+          )}
+        </div>
+        <Progress value={progressPercent} className="h-2.5 bg-muted" />
+      </div>
+
+      {inPause ? (
+        <Card className="py-16 text-center border-dashed">
+          <CardContent className="space-y-3">
+            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto animate-pulse" />
+            <h3 className="text-lg font-bold">Javobingiz qabul qilindi!</h3>
+            <p className="text-xs text-muted-foreground">Keyingi savol yuklanmoqda...</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-primary/20 shadow-xl overflow-hidden">
+          <CardContent className="p-6 space-y-6">
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-md">
+                {q.difficulty === "oson" ? "Oson" : q.difficulty === "qiyin" ? "Qiyin" : "O'rta"} daraja
+              </span>
+              <h2 className="text-lg sm:text-xl font-bold leading-relaxed">{q.question}</h2>
+            </div>
+
+            {test.has_options ? (
+              <div className="grid gap-3">
+                {q.options?.map((opt, idx) => {
+                  const isSelected = selectedOption === idx;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedOption(idx)}
+                      className={`w-full p-4 rounded-xl border-2 text-left font-medium text-sm transition-all flex items-center justify-between ${
+                        isSelected
+                          ? "border-primary bg-primary/10 shadow-md shadow-primary/10"
+                          : "border-border hover:border-primary/50 hover:bg-muted/50"
+                      }`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <span className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center ${
+                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        }`}>
+                          {String.fromCharCode(65 + idx)}
+                        </span>
+                        {opt}
+                      </span>
+                      {isSelected && <CheckCircle2 className="w-5 h-5 text-primary" />}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Input
+                  placeholder="Javobingizni bu yerga yozing..."
+                  value={textAnswer}
+                  onChange={(e) => setTextAnswer(e.target.value)}
+                  className="h-12 text-base"
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <Button
+                onClick={() => handleNextQuestion(false)}
+                disabled={(test.has_options ? selectedOption === null : !textAnswer.trim()) || submitting}
+                className="gap-2 px-6 font-bold"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {currentQIndex === totalQuestions - 1 ? "Testni yakunlash" : "Keyingisi"}
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
