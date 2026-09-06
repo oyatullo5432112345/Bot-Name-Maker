@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, ArrowLeft, Loader2, Trash2, PlayCircle, Clock, X, Users, HelpCircle, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, ArrowLeft, Loader2, Trash2, PlayCircle, Clock, X, Users, HelpCircle, RefreshCw, ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
@@ -29,6 +30,35 @@ interface DraftSegment {
 
 const emptySegment = (): DraftSegment => ({ label: "", weight: 1, hasQuestion: false, question: "", correct_answer: "", points: 10 });
 
+// "Nomi | Savol | Javob | Ball" formatidagi matnni bo'limlar ro'yxatiga o'giradi.
+// Savol/javob/ball ixtiyoriy — faqat "Nomi" yozilsa, savolsiz oddiy bo'lim yaratiladi.
+function parseRawTextToSegments(text: string): DraftSegment[] {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const parsed: DraftSegment[] = [];
+
+  for (const line of lines) {
+    const parts = line.split("|").map(p => p.trim());
+    const label = (parts[0] ?? "").replace(/^\d+[\.\)]\s*/, "").trim();
+    if (!label) continue;
+
+    const question = parts[1] ?? "";
+    const correct_answer = parts[2] ?? "";
+    const pointsRaw = parts[3];
+    const points = pointsRaw && !isNaN(Number(pointsRaw)) ? Number(pointsRaw) : 10;
+
+    parsed.push({
+      label,
+      weight: 1,
+      hasQuestion: Boolean(question),
+      question,
+      correct_answer,
+      points,
+    });
+  }
+
+  return parsed.length > 0 ? parsed : [emptySegment()];
+}
+
 export default function WheelListPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -41,6 +71,8 @@ export default function WheelListPage() {
   const [saving, setSaving] = useState(false);
   const [mineOnly, setMineOnly] = useState(false);
   const [statsOpenId, setStatsOpenId] = useState<string | null>(null);
+  const [importMode, setImportMode] = useState(false);
+  const [rawText, setRawText] = useState("");
 
   const { data: wheels = [], isLoading } = useQuery<WheelGame[]>({
     queryKey: ["wheel-games", mineOnly],
@@ -56,6 +88,14 @@ export default function WheelListPage() {
   const resetForm = () => {
     setTitle(""); setTeamCount(2); setTimeLimit("30");
     setSegments([emptySegment(), emptySegment(), emptySegment()]);
+    setImportMode(false); setRawText("");
+  };
+
+  const handleImportText = () => {
+    const parsed = parseRawTextToSegments(rawText);
+    setSegments(parsed);
+    setImportMode(false);
+    toast({ title: `${parsed.length} ta bo'lim avtomatik o'qib olindi!`, description: "Bo'lim nomlari va savollarni tekshirib oling." });
   };
 
   const updateSegment = (i: number, patch: Partial<DraftSegment>) => {
@@ -225,12 +265,40 @@ export default function WheelListPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="font-bold text-xs">Bo'limlar va Savollar</Label>
-                <Button size="sm" variant="outline" onClick={() => setSegments(ss => [...ss, emptySegment()])} className="h-7 text-xs font-bold rounded-lg gap-1">
-                  <Plus className="w-3 h-3" /> Bo'lim qo'shish
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setImportMode(m => !m)}
+                    className="h-7 text-xs font-bold rounded-lg gap-1"
+                  >
+                    <FileText className="w-3 h-3" /> {importMode ? "Formaga qaytish" : "Matndan yuklash"}
+                  </Button>
+                  {!importMode && (
+                    <Button size="sm" variant="outline" onClick={() => setSegments(ss => [...ss, emptySegment()])} className="h-7 text-xs font-bold rounded-lg gap-1">
+                      <Plus className="w-3 h-3" /> Bo'lim qo'shish
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              {segments.map((s, i) => (
+              {importMode ? (
+                <div className="space-y-2">
+                  <Textarea
+                    placeholder={"Har bir bo'limni yangi qatorga yozing:\n\nTarix | Rossiya imperiyasi qachon tashkil topgan? | 1721 | 20\nMatematika\nGeografiya | Eng katta okean qaysi? | Tinch okeani | 15"}
+                    value={rawText}
+                    onChange={e => setRawText(e.target.value)}
+                    className="min-h-[160px] text-xs rounded-xl font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground font-semibold leading-relaxed">
+                    Format: <span className="font-mono">Nomi | Savol | Javob | Ball</span> — savol shart emas, faqat nomini yozsangiz ham bo'ladi.
+                  </p>
+                  <Button size="sm" onClick={handleImportText} disabled={!rawText.trim()} className="w-full h-8 text-xs font-bold rounded-lg">
+                    Bo'limlarni o'qib olish
+                  </Button>
+                </div>
+              ) : (
+              segments.map((s, i) => (
                 <div key={i} className="rounded-2xl border border-border/70 p-3.5 space-y-3 bg-secondary/20">
                   <div className="flex items-center gap-2">
                     <Input placeholder={`Bo'lim ${i + 1} nomi`} value={s.label} onChange={e => updateSegment(i, { label: e.target.value })} className="flex-1 h-9 text-xs font-bold rounded-xl" />
@@ -262,7 +330,8 @@ export default function WheelListPage() {
                     </div>
                   )}
                 </div>
-              ))}
+              ))
+              )}
             </div>
 
             <Button className="w-full py-5 rounded-xl font-black bg-gradient-to-r from-rose-500 to-pink-600 shadow-lg shadow-rose-500/25" disabled={saving} onClick={handleCreate}>
@@ -273,4 +342,4 @@ export default function WheelListPage() {
       </Dialog>
     </div>
   );
-}
+      }
