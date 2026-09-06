@@ -1,21 +1,13 @@
 import { useState } from "react";
-import { Link } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Plus, Trash2, Lock, Unlock, Users, Loader2, BarChart3,
-  ListChecks, PenLine, CalendarClock, X, FileText, Sparkles, Edit,
-} from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Edit2, Trash2, FileText, Check, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useListClasses } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
@@ -26,558 +18,339 @@ const authH = (): HeadersInit => {
   return t ? { ...base, Authorization: `Bearer ${t}` } : base;
 };
 
-interface TestRow {
-  id: string; title: string; subject: string; class_name: string | null;
-  quarter: number; academic_year: string; status: string; has_options: boolean;
-  is_anonymous: boolean; attempts_count: number; scheduled_open_at: string | null;
-  duration_minutes: number; timed: boolean; pause_seconds: number;
-}
-
-interface DraftQuestion {
+interface QuestionItem {
+  id?: string;
   question: string;
   options: string[];
   correct_index: number;
-  correct_text: string;
-  difficulty: "oson" | "orta" | "qiyin";
-  customTime: boolean;
-  time_seconds: number;
 }
 
-const DIFFICULTY_TIME: Record<DraftQuestion["difficulty"], number> = { oson: 20, orta: 40, qiyin: 60 };
-const EMPTY_QUESTION = (): DraftQuestion => ({
-  question: "", options: ["", "", "", ""], correct_index: 0, correct_text: "",
-  difficulty: "orta", customTime: false, time_seconds: DIFFICULTY_TIME.orta,
-});
-
-function sortClassNames(list: { name: string }[]): string[] {
-  return [...list.map(c => c.name)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-}
-
-/** Matnli test matnini parse qilish algoritmi */
-function parseRawTextToQuestions(text: string, isVariant: boolean): DraftQuestion[] {
-  const blocks = text.trim().split(/\n\s*\n|\n(?=\d+[\.\)])/g).filter(b => b.trim().length > 0);
-  const parsed: DraftQuestion[] = [];
-
-  for (const block of blocks) {
-    const lines = block.split("\n").map(l => l.trim()).filter(Boolean);
-    if (lines.length === 0) continue;
-
-    let questionText = lines[0].replace(/^\d+[\.\)]\s*/, "").trim();
-    const options: string[] = [];
-    let correctIndex = 0;
-    let correctText = "";
-
-    if (isVariant) {
-      lines.slice(1).forEach(line => {
-        const answerMatch = line.match(/^(?:javob|javobi|ans|correct):\s*([a-d1-4])\b/i);
-        if (answerMatch) {
-          const val = answerMatch[1].toLowerCase();
-          if (val === 'a' || val === '1') correctIndex = 0;
-          else if (val === 'b' || val === '2') correctIndex = 1;
-          else if (val === 'c' || val === '3') correctIndex = 2;
-          else if (val === 'd' || val === '4') correctIndex = 3;
-          return;
-        }
-
-        const optMatch = line.match(/^([a-d1-4])[\.\)]\s*(.*)/i);
-        if (optMatch) {
-          options.push(optMatch[2].trim());
-        } else if (!line.toLowerCase().startsWith("javob")) {
-          questionText += " " + line;
-        }
-      });
-
-      if (options.length === 0) options.push("", "", "", "");
-      while (options.length < 2) options.push("");
-
-      parsed.push({
-        question: questionText,
-        options,
-        correct_index: Math.min(correctIndex, options.length - 1),
-        correct_text: "",
-        difficulty: "orta",
-        customTime: false,
-        time_seconds: DIFFICULTY_TIME.orta,
-      });
-    } else {
-      lines.slice(1).forEach(line => {
-        const ansMatch = line.match(/^(?:javob|javobi|ans|correct):\s*(.*)/i);
-        if (ansMatch) {
-          correctText = ansMatch[1].trim();
-        } else {
-          questionText += " " + line;
-        }
-      });
-
-      parsed.push({
-        question: questionText,
-        options: ["", ""],
-        correct_index: 0,
-        correct_text: correctText,
-        difficulty: "orta",
-        customTime: false,
-        time_seconds: DIFFICULTY_TIME.orta,
-      });
-    }
-  }
-
-  return parsed.length > 0 ? parsed : [EMPTY_QUESTION()];
+interface TestData {
+  id: string;
+  title: string;
+  subject: string;
+  quarter: number;
+  duration_minutes: number;
+  has_options: boolean;
+  is_anonymous: boolean;
+  timed: boolean;
+  pause_seconds: number;
+  is_open: boolean;
+  questions: QuestionItem[];
 }
 
 export default function MonitoringAdminPage() {
-  const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: classesData } = useListClasses({ query: { queryKey: ["classes", "list"] } });
-  const classNames = sortClassNames((classesData as { name: string }[] | undefined) ?? []);
+  const qc = useQueryClient();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTestId, setEditingTestId] = useState<string | null>(null);
 
-  const [hasOptions, setHasOptions] = useState(true);
+  // Form states
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
-  const [className, setClassName] = useState<string>("__all__");
   const [quarter, setQuarter] = useState(1);
-  const [academicYear, setAcademicYear] = useState("2025-2026");
-  const [duration, setDuration] = useState(30);
+  const [durationMinutes, setDurationMinutes] = useState(30);
+  const [hasOptions, setHasOptions] = useState(true);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [timed, setTimed] = useState(true);
-  const [pauseEnabled, setPauseEnabled] = useState(false);
-  const [scheduleEnabled, setScheduleEnabled] = useState(false);
-  const [scheduledAt, setScheduledAt] = useState("");
-  const [questions, setQuestions] = useState<DraftQuestion[]>([EMPTY_QUESTION()]);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [resultsFor, setResultsFor] = useState<string | null>(null);
+  const [pauseSeconds, setPauseSeconds] = useState(0);
 
-  const [importMode, setImportMode] = useState(false);
+  // Raw text import & Manual questions
   const [rawText, setRawText] = useState("");
+  const [questions, setQuestions] = useState<QuestionItem[]>([
+    { question: "", options: ["", "", "", ""], correct_index: 0 },
+  ]);
 
-  const { data: tests = [], isLoading } = useQuery<TestRow[]>({
-    queryKey: ["monitoring-tests-admin"],
+  const { data: tests = [], isLoading } = useQuery<TestData[]>({
+    queryKey: ["admin-monitoring-tests"],
     queryFn: async () => {
       const r = await fetch(`${API_BASE}/monitoring/tests`, { headers: authH() });
       if (!r.ok) return [];
-      return r.json() as Promise<TestRow[]>;
-    },
-  });
-
-  const { data: results = [] } = useQuery<Array<{ student_name: string; class_name: string; score: number; total: number; percentage: number }>>({
-    queryKey: ["monitoring-results", resultsFor],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/monitoring/tests/${resultsFor}/results`, { headers: authH() });
-      if (!r.ok) return [];
       return r.json();
     },
-    enabled: !!resultsFor,
   });
 
-  const resetForm = () => {
-    setEditingTestId(null);
-    setTitle(""); setSubject(""); setClassName("__all__"); setQuarter(1);
-    setDuration(30); setIsAnonymous(false); setHasOptions(true);
-    setScheduleEnabled(false); setScheduledAt(""); setTimed(true); setPauseEnabled(false);
-    setQuestions([EMPTY_QUESTION()]); setSaveError("");
-    setImportMode(false); setRawText("");
-  };
+  // Matnni avtomatik savollarga ajratish (Smart Parser)
+  const handleParseText = () => {
+    if (!rawText.trim()) return;
 
-  const handleOpenEdit = async (t: TestRow) => {
-    resetForm();
-    setEditingTestId(t.id);
-    setTitle(t.title);
-    setSubject(t.subject);
-    setClassName(t.class_name ?? "__all__");
-    setQuarter(t.quarter);
-    setAcademicYear(t.academic_year);
-    setDuration(t.duration_minutes);
-    setIsAnonymous(t.is_anonymous);
-    setHasOptions(t.has_options);
-    setTimed(t.timed ?? true);
-    setPauseEnabled((t.pause_seconds ?? 0) > 0);
-    if (t.scheduled_open_at) {
-      setScheduleEnabled(true);
-      setScheduledAt(new Date(t.scheduled_open_at).toISOString().slice(0, 16));
-    }
+    const blocks = rawText.split(/\n\s*\n/);
+    const parsed: QuestionItem[] = [];
 
-    try {
-      const r = await fetch(`${API_BASE}/monitoring/tests/${t.id}`, { headers: authH() });
-      if (r.ok) {
-        const fullData = await r.json();
-        if (fullData.questions && fullData.questions.length > 0) {
-          setQuestions(fullData.questions.map((q: any) => ({
-            question: q.question || q.questionText || "",
-            options: q.options || ["", ""],
-            correct_index: typeof q.correct_index === "number" ? q.correct_index : 0,
-            correct_text: q.correct_text || "",
-            difficulty: q.difficulty || "orta",
-            customTime: !!q.time_seconds,
-            time_seconds: q.time_seconds || DIFFICULTY_TIME[q.difficulty as "orta" || "orta"],
-          })));
+    for (const block of blocks) {
+      const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (lines.length < 2) continue;
+
+      let qText = lines[0].replace(/^\d+[\.\)]\s*/, "");
+      let opts: string[] = [];
+      let cIdx = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (/^(javob|ans|correct):/i.test(line)) {
+          const ansChar = line.split(":")[1]?.trim().toUpperCase();
+          if (ansChar) {
+            const code = ansChar.charCodeAt(0) - 65; // A -> 0, B -> 1
+            if (code >= 0 && code < 4) cIdx = code;
+          }
+        } else if (/^[a-d][\.\)]/i.test(line)) {
+          opts.push(line.replace(/^[a-d][\.\)]\s*/i, ""));
         }
       }
-    } catch (e) {
-      console.error(e);
+
+      if (opts.length === 0) opts = ["", "", "", ""];
+      parsed.push({ question: qText, options: opts, correct_index: cIdx });
     }
 
+    if (parsed.length > 0) {
+      setQuestions(parsed);
+      toast({ title: "Muvaffaqiyatli!", description: `${parsed.length} ta savol ajratib olindi.` });
+    } else {
+      toast({ title: "Xatolik", description: "Matn formatini aniqlab bo'lmadi.", variant: "destructive" });
+    }
+  };
+
+  const openCreateDialog = () => {
+    setEditingTestId(null);
+    setTitle("");
+    setSubject("");
+    setQuarter(1);
+    setDurationMinutes(30);
+    setHasOptions(true);
+    setIsAnonymous(false);
+    setTimed(true);
+    setPauseSeconds(0);
+    setRawText("");
+    setQuestions([{ question: "", options: ["", "", "", ""], correct_index: 0 }]);
     setDialogOpen(true);
   };
 
-  const handleParseText = () => {
-    if (!rawText.trim()) return;
-    const parsed = parseRawTextToQuestions(rawText, hasOptions);
-    setQuestions(parsed);
-    setImportMode(false);
-    toast({ title: `${parsed.length} ta savol yuklandi!`, description: "Variantlar va to'g'ri javobni tekshiring." });
+  const openEditDialog = (t: TestData) => {
+    setEditingTestId(t.id);
+    setTitle(t.title);
+    setSubject(t.subject);
+    setQuarter(t.quarter);
+    setDurationMinutes(t.duration_minutes);
+    setHasOptions(t.has_options);
+    setIsAnonymous(t.is_anonymous);
+    setTimed(t.timed);
+    setPauseSeconds(t.pause_seconds || 0);
+    setQuestions(t.questions && t.questions.length > 0 ? t.questions : [{ question: "", options: ["", "", "", ""], correct_index: 0 }]);
+    setDialogOpen(true);
   };
 
-  const handleSave = async () => {
-    setSaveError("");
-    if (!title.trim() || !subject.trim()) { setSaveError("Sarlavha va fanni kiriting"); return; }
-    if (scheduleEnabled && !scheduledAt) { setSaveError("Avto-ochilish vaqtini tanlang"); return; }
-
-    const cleanQuestions = questions
-      .filter(q => q.question.trim())
-      .filter(q => hasOptions ? q.options.every(o => o.trim()) : q.correct_text.trim());
-
-    if (cleanQuestions.length === 0) {
-      setSaveError(hasOptions ? "Kamida 1 ta to'liq savol (variantlari bilan) kiriting" : "Kamida 1 ta savol va to'g'ri javobini kiriting");
+  const handleSaveTest = async () => {
+    if (!title || !subject) {
+      toast({ title: "Xatolik", description: "Mavzu va Fan nomini kiriting.", variant: "destructive" });
       return;
     }
 
-    setSaving(true);
+    const payload = {
+      title,
+      subject,
+      quarter: Number(quarter),
+      duration_minutes: Number(durationMinutes),
+      has_options: hasOptions,
+      is_anonymous: isAnonymous,
+      timed,
+      pause_seconds: Number(pauseSeconds),
+      questions,
+    };
+
+    const url = editingTestId ? `${API_BASE}/monitoring/tests/${editingTestId}` : `${API_BASE}/monitoring/tests`;
+    const method = editingTestId ? "PUT" : "POST";
+
     try {
-      const url = editingTestId ? `${API_BASE}/monitoring/tests/${editingTestId}` : `${API_BASE}/monitoring/tests`;
-      const method = editingTestId ? "PUT" : "POST";
-
-      const payload = {
-        title: title.trim(),
-        subject: subject.trim(),
-        class_name: className === "__all__" ? null : className,
-        quarter,
-        academic_year: academicYear,
-        duration_minutes: duration,
-        is_anonymous: isAnonymous,
-        show_result_immediately: true,
-        has_options: hasOptions,
-        scheduled_open_at: scheduleEnabled ? new Date(scheduledAt).toISOString() : null,
-        timed,
-        pause_seconds: pauseEnabled ? 5 : 0,
-        questions: cleanQuestions.map(q => ({
-          ...(hasOptions
-            ? { question: q.question, options: q.options, correct_index: q.correct_index }
-            : { question: q.question, correct_text: q.correct_text }),
-          difficulty: q.difficulty,
-          time_seconds: timed ? (q.customTime ? q.time_seconds : DIFFICULTY_TIME[q.difficulty]) : null,
-        })),
-      };
-
       const r = await fetch(url, {
         method,
         headers: authH(),
         body: JSON.stringify(payload),
       });
 
-      const json = await r.json();
-      if (!r.ok) { setSaveError(json.error ?? "Xatolik yuz berdi"); return; }
+      if (!r.ok) throw new Error("Saqlashda xatolik");
 
-      resetForm();
+      toast({ title: "Muvaffaqiyatli!", description: editingTestId ? "Test tahrirlandi" : "Yangi test yaratildi" });
       setDialogOpen(false);
-      qc.invalidateQueries({ queryKey: ["monitoring-tests-admin"] });
-      toast({
-        title: editingTestId ? "Test yangilandi" : "Test yaratildi",
-        description: "Barcha ma'lumotlar saqlandi."
-      });
-    } finally {
-      setSaving(false);
+      qc.invalidateQueries({ queryKey: ["admin-monitoring-tests"] });
+    } catch {
+      toast({ title: "Xatolik", description: "Serverga saqlashda muammo yuz berdi", variant: "destructive" });
     }
   };
 
-  const toggleLock = async (t: TestRow) => {
-    const next = t.status === "open" ? "closed" : "open";
-    await fetch(`${API_BASE}/monitoring/tests/${t.id}/status`, {
-      method: "PATCH", headers: authH(), body: JSON.stringify({ status: next }),
-    });
-    qc.invalidateQueries({ queryKey: ["monitoring-tests-admin"] });
-  };
-
-  const deleteTest = async (id: string) => {
-    if (!confirm("Bu testni butunlay o'chirasizmi?")) return;
-    await fetch(`${API_BASE}/monitoring/tests/${id}`, { method: "DELETE", headers: authH() });
-    qc.invalidateQueries({ queryKey: ["monitoring-tests-admin"] });
-  };
-
-  const updateQuestion = (idx: number, patch: Partial<DraftQuestion>) => {
-    setQuestions(qs => qs.map((q, i) => i === idx ? { ...q, ...patch } : q));
-  };
-
-  const updateOption = (qIdx: number, oIdx: number, val: string) => {
-    setQuestions(qs => qs.map((q, i) => {
-      if (i !== qIdx) return q;
-      const options = [...q.options]; options[oIdx] = val;
-      return { ...q, options };
-    }));
+  const handleDelete = async (id: string) => {
+    if (!confirm("Haqiqatdan ham bu testni o'chirmoqchimisiz?")) return;
+    try {
+      await fetch(`${API_BASE}/monitoring/tests/${id}`, { method: "DELETE", headers: authH() });
+      toast({ title: "O'chirildi" });
+      qc.invalidateQueries({ queryKey: ["admin-monitoring-tests"] });
+    } catch {
+      toast({ title: "Xatolik", description: "O'chirishda muammo", variant: "destructive" });
+    }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+    <div className="max-w-5xl mx-auto space-y-6 p-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Chorak Monitoring</h1>
-          <p className="text-muted-foreground mt-1 text-sm">Sinf va fan bo'yicha test yarating, matndan yuklang va tahrirlang</p>
+          <h1 className="text-2xl font-bold">Monitoring Testlar Boshqaruvi</h1>
+          <p className="text-sm text-muted-foreground">Testlar yaratish, tahrirlash va matndan avto-yuklash</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/monitoring/analytics">
-            <Button variant="outline" className="gap-2">
-              <BarChart3 className="w-4 h-4" /> Tahlil va reyting
-            </Button>
-          </Link>
-          <Button onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-2">
-            <Plus className="w-4 h-4" /> Yangi test
-          </Button>
-        </div>
+        <Button onClick={openCreateDialog} className="gap-2">
+          <Plus className="w-4 h-4" /> Yangi Test
+        </Button>
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-      ) : tests.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="py-10 text-center text-muted-foreground text-sm">
-            Hali test yaratilmagan.
-          </CardContent>
-        </Card>
+        <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {tests.map((t) => {
-            const isOpen = t.status === "open";
-            const isScheduled = t.status === "draft" && !!t.scheduled_open_at;
-            return (
-              <Card key={t.id} className="overflow-hidden">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-semibold text-primary bg-primary/10 rounded-full px-2 py-0.5">
-                          {t.quarter}-chorak
-                        </span>
-                        <span className="text-xs font-medium bg-muted rounded-full px-2 py-0.5 flex items-center gap-1">
-                          {t.has_options ? <ListChecks className="w-3 h-3" /> : <PenLine className="w-3 h-3" />}
-                          {t.has_options ? "Variantli" : "Variantsiz"}
-                        </span>
-                      </div>
-                      <h3 className="font-bold mt-1.5 truncate">{t.subject}</h3>
-                      <p className="text-muted-foreground text-sm truncate">{t.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{t.class_name ?? "Barcha sinflar"}</p>
-                    </div>
-                    <button
-                      onClick={() => toggleLock(t)}
-                      className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                        isOpen ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                      }`}
-                    >
-                      {isOpen ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-                    </button>
-                  </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {tests.map((t) => (
+            <Card key={t.id} className="relative group">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg">{t.subject}</CardTitle>
+                <p className="text-xs text-muted-foreground">{t.title} • {t.quarter}-chorak</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p>Savollar soni: <b>{t.questions?.length || 0} ta</b></p>
+                  <p>Vaqt: <b>{t.duration_minutes} daqiqa</b></p>
+                </div>
+                <div className="flex gap-2 pt-2 border-t">
+                  <Button variant="outline" size="sm" className="flex-1 gap-1" onClick={() => openEditDialog(t)}>
+                    <Edit2 className="w-3.5 h-3.5" /> Tahrirlash
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleDelete(t.id)}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
-                  {isScheduled && (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-2.5 py-1.5">
-                      <CalendarClock className="w-3.5 h-3.5" />
-                      Avto-ochiladi: {new Date(t.scheduled_open_at!).toLocaleString("uz-UZ")}
-                    </div>
-                  )}
+      {/* Test Yaratish / Tahrirlash Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingTestId ? "Testni Tahrirlash" : "Yangi Test Yaratish"}</DialogTitle>
+          </DialogHeader>
 
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {t.attempts_count} ta yechilgan</span>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => handleOpenEdit(t)} className="text-blue-600 hover:text-blue-700 flex items-center gap-1 font-medium">
-                        <Edit className="w-3.5 h-3.5" /> Tahrirlash
-                      </button>
-                      <button onClick={() => setResultsFor(resultsFor === t.id ? null : t.id)} className="text-primary font-medium ml-1">
-                        Natijalar
-                      </button>
-                      <button onClick={() => deleteTest(t.id)} className="text-red-500 ml-1">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Fan Nomi</Label>
+                <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Matematika" />
+              </div>
+              <div>
+                <Label>Mavzu / Sarlovha</Label>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="1-ch chorak nazorati" />
+              </div>
+            </div>
 
-                  {resultsFor === t.id && (
-                    <div className="rounded-lg bg-muted/40 divide-y -mx-1">
-                      {results.length === 0 ? (
-                        <p className="p-3 text-xs text-muted-foreground">Hali natija yo'q</p>
-                      ) : results.map((r, i) => (
-                        <div key={i} className="flex items-center gap-3 px-3 py-1.5 text-xs">
-                          <span className="flex-1 truncate">{r.student_name}</span>
-                          <span className="text-muted-foreground">{r.class_name}</span>
-                          <span className="font-semibold">{r.percentage}%</span>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Chorak</Label>
+                <Input type="number" value={quarter} onChange={(e) => setQuarter(Number(e.target.value))} />
+              </div>
+              <div>
+                <Label>Davomiyligi (Daqiqa)</Label>
+                <Input type="number" value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} />
+              </div>
+              <div>
+                <Label>Pauza (Sekund)</Label>
+                <Input type="number" value={pauseSeconds} onChange={(e) => setPauseSeconds(Number(e.target.value))} />
+              </div>
+            </div>
+
+            <div className="flex gap-6 pt-2">
+              <div className="flex items-center gap-2">
+                <Switch checked={hasOptions} onCheckedChange={setHasOptions} id="opts" />
+                <Label htmlFor="opts">Variantli Test</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch checked={timed} onCheckedChange={setTimed} id="time" />
+                <Label htmlFor="time">Vaqt Cheklovi</Label>
+              </div>
+            </div>
+
+            {/* Smart Text Importer */}
+            <div className="border rounded-xl p-3 bg-muted/20 space-y-2">
+              <Label className="flex items-center gap-1.5 font-bold text-primary">
+                <Sparkles className="w-4 h-4" /> Matndan Avtomatik Yuklash (Smart Importer)
+              </Label>
+              <Textarea
+                rows={4}
+                placeholder={`1. O'zbekiston poytaxti qaysi?\na) Samarqand\nb) Toshkent\nc) Buxoro\nd) Xiva\nJavob: B`}
+                value={rawText}
+                onChange={(e) => setRawText(e.target.value)}
+              />
+              <Button type="button" size="sm" variant="secondary" onClick={handleParseText} className="gap-1.5">
+                <FileText className="w-4 h-4" /> Matnni Savollarga Ajratish
+              </Button>
+            </div>
+
+            {/* Savollar Ro'yxati */}
+            <div className="space-y-4 pt-2">
+              <Label className="font-bold text-base">Savollar Ro'yxati ({questions.length} ta)</Label>
+              {questions.map((q, qIdx) => (
+                <Card key={qIdx} className="p-3 space-y-2 relative">
+                  <Input
+                    placeholder={`${qIdx + 1}-savol matni...`}
+                    value={q.question}
+                    onChange={(e) => {
+                      const copy = [...questions];
+                      copy[qIdx].question = e.target.value;
+                      setQuestions(copy);
+                    }}
+                  />
+                  {hasOptions && (
+                    <div className="grid grid-cols-2 gap-2 pt-2">
+                      {q.options.map((opt, oIdx) => (
+                        <div key={oIdx} className="flex items-center gap-1.5">
+                          <input
+                            type="radio"
+                            name={`q_${qIdx}`}
+                            checked={q.correct_index === oIdx}
+                            onChange={() => {
+                              const copy = [...questions];
+                              copy[qIdx].correct_index = oIdx;
+                              setQuestions(copy);
+                            }}
+                          />
+                          <Input
+                            placeholder={`Variant ${String.fromCharCode(65 + oIdx)}`}
+                            value={opt}
+                            onChange={(e) => {
+                              const copy = [...questions];
+                              copy[qIdx].options[oIdx] = e.target.value;
+                              setQuestions(copy);
+                            }}
+                            className="text-xs"
+                          />
                         </div>
                       ))}
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                </Card>
+              ))}
 
-      {/* Test yaratish / tahrirlash oynasi */}
-      <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) resetForm(); }}>
-        <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
-          <DialogHeader className="flex flex-row items-center justify-between">
-            <DialogTitle>{editingTestId ? "Testni tahrirlash" : "Yangi monitoring testi"}</DialogTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setImportMode(!importMode)}
-              className="gap-1.5 text-xs text-primary"
-            >
-              <FileText className="w-4 h-4" />
-              {importMode ? "Formaga qaytish" : "Matndan yuklash"}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setQuestions([...questions, { question: "", options: ["", "", "", ""], correct_index: 0 }])}
+                className="w-full gap-1"
+              >
+                <Plus className="w-4 h-4" /> Qo'lda Savol Qo'shish
+              </Button>
+            </div>
+
+            <Button onClick={handleSaveTest} className="w-full mt-4 font-bold">
+              {editingTestId ? "O'zgarishlarni Saqlash" : "Testni E'lon Qilish"}
             </Button>
-          </DialogHeader>
-
-          {importMode ? (
-            <div className="space-y-4 py-2">
-              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-xs space-y-1.5">
-                <p className="font-semibold flex items-center gap-1 text-primary">
-                  <Sparkles className="w-3.5 h-3.5" /> Matn formati namunasi:
-                </p>
-                <p className="font-mono text-muted-foreground">
-                  1. O'zbekiston poytaxti qayer?<br />
-                  a) Samarqand<br />
-                  b) Toshkent<br />
-                  Javob: B
-                </p>
-              </div>
-
-              <Textarea
-                placeholder="Savollarni bu yerga tashlang..."
-                rows={10}
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                className="font-mono text-sm"
-              />
-
-              <Button onClick={handleParseText} className="w-full gap-2">
-                <Sparkles className="w-4 h-4" /> Savollarga ajratish va yuklash
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setHasOptions(true)}
-                  className={`rounded-xl border-2 p-3 text-left transition-all ${hasOptions ? "border-primary bg-primary/5" : "border-border"}`}
-                >
-                  <ListChecks className={`w-5 h-5 mb-1 ${hasOptions ? "text-primary" : "text-muted-foreground"}`} />
-                  <p className="font-semibold text-sm">Variantli</p>
-                </button>
-                <button
-                  onClick={() => setHasOptions(false)}
-                  className={`rounded-xl border-2 p-3 text-left transition-all ${!hasOptions ? "border-primary bg-primary/5" : "border-border"}`}
-                >
-                  <PenLine className={`w-5 h-5 mb-1 ${!hasOptions ? "text-primary" : "text-muted-foreground"}`} />
-                  <p className="font-semibold text-sm">Variantsiz</p>
-                </button>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label>Test sarlavhasi</Label>
-                  <Input placeholder="1-chorak yakuniy" value={title} onChange={e => setTitle(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Fan</Label>
-                  <Input placeholder="Matematika" value={subject} onChange={e => setSubject(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Sinf</Label>
-                  <Select value={className} onValueChange={setClassName}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__">Barcha sinflar</SelectItem>
-                      {classNames.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Chorak</Label>
-                  <Select value={String(quarter)} onValueChange={v => setQuarter(Number(v))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {[1, 2, 3, 4].map(q => <SelectItem key={q} value={String(q)}>{q}-chorak</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <p className="text-sm font-semibold">Savollar ({questions.length})</p>
-                {questions.map((q, qi) => (
-                  <div key={qi} className="rounded-xl border p-3 space-y-2 bg-muted/20">
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">{qi + 1}</span>
-                      <Input
-                        placeholder="Savol matni"
-                        value={q.question}
-                        onChange={e => updateQuestion(qi, { question: e.target.value })}
-                        className="flex-1"
-                      />
-                      <button onClick={() => setQuestions(qs => qs.filter((_, i) => i !== qi))} className="text-red-500 shrink-0">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    {hasOptions ? (
-                      <div className="pl-8 space-y-1.5">
-                        {q.options.map((opt, oi) => (
-                          <div key={oi} className="flex items-center gap-2">
-                            <input
-                              type="radio"
-                              name={`correct_${qi}`}
-                              checked={q.correct_index === oi}
-                              onChange={() => updateQuestion(qi, { correct_index: oi })}
-                              className="accent-primary"
-                            />
-                            <Input
-                              placeholder={`Variant ${oi + 1}`}
-                              value={opt}
-                              onChange={e => updateOption(qi, oi, e.target.value)}
-                              className="flex-1 h-8 text-sm"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="pl-8">
-                        <Input
-                          placeholder="To'g'ri javob"
-                          value={q.correct_text}
-                          onChange={e => updateQuestion(qi, { correct_text: e.target.value })}
-                          className="h-8 text-sm"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <button onClick={() => setQuestions(qs => [...qs, EMPTY_QUESTION()])} className="text-sm text-primary flex items-center gap-1 font-medium">
-                  <Plus className="w-3.5 h-3.5" /> Savol qo'shish
-                </button>
-              </div>
-
-              {saveError && <p className="text-sm text-destructive">{saveError}</p>}
-            </div>
-          )}
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Bekor qilish</Button>
-            {!importMode && (
-              <Button onClick={handleSave} disabled={saving} className="gap-2">
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {editingTestId ? "Saqlash" : "Testni yaratish"}
-              </Button>
-            )}
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
