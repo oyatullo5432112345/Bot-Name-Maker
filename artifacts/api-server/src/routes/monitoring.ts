@@ -396,8 +396,8 @@ router.get("/monitoring/tests/:id/take", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user || user["role"] !== "student") { res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return; }
 
-  const test = await queryOne<{ id: string; status: string; duration_minutes: number; title: string; subject: string; has_options: boolean; opens_at: string | null; timed: boolean; pause_seconds: number }>(
-    "SELECT id, status, duration_minutes, title, subject, has_options, opens_at, timed, pause_seconds FROM monitoring_tests WHERE id = $1",
+  const test = await queryOne<{ id: string; status: string; duration_minutes: number; title: string; subject: string; has_options: boolean; is_anonymous: boolean; quarter: number; opens_at: string | null; timed: boolean; pause_seconds: number }>(
+    "SELECT id, status, duration_minutes, title, subject, has_options, is_anonymous, quarter, opens_at, timed, pause_seconds FROM monitoring_tests WHERE id = $1",
     [req.params["id"]]
   );
   if (!test || test.status !== "open") { res.status(404).json({ error: "Test topilmadi yoki hali qulfda (yopiq)" }); return; }
