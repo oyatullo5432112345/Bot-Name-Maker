@@ -3,13 +3,14 @@ import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Trash2, Lock, Unlock, Users, Loader2, BarChart3,
-  ListChecks, PenLine, CalendarClock, X,
+  ListChecks, PenLine, CalendarClock, X, FileText, Sparkles, Edit,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -29,6 +30,7 @@ interface TestRow {
   id: string; title: string; subject: string; class_name: string | null;
   quarter: number; academic_year: string; status: string; has_options: boolean;
   is_anonymous: boolean; attempts_count: number; scheduled_open_at: string | null;
+  duration_minutes: number; timed: boolean; pause_seconds: number;
 }
 
 interface DraftQuestion {
@@ -43,12 +45,83 @@ interface DraftQuestion {
 
 const DIFFICULTY_TIME: Record<DraftQuestion["difficulty"], number> = { oson: 20, orta: 40, qiyin: 60 };
 const EMPTY_QUESTION = (): DraftQuestion => ({
-  question: "", options: ["", ""], correct_index: 0, correct_text: "",
+  question: "", options: ["", "", "", ""], correct_index: 0, correct_text: "",
   difficulty: "orta", customTime: false, time_seconds: DIFFICULTY_TIME.orta,
 });
 
 function sortClassNames(list: { name: string }[]): string[] {
   return [...list.map(c => c.name)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+/** ── MATNINI TESTGA AYLANTIRISH PARSERI ── */
+function parseRawTextToQuestions(text: string, isVariant: boolean): DraftQuestion[] {
+  const blocks = text.trim().split(/\n\s*\n|\n(?=\d+[\.\)])/g).filter(b => b.trim().length > 0);
+  const parsed: DraftQuestion[] = [];
+
+  for (const block of blocks) {
+    const lines = block.split("\n").map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) continue;
+
+    let questionText = lines[0].replace(/^\d+[\.\)]\s*/, "").trim();
+    const options: string[] = [];
+    let correctIndex = 0;
+    let correctText = "";
+
+    if (isVariant) {
+      lines.slice(1).forEach(line => {
+        const answerMatch = line.match(/^(?:javob|javobi|ans|correct|correct answer):\s*([a-d1-4])\b/i);
+        if (answerMatch) {
+          const val = answerMatch[1].toLowerCase();
+          if (val === 'a' || val === '1') correctIndex = 0;
+          else if (val === 'b' || val === '2') correctIndex = 1;
+          else if (val === 'c' || val === '3') correctIndex = 2;
+          else if (val === 'd' || val === '4') correctIndex = 3;
+          return;
+        }
+
+        const optMatch = line.match(/^([a-d1-4])[\.\)]\s*(.*)/i);
+        if (optMatch) {
+          options.push(optMatch[2].trim());
+        } else if (!line.toLowerCase().startsWith("javob")) {
+          questionText += " " + line;
+        }
+      });
+
+      if (options.length === 0) options.push("", "", "", "");
+      while (options.length < 2) options.push("");
+
+      parsed.push({
+        question: questionText,
+        options,
+        correct_index: Math.min(correctIndex, options.length - 1),
+        correct_text: "",
+        difficulty: "orta",
+        customTime: false,
+        time_seconds: DIFFICULTY_TIME.orta,
+      });
+    } else {
+      lines.slice(1).forEach(line => {
+        const ansMatch = line.match(/^(?:javob|javobi|ans|correct):\s*(.*)/i);
+        if (ansMatch) {
+          correctText = ansMatch[1].trim();
+        } else {
+          questionText += " " + line;
+        }
+      });
+
+      parsed.push({
+        question: questionText,
+        options: ["", ""],
+        correct_index: 0,
+        correct_text: correctText,
+        difficulty: "orta",
+        customTime: false,
+        time_seconds: DIFFICULTY_TIME.orta,
+      });
+    }
+  }
+
+  return parsed.length > 0 ? parsed : [EMPTY_QUESTION()];
 }
 
 export default function MonitoringAdminPage() {
@@ -58,6 +131,9 @@ export default function MonitoringAdminPage() {
   const classNames = sortClassNames((classesData as { name: string }[] | undefined) ?? []);
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingTestId, setEditingTestId] = useState<string | null>(null);
+
+  // Form maydonlari
   const [hasOptions, setHasOptions] = useState(true);
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
@@ -74,6 +150,10 @@ export default function MonitoringAdminPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [resultsFor, setResultsFor] = useState<string | null>(null);
+
+  // Matndan tezkor yuklash rejimi
+  const [importMode, setImportMode] = useState(false);
+  const [rawText, setRawText] = useState("");
 
   const { data: tests = [], isLoading } = useQuery<TestRow[]>({
     queryKey: ["monitoring-tests-admin"],
@@ -95,13 +175,64 @@ export default function MonitoringAdminPage() {
   });
 
   const resetForm = () => {
+    setEditingTestId(null);
     setTitle(""); setSubject(""); setClassName("__all__"); setQuarter(1);
     setDuration(30); setIsAnonymous(false); setHasOptions(true);
     setScheduleEnabled(false); setScheduledAt(""); setTimed(true); setPauseEnabled(false);
     setQuestions([EMPTY_QUESTION()]); setSaveError("");
+    setImportMode(false); setRawText("");
   };
 
-  const handleCreate = async () => {
+  const handleOpenEdit = async (t: TestRow) => {
+    resetForm();
+    setEditingTestId(t.id);
+    setTitle(t.title);
+    setSubject(t.subject);
+    setClassName(t.class_name ?? "__all__");
+    setQuarter(t.quarter);
+    setAcademicYear(t.academic_year);
+    setDuration(t.duration_minutes);
+    setIsAnonymous(t.is_anonymous);
+    setHasOptions(t.has_options);
+    setTimed(t.timed ?? true);
+    setPauseEnabled((t.pause_seconds ?? 0) > 0);
+    if (t.scheduled_open_at) {
+      setScheduleEnabled(true);
+      setScheduledAt(new Date(t.scheduled_open_at).toISOString().slice(0, 16));
+    }
+
+    try {
+      const r = await fetch(`${API_BASE}/monitoring/tests/${t.id}`, { headers: authH() });
+      if (r.ok) {
+        const fullData = await r.json();
+        if (fullData.questions && fullData.questions.length > 0) {
+          setQuestions(fullData.questions.map((q: any) => ({
+            question: q.question,
+            options: q.options || ["", ""],
+            correct_index: q.correct_index || 0,
+            correct_text: q.correct_text || "",
+            difficulty: q.difficulty || "orta",
+            customTime: !!q.time_seconds,
+            time_seconds: q.time_seconds || DIFFICULTY_TIME[q.difficulty as "orta" || "orta"],
+          })));
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    setDialogOpen(true);
+  };
+
+  const handleParseText = () => {
+    if (!rawText.trim()) return;
+    const parsed = parseRawTextToQuestions(rawText, hasOptions);
+    setQuestions(parsed);
+    setImportMode(false);
+    toast({ title: `${parsed.length} ta savol avtomatik o'qib olindi!`, description: "Variantlar va to'g'ri javoblarni tekshirib oling." });
+  };
+
+  const handleSave = async () => {
     setSaveError("");
     if (!title.trim() || !subject.trim()) { setSaveError("Sarlavha va fanni kiriting"); return; }
     if (scheduleEnabled && !scheduledAt) { setSaveError("Avto-ochilish vaqtini tanlang"); return; }
@@ -117,8 +248,11 @@ export default function MonitoringAdminPage() {
 
     setSaving(true);
     try {
-      const r = await fetch(`${API_BASE}/monitoring/tests`, {
-        method: "POST",
+      const url = editingTestId ? `${API_BASE}/monitoring/tests/${editingTestId}` : `${API_BASE}/monitoring/tests`;
+      const method = editingTestId ? "PUT" : "POST";
+
+      const r = await fetch(url, {
+        method,
         headers: authH(),
         body: JSON.stringify({
           title: title.trim(),
@@ -147,7 +281,10 @@ export default function MonitoringAdminPage() {
       resetForm();
       setDialogOpen(false);
       qc.invalidateQueries({ queryKey: ["monitoring-tests-admin"] });
-      toast({ title: "Test yaratildi", description: scheduleEnabled ? "Belgilangan vaqtda avtomatik ochiladi" : "Hozircha qulfda — ochish uchun 🔓 tugmasini bosing" });
+      toast({
+        title: editingTestId ? "Test yangilandi" : "Test yaratildi",
+        description: editingTestId ? "O'zgarishlar saqlandi" : (scheduleEnabled ? "Belgilangan vaqtda avtomatik ochiladi" : "Qulfda — ochish uchun 🔓 bosing")
+      });
     } finally {
       setSaving(false);
     }
@@ -183,7 +320,7 @@ export default function MonitoringAdminPage() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Chorak Monitoring</h1>
-          <p className="text-muted-foreground mt-1 text-sm">Sinf va fan bo'yicha test yarating, qulfdan oching, natijalarni kuzating</p>
+          <p className="text-muted-foreground mt-1 text-sm">Sinf va fan bo'yicha test yarating, matndan yuklang, tahrirlang va natijalarni kuzating</p>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/monitoring/analytics">
@@ -191,7 +328,7 @@ export default function MonitoringAdminPage() {
               <BarChart3 className="w-4 h-4" /> Tahlil va reyting
             </Button>
           </Link>
-          <Button onClick={() => setDialogOpen(true)} className="gap-2">
+          <Button onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-2">
             <Plus className="w-4 h-4" /> Yangi test
           </Button>
         </div>
@@ -249,11 +386,14 @@ export default function MonitoringAdminPage() {
 
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {t.attempts_count} ta yechilgan</span>
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => setResultsFor(resultsFor === t.id ? null : t.id)} className="text-primary font-medium">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => handleOpenEdit(t)} className="text-blue-600 hover:text-blue-700 flex items-center gap-1 font-medium">
+                        <Edit className="w-3.5 h-3.5" /> Tahrirlash
+                      </button>
+                      <button onClick={() => setResultsFor(resultsFor === t.id ? null : t.id)} className="text-primary font-medium ml-1">
                         Natijalar
                       </button>
-                      <button onClick={() => deleteTest(t.id)} className="text-red-500">
+                      <button onClick={() => deleteTest(t.id)} className="text-red-500 ml-1">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -279,218 +419,264 @@ export default function MonitoringAdminPage() {
         </div>
       )}
 
-      {/* ── Yangi test — Dialog ── */}
+      {/* ── Test Yaratish / Tahrirlash Dialogi ── */}
       <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) resetForm(); }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Yangi monitoring testi</DialogTitle>
+        <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
+          <DialogHeader className="flex flex-row items-center justify-between">
+            <DialogTitle>{editingTestId ? "Testni tahrirlash" : "Yangi monitoring testi"}</DialogTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setImportMode(!importMode)}
+              className="gap-1.5 text-xs text-primary"
+            >
+              <FileText className="w-4 h-4" />
+              {importMode ? "Formaga qaytish" : "Matndan yuklash"}
+            </Button>
           </DialogHeader>
 
-          <div className="space-y-5">
-            {/* Test turi */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setHasOptions(true)}
-                className={`rounded-xl border-2 p-3 text-left transition-all ${hasOptions ? "border-primary bg-primary/5" : "border-border"}`}
-              >
-                <ListChecks className={`w-5 h-5 mb-1 ${hasOptions ? "text-primary" : "text-muted-foreground"}`} />
-                <p className="font-semibold text-sm">Variantli</p>
-                <p className="text-xs text-muted-foreground">Test — javob variantlaridan tanlanadi</p>
-              </button>
-              <button
-                onClick={() => setHasOptions(false)}
-                className={`rounded-xl border-2 p-3 text-left transition-all ${!hasOptions ? "border-primary bg-primary/5" : "border-border"}`}
-              >
-                <PenLine className={`w-5 h-5 mb-1 ${!hasOptions ? "text-primary" : "text-muted-foreground"}`} />
-                <p className="font-semibold text-sm">Variantsiz</p>
-                <p className="text-xs text-muted-foreground">Yozma — o'quvchi javobni o'zi yozadi</p>
-              </button>
-            </div>
+          {importMode ? (
+            /* ── MATNDAN TEZKOR PARSE QILISH UYI ── */
+            <div className="space-y-4 py-2">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-xs space-y-1.5">
+                <p className="font-semibold flex items-center gap-1 text-primary">
+                  <Sparkles className="w-3.5 h-3.5" /> Matn formati namunasi:
+                </p>
+                <p className="font-mono text-muted-foreground">
+                  1. O'zbekiston poytaxti qayer?<br />
+                  a) Samarqand<br />
+                  b) Toshkent<br />
+                  Javob: B
+                </p>
+              </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>Test sarlavhasi</Label>
-                <Input placeholder="Masalan: 1-chorak yakuniy" value={title} onChange={e => setTitle(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Fan</Label>
-                <Input placeholder="Matematika" value={subject} onChange={e => setSubject(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Sinf</Label>
-                <Select value={className} onValueChange={setClassName}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">Barcha sinflar</SelectItem>
-                    {classNames.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Chorak</Label>
-                <Select value={String(quarter)} onValueChange={v => setQuarter(Number(v))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {[1, 2, 3, 4].map(q => <SelectItem key={q} value={String(q)}>{q}-chorak</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>O'quv yili</Label>
-                <Input value={academicYear} onChange={e => setAcademicYear(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Davomiyligi (daqiqa)</Label>
-                <Input type="number" min={5} max={180} value={duration} onChange={e => setDuration(Number(e.target.value))} />
-              </div>
-            </div>
+              <Textarea
+                placeholder="Savollarni va variantlarni bu yerga tashlang..."
+                rows={10}
+                value={rawText}
+                onChange={(e) => setRawText(e.target.value)}
+                className="font-mono text-sm"
+              />
 
-            <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
-              <div>
-                <p className="text-sm font-medium">Anonim rejim</p>
-                <p className="text-xs text-muted-foreground">O'quvchilar bir-birining ismini ko'rmaydi</p>
-              </div>
-              <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
+              <Button onClick={handleParseText} className="w-full gap-2">
+                <Sparkles className="w-4 h-4" /> Savollarga ajratish va yuklash
+              </Button>
             </div>
-
-            <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
-              <div>
-                <p className="text-sm font-medium">Vaqt cheklovi</p>
-                <p className="text-xs text-muted-foreground">O'chirilsa — o'quvchi istagancha vaqt sarflaydi (taymersiz)</p>
+          ) : (
+            /* ── STANDART FORM REJIMI ── */
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setHasOptions(true)}
+                  className={`rounded-xl border-2 p-3 text-left transition-all ${hasOptions ? "border-primary bg-primary/5" : "border-border"}`}
+                >
+                  <ListChecks className={`w-5 h-5 mb-1 ${hasOptions ? "text-primary" : "text-muted-foreground"}`} />
+                  <p className="font-semibold text-sm">Variantli</p>
+                  <p className="text-xs text-muted-foreground">Test — javob variantlaridan tanlanadi</p>
+                </button>
+                <button
+                  onClick={() => setHasOptions(false)}
+                  className={`rounded-xl border-2 p-3 text-left transition-all ${!hasOptions ? "border-primary bg-primary/5" : "border-border"}`}
+                >
+                  <PenLine className={`w-5 h-5 mb-1 ${!hasOptions ? "text-primary" : "text-muted-foreground"}`} />
+                  <p className="font-semibold text-sm">Variantsiz</p>
+                  <p className="text-xs text-muted-foreground">Yozma — o'quvchi javobni o'zi yozadi</p>
+                </button>
               </div>
-              <Switch checked={timed} onCheckedChange={setTimed} />
-            </div>
 
-            {timed && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Test sarlavhasi</Label>
+                  <Input placeholder="Masalan: 1-chorak yakuniy" value={title} onChange={e => setTitle(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Fan</Label>
+                  <Input placeholder="Matematika" value={subject} onChange={e => setSubject(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Sinf</Label>
+                  <Select value={className} onValueChange={setClassName}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Barcha sinflar</SelectItem>
+                      {classNames.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Chorak</Label>
+                  <Select value={String(quarter)} onValueChange={v => setQuarter(Number(v))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 4].map(q => <SelectItem key={q} value={String(q)}>{q}-chorak</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>O'quv yili</Label>
+                  <Input value={academicYear} onChange={e => setAcademicYear(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Davomiyligi (daqiqa)</Label>
+                  <Input type="number" min={5} max={180} value={duration} onChange={e => setDuration(Number(e.target.value))} />
+                </div>
+              </div>
+
               <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
                 <div>
-                  <p className="text-sm font-medium">Savollar orasida pauza</p>
-                  <p className="text-xs text-muted-foreground">Javob belgilagach, keyingi savolga o'tishdan oldin 5 soniya kutadi</p>
+                  <p className="text-sm font-medium">Anonim rejim</p>
+                  <p className="text-xs text-muted-foreground">O'quvchilar bir-birining ismini ko'rmaydi</p>
                 </div>
-                <Switch checked={pauseEnabled} onCheckedChange={setPauseEnabled} />
+                <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
               </div>
-            )}
 
-            <div className="rounded-lg border px-3 py-2.5 space-y-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
                 <div>
-                  <p className="text-sm font-medium flex items-center gap-1.5"><CalendarClock className="w-4 h-4" /> Avtomatik ochilish</p>
-                  <p className="text-xs text-muted-foreground">Belgilangan vaqtda test o'zi qulfdan chiqadi</p>
+                  <p className="text-sm font-medium">Vaqt cheklovi</p>
+                  <p className="text-xs text-muted-foreground">O'chirilsa — o'quvchi istagancha vaqt sarflaydi (taymersiz)</p>
                 </div>
-                <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
+                <Switch checked={timed} onCheckedChange={setTimed} />
               </div>
-              {scheduleEnabled && (
-                <Input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
-              )}
-            </div>
 
-            {/* Savollar */}
-            <div className="space-y-3">
-              <p className="text-sm font-semibold">Savollar</p>
-              {questions.map((q, qi) => (
-                <div key={qi} className="rounded-xl border p-3 space-y-2 bg-muted/20">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">{qi + 1}</span>
-                    <Input
-                      placeholder="Savol matni"
-                      value={q.question}
-                      onChange={e => updateQuestion(qi, { question: e.target.value })}
-                      className="flex-1"
-                    />
-                    <button onClick={() => setQuestions(qs => qs.filter((_, i) => i !== qi))} className="text-red-500 shrink-0">
-                      <X className="w-4 h-4" />
-                    </button>
+              {timed && (
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                  <div>
+                    <p className="text-sm font-medium">Savollar orasida pauza</p>
+                    <p className="text-xs text-muted-foreground">Javob belgilagach, keyingi savolga o'tishdan oldin 5 soniya kutadi</p>
                   </div>
+                  <Switch checked={pauseEnabled} onCheckedChange={setPauseEnabled} />
+                </div>
+              )}
 
-                  {timed && (
-                    <div className="pl-8 flex items-center gap-2 flex-wrap">
-                      {(["oson", "orta", "qiyin"] as const).map(d => (
-                        <button
-                          key={d}
-                          onClick={() => updateQuestion(qi, { difficulty: d, time_seconds: q.customTime ? q.time_seconds : DIFFICULTY_TIME[d] })}
-                          className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
-                            q.difficulty === d
-                              ? d === "oson" ? "bg-emerald-100 border-emerald-300 text-emerald-700"
-                                : d === "orta" ? "bg-amber-100 border-amber-300 text-amber-700"
-                                : "bg-red-100 border-red-300 text-red-700"
-                              : "border-border text-muted-foreground"
-                          }`}
-                        >
-                          {d === "oson" ? "Oson" : d === "orta" ? "O'rta" : "Qiyin"}
-                        </button>
-                      ))}
-                      <label className="flex items-center gap-1.5 text-xs text-muted-foreground ml-1">
-                        <input type="checkbox" checked={q.customTime} onChange={e => updateQuestion(qi, { customTime: e.target.checked })} />
-                        Vaqtni o'zim belgilayman
-                      </label>
-                      {q.customTime ? (
-                        <Input
-                          type="number" min={5} max={600}
-                          value={q.time_seconds}
-                          onChange={e => updateQuestion(qi, { time_seconds: Number(e.target.value) })}
-                          className="w-20 h-7 text-xs"
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">{DIFFICULTY_TIME[q.difficulty]} soniya</span>
-                      )}
-                    </div>
-                  )}
+              <div className="rounded-lg border px-3 py-2.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium flex items-center gap-1.5"><CalendarClock className="w-4 h-4" /> Avtomatik ochilish</p>
+                    <p className="text-xs text-muted-foreground">Belgilangan vaqtda test o'zi qulfdan chiqadi</p>
+                  </div>
+                  <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
+                </div>
+                {scheduleEnabled && (
+                  <Input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
+                )}
+              </div>
 
-                  {hasOptions ? (
-                    <div className="pl-8 space-y-1.5">
-                      {q.options.map((opt, oi) => (
-                        <div key={oi} className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            checked={q.correct_index === oi}
-                            onChange={() => updateQuestion(qi, { correct_index: oi })}
-                            title="To'g'ri javob"
-                            className="accent-primary"
-                          />
-                          <Input
-                            placeholder={`Variant ${oi + 1}`}
-                            value={opt}
-                            onChange={e => updateOption(qi, oi, e.target.value)}
-                            className="flex-1 h-8 text-sm"
-                          />
-                        </div>
-                      ))}
-                      <button
-                        onClick={() => updateQuestion(qi, { options: [...q.options, ""] })}
-                        className="text-xs text-primary font-medium"
-                      >
-                        + Variant qo'shish
+              {/* SAVOLLAR RO'YXATI */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold">Savollar ({questions.length})</p>
+                  <button onClick={() => setImportMode(true)} className="text-xs text-primary font-medium flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5" /> Matndan import qilish
+                  </button>
+                </div>
+
+                {questions.map((q, qi) => (
+                  <div key={qi} className="rounded-xl border p-3 space-y-2 bg-muted/20">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">{qi + 1}</span>
+                      <Input
+                        placeholder="Savol matni"
+                        value={q.question}
+                        onChange={e => updateQuestion(qi, { question: e.target.value })}
+                        className="flex-1"
+                      />
+                      <button onClick={() => setQuestions(qs => qs.filter((_, i) => i !== qi))} className="text-red-500 shrink-0">
+                        <X className="w-4 h-4" />
                       </button>
                     </div>
-                  ) : (
-                    <div className="pl-8">
-                      <Input
-                        placeholder="To'g'ri javob (o'quvchi shu matnni yozishi kerak)"
-                        value={q.correct_text}
-                        onChange={e => updateQuestion(qi, { correct_text: e.target.value })}
-                        className="h-8 text-sm"
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-              <button
-                onClick={() => setQuestions(qs => [...qs, EMPTY_QUESTION()])}
-                className="text-sm text-primary flex items-center gap-1 font-medium"
-              >
-                <Plus className="w-3.5 h-3.5" /> Savol qo'shish
-              </button>
-            </div>
 
-            {saveError && <p className="text-sm text-destructive">{saveError}</p>}
-          </div>
+                    {timed && (
+                      <div className="pl-8 flex items-center gap-2 flex-wrap">
+                        {(["oson", "orta", "qiyin"] as const).map(d => (
+                          <button
+                            key={d}
+                            onClick={() => updateQuestion(qi, { difficulty: d, time_seconds: q.customTime ? q.time_seconds : DIFFICULTY_TIME[d] })}
+                            className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                              q.difficulty === d
+                                ? d === "oson" ? "bg-emerald-100 border-emerald-300 text-emerald-700"
+                                  : d === "orta" ? "bg-amber-100 border-amber-300 text-amber-700"
+                                  : "bg-red-100 border-red-300 text-red-700"
+                                : "border-border text-muted-foreground"
+                            }`}
+                          >
+                            {d === "oson" ? "Oson" : d === "orta" ? "O'rta" : "Qiyin"}
+                          </button>
+                        ))}
+                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground ml-1">
+                          <input type="checkbox" checked={q.customTime} onChange={e => updateQuestion(qi, { customTime: e.target.checked })} />
+                          Vaqtni o'zim belgilayman
+                        </label>
+                        {q.customTime ? (
+                          <Input
+                            type="number" min={5} max={600}
+                            value={q.time_seconds}
+                            onChange={e => updateQuestion(qi, { time_seconds: Number(e.target.value) })}
+                            className="w-20 h-7 text-xs"
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{DIFFICULTY_TIME[q.difficulty]} soniya</span>
+                        )}
+                      </div>
+                    )}
+
+                    {hasOptions ? (
+                      <div className="pl-8 space-y-1.5">
+                        {q.options.map((opt, oi) => (
+                          <div key={oi} className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              checked={q.correct_index === oi}
+                              onChange={() => updateQuestion(qi, { correct_index: oi })}
+                              title="To'g'ri javob"
+                              className="accent-primary"
+                            />
+                            <Input
+                              placeholder={`Variant ${oi + 1}`}
+                              value={opt}
+                              onChange={e => updateOption(qi, oi, e.target.value)}
+                              className="flex-1 h-8 text-sm"
+                            />
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => updateQuestion(qi, { options: [...q.options, ""] })}
+                          className="text-xs text-primary font-medium"
+                        >
+                          + Variant qo'shish
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="pl-8">
+                        <Input
+                          placeholder="To'g'ri javob (o'quvchi shu matnni yozishi kerak)"
+                          value={q.correct_text}
+                          onChange={e => updateQuestion(qi, { correct_text: e.target.value })}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <button
+                  onClick={() => setQuestions(qs => [...qs, EMPTY_QUESTION()])}
+                  className="text-sm text-primary flex items-center gap-1 font-medium"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Savol qo'shish
+                </button>
+              </div>
+
+              {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+            </div>
+          )}
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Bekor qilish</Button>
-            <Button onClick={handleCreate} disabled={saving} className="gap-2">
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Testni yaratish
-            </Button>
+            {!importMode && (
+              <Button onClick={handleSave} disabled={saving} className="gap-2">
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editingTestId ? "Saqlash" : "Testni yaratish"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
