@@ -2,17 +2,25 @@ import { useState, useRef } from "react";
 import { useLocation, Link } from "wouter";
 import {
   ArrowLeft, Users, Grid3x3, Upload, Loader2, Gift, Skull, Zap,
-  HelpCircle, TrendingDown, Sparkles,
+  HelpCircle, TrendingDown, Sparkles, Copy, Check, FileText
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useListClasses } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
-const getToken = () => localStorage.getItem("talim_auth_token");
+
+const getToken = () => 
+  localStorage.getItem("talim_auth_token") || 
+  localStorage.getItem("token") || 
+  localStorage.getItem("auth_token") || 
+  "";
+
 const authH = (): HeadersInit => {
   const t = getToken();
   const base: Record<string, string> = { "Content-Type": "application/json" };
@@ -33,7 +41,7 @@ interface DraftCell {
 
 const TYPE_META: Record<CellType, { label: string; icon: typeof HelpCircle; color: string }> = {
   question: { label: "Savol", icon: HelpCircle, color: "text-blue-600 bg-blue-50 border-blue-200" },
-  bonus: { label: "Bonus", icon: Gift, color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
+  bonus: { label: "Bonus/Sovg'a", icon: Gift, color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
   penalty: { label: "Jarima", icon: TrendingDown, color: "text-amber-600 bg-amber-50 border-amber-200" },
   lose: { label: "Yutqazdingiz", icon: Skull, color: "text-red-600 bg-red-50 border-red-200" },
   steal: { label: "O'g'irlash", icon: Zap, color: "text-purple-600 bg-purple-50 border-purple-200" },
@@ -67,6 +75,11 @@ export default function BoardGameNewPage() {
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // AI Import Modali
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [rawText, setRawText] = useState("");
+  const [copied, setCopied] = useState(false);
+
   const startBuilding = () => {
     setCells(Array.from({ length: cellCount }, () => emptyCell()));
     setStep(2);
@@ -75,6 +88,7 @@ export default function BoardGameNewPage() {
   const updateCell = (idx: number, patch: Partial<DraftCell>) => {
     setCells(cs => cs.map((c, i) => i === idx ? { ...c, ...patch } : c));
   };
+
   const updateOption = (idx: number, oi: number, val: string) => {
     setCells(cs => cs.map((c, i) => {
       if (i !== idx) return c;
@@ -83,7 +97,90 @@ export default function BoardGameNewPage() {
     }));
   };
 
-  const handleImport = async (file: File | null) => {
+  // AI Promptini hosil qilish
+  const generatedPrompt = `Menga ${subject || "Umumiy"} fani bo'yicha ${cellCount} ta savol tuzib ber. Format aynan quyidagicha bo'lsin:
+
+1. Savol matni?
+a) Variant A
+b) Variant B
+c) Variant C
+d) Variant D
+Javob: B
+
+2. Keyingi savol?
+a) Variant 1
+b) Variant 2
+c) Variant 3
+d) Variant 4
+Javob: A`;
+
+  const copyPrompt = () => {
+    navigator.clipboard.writeText(generatedPrompt);
+    setCopied(true);
+    toast({ title: "Prompt nusxalandi!", description: "ChatGPT yoki Gemini-ga tashlab, javobini oling." });
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Matndan avto-to'ldirish
+  const handleParseRawText = () => {
+    if (!rawText.trim()) return;
+    const blocks = rawText.trim().split(/\n\s*\n|\n(?=\d+[\.\)])/g).filter(b => b.trim().length > 0);
+    let qi = 0;
+
+    setCells(prevCells => {
+      const nextCells = [...prevCells];
+      for (const block of blocks) {
+        // Savol turidagi birinchi bo'sh katakchani izlaymiz
+        while (qi < nextCells.length && nextCells[qi].type !== "question") {
+          qi++;
+        }
+        if (qi >= nextCells.length) break;
+
+        const lines = block.split("\n").map(l => l.trim()).filter(Boolean);
+        if (lines.length === 0) continue;
+
+        let questionText = lines[0].replace(/^\d+[\.\)]\s*/, "").trim();
+        const options: string[] = [];
+        let correctIndex = 0;
+
+        lines.slice(1).forEach(line => {
+          const ansMatch = line.match(/^(?:javob|javobi|ans|correct):\s*([a-d1-4])\b/i);
+          if (ansMatch) {
+            const val = ansMatch[1].toLowerCase();
+            if (val === 'a' || val === '1') correctIndex = 0;
+            else if (val === 'b' || val === '2') correctIndex = 1;
+            else if (val === 'c' || val === '3') correctIndex = 2;
+            else if (val === 'd' || val === '4') correctIndex = 3;
+            return;
+          }
+
+          const optMatch = line.match(/^([a-d1-4])[\.\)]\s*(.*)/i);
+          if (optMatch) {
+            options.push(optMatch[2].trim());
+          } else if (!line.toLowerCase().startsWith("javob")) {
+            questionText += " " + line;
+          }
+        });
+
+        while (options.length < 4) options.push("");
+
+        nextCells[qi] = {
+          ...nextCells[qi],
+          question: questionText,
+          options: options.slice(0, 4),
+          correct_index: Math.min(correctIndex, 3),
+        };
+        qi++;
+      }
+      return nextCells;
+    });
+
+    setAiModalOpen(false);
+    setRawText("");
+    toast({ title: "Savollar to'ldirildi!", description: "Katakchalarni tekshirib chiqing." });
+  };
+
+  const handleImportFile = async (file: File | null) => {
     if (!file) return;
     setImporting(true);
     try {
@@ -151,7 +248,7 @@ export default function BoardGameNewPage() {
           <ArrowLeft className="w-4 h-4" /> Orqaga
         </Link>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">🏆 Yangi Bamboozle</h1>
+          <h1 className="text-2xl font-bold tracking-tight">🏆 Yangi Bamboozle (Zukko)</h1>
           <p className="text-muted-foreground text-sm mt-1">Avval jamoalar sonini va katakchalar sonini tanlang</p>
         </div>
 
@@ -206,7 +303,7 @@ export default function BoardGameNewPage() {
           </div>
         </div>
 
-        <Button className="w-full" size="lg" onClick={startBuilding} disabled={!title.trim()}>
+        <Button className="w-full font-bold" size="lg" onClick={startBuilding} disabled={!title.trim()}>
           Davom etish →
         </Button>
       </div>
@@ -225,25 +322,27 @@ export default function BoardGameNewPage() {
           <p className="text-muted-foreground text-sm">{teamCount} jamoa • {cellCount} katakcha</p>
         </div>
         <div className="flex items-center gap-2">
-          <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => void handleImport(e.target.files?.[0] ?? null)} />
+          <Button variant="outline" size="sm" onClick={() => setAiModalOpen(true)} className="gap-1.5 text-primary border-primary/30">
+            <Sparkles className="w-3.5 h-3.5" /> AI Matndan joylash
+          </Button>
+          <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => void handleImportFile(e.target.files?.[0] ?? null)} />
           <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={importing} className="gap-1.5">
             {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            Ish rejadan avto to'ldirish
+            Fayldan o'qish
           </Button>
         </div>
       </div>
 
       <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 flex items-start gap-1.5">
-        <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-        Har bir katakcha turini pastdagi tugmalar bilan belgilang. "Savol" turidagilarni qo'lda yozing yoki "Ish rejadan avto to'ldirish" orqali bir zumda to'ldiring.
+        <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
+        Katakcha turini (Savol, Bonus, Jarima, O'g'irlash) tugmalar orqali tanlang. Savollarni o'zingiz yozishingiz yoki "AI Matndan joylash" orqali tayyor matnni olib o'tishingiz mumkin.
       </p>
 
       <div className="space-y-3">
         {cells.map((c, i) => {
           const meta = TYPE_META[c.type];
-          const Icon = meta.icon;
           return (
-            <div key={i} className="rounded-xl border p-3 space-y-2.5">
+            <div key={i} className="rounded-xl border p-3 space-y-2.5 bg-card shadow-sm">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="w-7 h-7 rounded-lg bg-muted text-xs font-bold flex items-center justify-center shrink-0">{i + 1}</span>
                 {(Object.keys(TYPE_META) as CellType[]).map(t => {
@@ -253,7 +352,7 @@ export default function BoardGameNewPage() {
                     <button
                       key={t}
                       onClick={() => updateCell(i, { type: t })}
-                      className={`text-xs px-2 py-1 rounded-full border flex items-center gap-1 font-medium transition-colors ${c.type === t ? m.color : "border-border text-muted-foreground"}`}
+                      className={`text-xs px-2.5 py-1 rounded-full border flex items-center gap-1 font-medium transition-colors ${c.type === t ? m.color : "border-border text-muted-foreground hover:bg-muted/50"}`}
                     >
                       <TIcon className="w-3 h-3" /> {m.label}
                     </button>
@@ -263,21 +362,21 @@ export default function BoardGameNewPage() {
 
               {c.type === "question" && (
                 <div className="pl-9 space-y-2">
-                  <Input placeholder="Savol matni" value={c.question} onChange={e => updateCell(i, { question: e.target.value })} className="h-8 text-sm" />
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <Input placeholder="Savol matni" value={c.question} onChange={e => updateCell(i, { question: e.target.value })} className="h-9 text-sm" />
+                  <div className="grid grid-cols-2 gap-2">
                     {c.options.map((opt, oi) => (
                       <div key={oi} className="flex items-center gap-1.5">
-                        <input type="radio" checked={c.correct_index === oi} onChange={() => updateCell(i, { correct_index: oi })} className="accent-primary shrink-0" />
-                        <Input placeholder={`Variant ${oi + 1}`} value={opt} onChange={e => updateOption(i, oi, e.target.value)} className="h-7 text-xs" />
+                        <input type="radio" name={`correct-${i}`} checked={c.correct_index === oi} onChange={() => updateCell(i, { correct_index: oi })} className="accent-primary shrink-0" />
+                        <Input placeholder={`Variant ${oi + 1}`} value={opt} onChange={e => updateOption(i, oi, e.target.value)} className="h-8 text-xs" />
                       </div>
                     ))}
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 pt-1">
                     {(["oson", "orta", "qiyin"] as const).map(d => (
                       <button
                         key={d}
                         onClick={() => updateCell(i, { difficulty: d, points: DEFAULT_POINTS[d] })}
-                        className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${c.difficulty === d ? "bg-primary/10 border-primary text-primary" : "border-border text-muted-foreground"}`}
+                        className={`text-[11px] px-2.5 py-0.5 rounded-full border font-medium ${c.difficulty === d ? "bg-primary/10 border-primary text-primary" : "border-border text-muted-foreground"}`}
                       >
                         {d === "oson" ? "Oson" : d === "orta" ? "O'rta" : "Qiyin"} • {DEFAULT_POINTS[d]} HP
                       </button>
@@ -288,31 +387,70 @@ export default function BoardGameNewPage() {
 
               {(c.type === "bonus" || c.type === "penalty") && (
                 <div className="pl-9 flex items-center gap-2">
-                  <Label className="text-xs">HP miqdori:</Label>
-                  <Input type="number" min={1} max={100} value={c.points} onChange={e => updateCell(i, { points: Number(e.target.value) })} className="h-7 w-20 text-xs" />
+                  <Label className="text-xs">HP (Ochko) miqdori:</Label>
+                  <Input type="number" min={5} max={100} step={5} value={c.points} onChange={e => updateCell(i, { points: Number(e.target.value) })} className="h-8 w-24 text-xs font-bold" />
                 </div>
               )}
 
               {c.type === "steal" && (
                 <div className="pl-9 flex items-center gap-2">
                   <Label className="text-xs">O'g'irlanadigan foiz:</Label>
-                  <Input type="number" min={1} max={100} value={c.steal_percent} onChange={e => updateCell(i, { steal_percent: Number(e.target.value) })} className="h-7 w-20 text-xs" />
+                  <Input type="number" min={10} max={100} step={5} value={c.steal_percent} onChange={e => updateCell(i, { steal_percent: Number(e.target.value) })} className="h-8 w-24 text-xs font-bold" />
                   <span className="text-xs text-muted-foreground">%</span>
                 </div>
               )}
 
               {c.type === "lose" && (
-                <p className="pl-9 text-xs text-muted-foreground">Bu katakchani ochgan jamoaning ballari nolga tushadi 💀</p>
+                <p className="pl-9 text-xs text-muted-foreground font-medium">Bu katakchani ochgan jamoaning barcha jamg'argan ballari nolga tushadi 💀</p>
               )}
             </div>
           );
         })}
       </div>
 
-      <Button className="w-full" size="lg" onClick={handleSave} disabled={saving}>
+      <Button className="w-full font-bold" size="lg" onClick={handleSave} disabled={saving}>
         {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-        O'yinni yaratish va arxivga saqlash
+        O'yinni saqlash va boshlash
       </Button>
+
+      {/* AI Matn orqali to'ldirish modali */}
+      <Dialog open={aiModalOpen} onOpenChange={setAiModalOpen}>
+        <DialogContent className="max-w-lg space-y-4">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-primary">
+              <Sparkles className="w-5 h-5" /> AI orqali savollarni to'ldirish
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 text-xs">
+            <div className="bg-muted p-3 rounded-xl space-y-2 border">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-foreground">1-qadam: Tayyor promptni nusxalang</span>
+                <Button variant="secondary" size="sm" onClick={copyPrompt} className="h-7 text-xs gap-1">
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? "Nusxalandi" : "Promptni nusxalash"}
+                </Button>
+              </div>
+              <p className="text-muted-foreground">ChatGPT yoki Gemini-ga kiring va ushbu promptni yuboring.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="font-bold text-xs">2-qadam: AI qaytargan matnni bu yerga tashlang (Paste)</Label>
+              <Textarea
+                rows={8}
+                placeholder="1. O'zbekiston poytaxti qaysi?\na) Samarqand\nb) Toshkent\nc) Buxoro\nd) Xiva\nJavob: B"
+                value={rawText}
+                onChange={e => setRawText(e.target.value)}
+                className="font-mono text-xs"
+              />
+            </div>
+
+            <Button onClick={handleParseRawText} disabled={!rawText.trim()} className="w-full font-bold gap-2">
+              <FileText className="w-4 h-4" /> Savollarga ajratib kataklarga joylash
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
