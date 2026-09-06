@@ -9,7 +9,13 @@ import { useAuth } from "@/lib/use-auth";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
-const getToken = () => localStorage.getItem("talim_auth_token");
+
+const getToken = () => 
+  localStorage.getItem("talim_auth_token") || 
+  localStorage.getItem("token") || 
+  localStorage.getItem("auth_token") || 
+  "";
+
 const authH = (): HeadersInit => {
   const t = getToken();
   return t ? { Authorization: `Bearer ${t}` } : {};
@@ -55,12 +61,12 @@ export default function BoardGameListPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-3xl mx-auto">
       <Link href="/games" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit">
         <ArrowLeft className="w-4 h-4" /> O'yinlarga qaytish
       </Link>
 
-      <div className="relative rounded-2xl overflow-hidden border border-blue-500/20 bg-gradient-to-br from-blue-950/40 via-card to-card p-6 sm:p-7">
+      <div className="relative rounded-2xl overflow-hidden border border-blue-500/20 bg-gradient-to-br from-blue-950/40 via-card to-card p-6 sm:p-7 shadow-xl">
         <div className="absolute -top-20 -right-16 w-56 h-56 rounded-full bg-blue-500/[0.08] blur-3xl" />
         <div className="relative flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-4">
@@ -69,12 +75,12 @@ export default function BoardGameListPage() {
             </div>
             <div>
               <p className="text-xs font-semibold text-blue-400/80 uppercase tracking-widest mb-1">Guruh o'yini</p>
-              <h1 className="text-2xl font-bold tracking-tight">Bamboozle</h1>
-              <p className="text-muted-foreground text-sm mt-1.5 max-w-md">Jamoalar bo'lib o'ynaladigan savol-javob o'yini — bonus, jarima va o'g'irlash katakchalari bilan</p>
+              <h1 className="text-2xl font-bold tracking-tight">Bamboozle (Zukko)</h1>
+              <p className="text-muted-foreground text-sm mt-1.5 max-w-md">Jamoalar o'rtasidagi intellektual savol-javob o'yini — bonuslar, sovg'alar, jarimalar va o'g'irlash katakchalari bilan</p>
             </div>
           </div>
           <Link href="/games/board/new">
-            <Button className="gap-2"><Plus className="w-4 h-4" /> Yangi o'yin</Button>
+            <Button className="gap-2 font-bold shadow-lg shadow-primary/20"><Plus className="w-4 h-4" /> Yangi o'yin</Button>
           </Link>
         </div>
       </div>
@@ -108,7 +114,7 @@ export default function BoardGameListPage() {
             const isOwner = g.created_by_login === user?.login;
             const statsOpen = statsOpenId === g.id;
             return (
-              <Card key={g.id} className="overflow-hidden">
+              <Card key={g.id} className="overflow-hidden hover:border-primary/50 transition-colors">
                 <CardContent className="p-4">
                   <Link href={`/games/board/${g.id}`}>
                     <div className="cursor-pointer">
@@ -125,7 +131,7 @@ export default function BoardGameListPage() {
                           </span>
                         )}
                       </div>
-                      <h3 className="font-bold truncate">{g.title}</h3>
+                      <h3 className="font-bold truncate text-base">{g.title}</h3>
                       {g.subject && <p className="text-muted-foreground text-sm truncate">{g.subject}</p>}
                       {g.class_name && <p className="text-xs text-muted-foreground mt-0.5">{g.class_name}</p>}
                     </div>
@@ -140,7 +146,7 @@ export default function BoardGameListPage() {
                       {statsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                     </button>
                     {isOwner && (
-                      <button onClick={(e) => handleDelete(g.id, e)} className="text-red-500 hover:text-red-600">
+                      <button onClick={(e) => handleDelete(g.id, e)} className="text-red-500 hover:text-red-600 p-1">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
