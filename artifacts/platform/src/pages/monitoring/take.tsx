@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import { useParams, useLocation } from "wouter";
-import { CheckCircle2, XCircle, Loader2, Trophy, Clock, Infinity as InfinityIcon } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useRoute, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Clock, CheckCircle2, Trophy, Loader2, Play, Sparkles, ArrowRight, ShieldAlert, Award
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -10,332 +17,356 @@ const authH = (): HeadersInit => {
   return t ? { ...base, Authorization: `Bearer ${t}` } : base;
 };
 
-interface Question { id: string; question: string; options: string[]; difficulty: string; time_seconds: number | null }
-interface TakeData {
-  test: {
-    id: string; title: string; subject: string; duration_minutes: number;
-    has_options: boolean; timed: boolean; pause_seconds: number;
-  };
+interface Question {
+  id: string;
+  question: string;
+  options: string[];
+  difficulty: "oson" | "orta" | "qiyin";
+  time_seconds: number | null;
+}
+
+interface TestData {
+  id: string;
+  title: string;
+  subject: string;
+  duration_minutes: number;
+  has_options: boolean;
+  is_anonymous: boolean;
+  timed: boolean;
+  pause_seconds: number;
   questions: Question[];
-  server_now: string;
 }
-interface LeaderboardRow {
-  place: number; student_name: string; class_name: string;
-  score: number; total: number; is_me: boolean;
-}
-interface SubmitResult { score: number; total: number; percentage: number; correct_count: number; incorrect_count: number }
-
-function ResultRing({ percentage }: { percentage: number }) {
-  const [animated, setAnimated] = useState(0);
-  useEffect(() => {
-    const t = setTimeout(() => setAnimated(percentage), 100);
-    return () => clearTimeout(t);
-  }, [percentage]);
-  const r = 54;
-  const c = 2 * Math.PI * r;
-  const offset = c - (animated / 100) * c;
-  const color = percentage >= 80 ? "#22c55e" : percentage >= 60 ? "#3b82f6" : percentage >= 40 ? "#f59e0b" : "#ef4444";
-  return (
-    <div className="relative w-36 h-36 mx-auto">
-      <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="hsl(var(--muted))" strokeWidth="10" />
-        <circle
-          cx="60" cy="60" r={r} fill="none" stroke={color} strokeWidth="10" strokeLinecap="round"
-          strokeDasharray={c} strokeDashoffset={offset}
-          style={{ transition: "stroke-dashoffset 1.1s cubic-bezier(0.22, 1, 0.36, 1)" }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-3xl font-black" style={{ color }}>{percentage}%</span>
-      </div>
-    </div>
-  );
-}
-
-type Answer = { chosen_index?: number; text_answer?: string };
 
 export default function MonitoringTakePage() {
-  const params = useParams<{ id: string }>();
+  const [, params] = useRoute("/monitoring/take/:id");
   const [, setLocation] = useLocation();
-  const testId = params.id;
+  const testId = params?.id;
 
-  const [data, setData] = useState<TakeData | null>(null);
-  const [error, setError] = useState("");
-  const [answers, setAnswers] = useState<Record<string, Answer>>({});
-  const [qIndex, setQIndex] = useState(0);
-  const [qSecondsLeft, setQSecondsLeft] = useState<number | null>(null);
-  const [pauseLeft, setPauseLeft] = useState<number | null>(null);
+  // Foydalanuvchi ma'lumotlari
+  const userString = localStorage.getItem("talim_user");
+  const currentUser = userString ? JSON.parse(userString) : null;
+  const studentName = currentUser?.name || "O'quvchi";
+
+  // Test Holatlari: "intro" (Ism effekti) -> "countdown" (5 sek sanoq) -> "testing" (Test jarayoni) -> "completed"
+  const [stage, setStage] = useState<"intro" | "countdown" | "testing" | "completed">("intro");
+  const [countdown, setCountdown] = useState<number>(5);
+
+  const [currentQIndex, setCurrentQIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [textAnswer, setTextAnswer] = useState("");
+  const [questionTimeLeft, setQuestionTimeLeft] = useState<number | null>(null);
+  const [inPause, setInPause] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<SubmitResult | { score: -1; total: number } | null>(null);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null);
-  const submittedRef = useRef(false);
-  const advancingRef = useRef(false);
+  const [resultData, setResultData] = useState<any>(null);
 
+  const { data: test, isLoading, error } = useQuery<TestData>({
+    queryKey: ["monitoring-take", testId],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/monitoring/tests/${testId}`, { headers: authH() });
+      if (!r.ok) throw new Error("Test topilmadi");
+      return r.json();
+    },
+    enabled: !!testId,
+  });
+
+  // 5 soniyalik countdown taymeri
   useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch(`${API_BASE}/monitoring/tests/${testId}/take`, { headers: authH() });
-        const json = await r.json();
-        if (!r.ok) { setError(json.error ?? "Xatolik yuz berdi"); return; }
-        const td = json as TakeData;
-        setData(td);
-        if (td.test.timed) {
-          setQSecondsLeft(td.questions[0]?.time_seconds ?? 30);
-        }
-      } catch {
-        setError("Server bilan bog'lanishda muammo");
+    let timer: NodeJS.Timeout;
+    if (stage === "countdown") {
+      if (countdown > 0) {
+        timer = setTimeout(() => setCountdown(prev => prev - 1), 1000);
+      } else {
+        setStage("testing");
       }
-    })();
-  }, [testId]);
-
-  const currentQuestion = data?.questions[qIndex];
-  const isLast = data ? qIndex === data.questions.length - 1 : false;
-
-  const goNext = () => {
-    if (advancingRef.current || !data) return;
-    advancingRef.current = true;
-    if (isLast) {
-      void handleSubmit();
-      return;
     }
-    const doAdvance = () => {
-      setQIndex((i) => i + 1);
-      const nextQ = data.questions[qIndex + 1];
-      if (data.test.timed) setQSecondsLeft(nextQ?.time_seconds ?? 30);
-      setPauseLeft(null);
-      advancingRef.current = false;
-    };
-    if (data.test.pause_seconds > 0) {
-      setPauseLeft(data.test.pause_seconds);
+    return () => clearTimeout(timer);
+  }, [stage, countdown]);
+
+  // Savol taymeri
+  useEffect(() => {
+    if (stage !== "testing" || !test || inPause) return;
+    const q = test.questions[currentQIndex];
+    if (!test.timed || !q?.time_seconds) return;
+
+    setQuestionTimeLeft(q.time_seconds);
+    const interval = setInterval(() => {
+      setQuestionTimeLeft((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(interval);
+          handleNextQuestion(true); // Vaqt tugasa avto keyingisi
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentQIndex, stage, inPause, test]);
+
+  const handleStartCountdown = () => {
+    setStage("countdown");
+    setCountdown(5);
+  };
+
+  const handleNextQuestion = (isAuto = false) => {
+    if (!test) return;
+    const q = test.questions[currentQIndex];
+
+    const currentAns = test.has_options ? selectedOption : textAnswer;
+    const newAnswers = { ...answers, [q.id]: currentAns };
+    setAnswers(newAnswers);
+
+    setSelectedOption(null);
+    setTextAnswer("");
+
+    if (currentQIndex < test.questions.length - 1) {
+      if (test.pause_seconds > 0 && !isAuto) {
+        setInPause(true);
+        setTimeout(() => {
+          setInPause(false);
+          setCurrentQIndex(prev => prev + 1);
+        }, test.pause_seconds * 1000);
+      } else {
+        setCurrentQIndex(prev => prev + 1);
+      }
     } else {
-      doAdvance();
+      finishTest(newAnswers);
     }
   };
 
-  // ── Pauza sanog'i (javob belgilangach, keyingi savolga o'tishdan oldin) ──
-  useEffect(() => {
-    if (pauseLeft === null || !data) return;
-    if (pauseLeft <= 0) {
-      setQIndex((i) => i + 1);
-      const nextQ = data.questions[qIndex + 1];
-      if (data.test.timed) setQSecondsLeft(nextQ?.time_seconds ?? 30);
-      setPauseLeft(null);
-      advancingRef.current = false;
-      return;
-    }
-    const id = setTimeout(() => setPauseLeft((s) => (s !== null ? s - 1 : s)), 1000);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pauseLeft]);
-
-  // ── Har savol uchun taймer ──
-  useEffect(() => {
-    if (!data || !data.test.timed || result || pauseLeft !== null) return;
-    if (qSecondsLeft === null) return;
-    if (qSecondsLeft <= 0) {
-      goNext();
-      return;
-    }
-    const id = setTimeout(() => setQSecondsLeft((s) => (s !== null ? s - 1 : s)), 1000);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qSecondsLeft, result, pauseLeft]);
-
-  const selectOption = (oi: number) => {
-    if (!currentQuestion) return;
-    setAnswers((a) => ({ ...a, [currentQuestion.id]: { chosen_index: oi } }));
-  };
-  const setTextAnswer = (val: string) => {
-    if (!currentQuestion) return;
-    setAnswers((a) => ({ ...a, [currentQuestion.id]: { text_answer: val } }));
-  };
-
-  const handleSubmit = async () => {
-    if (!data || submittedRef.current) return;
-    submittedRef.current = true;
+  const finishTest = async (finalAnswers: Record<string, any>) => {
     setSubmitting(true);
     try {
-      const payload = {
-        answers: data.questions.map((q) => ({
-          question_id: q.id,
-          chosen_index: answers[q.id]?.chosen_index,
-          text_answer: answers[q.id]?.text_answer,
-        })),
-      };
       const r = await fetch(`${API_BASE}/monitoring/tests/${testId}/submit`, {
         method: "POST",
         headers: authH(),
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ answers: finalAnswers }),
       });
-      const json = await r.json();
-      if (!r.ok) { setError(json.error ?? "Xatolik yuz berdi"); submittedRef.current = false; return; }
-      if (typeof json.score === "number") {
-        setResult(json as SubmitResult);
-        const lb = await fetch(`${API_BASE}/monitoring/tests/${testId}/leaderboard`, { headers: authH() });
-        if (lb.ok) setLeaderboard(await lb.json());
-      } else {
-        setResult({ score: -1, total: data.questions.length });
-      }
+      const data = await r.json();
+      setResultData(data);
+      setStage("completed");
+    } catch (e) {
+      console.error(e);
     } finally {
       setSubmitting(false);
-      advancingRef.current = false;
     }
   };
 
-  if (error) {
+  if (isLoading) {
     return (
-      <div className="max-w-xl mx-auto text-center py-12">
-        <XCircle className="w-10 h-10 mx-auto text-red-500 mb-3" />
-        <p className="font-medium">{error}</p>
-        <button onClick={() => setLocation("/monitoring")} className="mt-4 text-sm text-primary underline">
-          Monitoring ro'yxatiga qaytish
-        </button>
+      <div className="min-h-[80vh] flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+        <p className="text-muted-foreground animate-pulse">Monitoring testi yuklanmoqda...</p>
       </div>
     );
   }
 
-  if (!data) {
+  if (error || !test) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      <div className="min-h-[80vh] flex flex-col items-center justify-center text-center p-4">
+        <ShieldAlert className="w-12 h-12 text-destructive mb-2" />
+        <h2 className="text-xl font-bold">Testni yuklab bo'lmadi</h2>
+        <p className="text-muted-foreground text-sm mt-1">Test yopilgan yoki mavjud emas.</p>
+        <Button onClick={() => setLocation("/monitoring")} className="mt-4">Orqaga qaytish</Button>
       </div>
     );
   }
 
-  if (result) {
-    const hasScore = result.score >= 0;
+  // 1. ISMNI CHIROLI EFEKT VA INTRO
+  if (stage === "intro") {
     return (
-      <div className="max-w-xl mx-auto space-y-6 text-center py-8 animate-in fade-in zoom-in-95 duration-500">
-        {hasScore ? (
-          <>
-            <ResultRing percentage={(result as SubmitResult).percentage} />
-            <div>
-              <h2 className="text-xl font-bold">Test yakunlandi! 🎉</h2>
-              <div className="flex items-center justify-center gap-4 mt-3">
-                <span className="flex items-center gap-1.5 text-emerald-600 font-semibold text-sm">
-                  <CheckCircle2 className="w-4 h-4" /> {(result as SubmitResult).correct_count} to'g'ri
-                </span>
-                <span className="flex items-center gap-1.5 text-red-500 font-semibold text-sm">
-                  <XCircle className="w-4 h-4" /> {(result as SubmitResult).incorrect_count} xato
-                </span>
-              </div>
+      <div className="min-h-[85vh] flex items-center justify-center p-4">
+        <Card className="w-full max-w-xl border-primary/20 bg-gradient-to-b from-card/80 to-card backdrop-blur-xl shadow-2xl overflow-hidden relative">
+          <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/20 rounded-full blur-3xl" />
+          <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl" />
+          
+          <CardContent className="p-8 text-center space-y-8 relative z-10">
+            {/* Animatsiyali Ism Halo/Card */}
+            <div className="space-y-3">
+              <span className="text-xs font-semibold tracking-widest text-primary uppercase bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
+                {test.subject} • {test.quarter}-Chorak Monitoringi
+              </span>
+              <h1 className="text-2xl font-black">{test.title}</h1>
             </div>
-          </>
-        ) : (
-          <>
-            <CheckCircle2 className="w-12 h-12 mx-auto text-emerald-500" />
-            <div>
-              <h2 className="text-xl font-bold">Test yakunlandi!</h2>
-              <p className="text-muted-foreground mt-1">Javoblaringiz qabul qilindi. Natija keyinroq e'lon qilinadi.</p>
-            </div>
-          </>
-        )}
 
-        {leaderboard && (
-          <div className="text-left rounded-xl border divide-y">
-            {leaderboard.slice(0, 10).map((row) => (
-              <div key={row.place} className={`flex items-center gap-3 px-4 py-2.5 text-sm ${row.is_me ? "bg-primary/10" : ""}`}>
-                <span className="w-6 text-center font-bold text-muted-foreground">
-                  {row.place <= 3 ? (row.place === 1 ? "🥇" : row.place === 2 ? "🥈" : "🥉") : row.place}
-                </span>
-                <span className="flex-1 font-medium truncate">{row.student_name}</span>
-                <span className="text-muted-foreground">{row.class_name}</span>
-                <span className="font-bold">{row.score}/{row.total}</span>
+            {/* Ism familiya uchun aylanuvchi chiroyli glowing effekt */}
+            <div className="relative group mx-auto max-w-md">
+              <div className="absolute -inset-1 bg-gradient-to-r from-primary via-indigo-500 to-purple-500 rounded-2xl blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-gradient-x" />
+              <div className="relative px-6 py-6 bg-card rounded-xl border border-primary/20 flex flex-col items-center justify-center space-y-1">
+                <Sparkles className="w-6 h-6 text-primary animate-bounce mb-1" />
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Test topshiruvchi</p>
+                <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-600 tracking-wide">
+                  {studentName}
+                </h2>
               </div>
-            ))}
+            </div>
+
+            {/* Qoidalar va Malumot */}
+            <div className="grid grid-cols-2 gap-3 text-left text-xs bg-muted/40 p-4 rounded-xl border border-border/50">
+              <div>
+                <p className="text-muted-foreground">Savollar soni:</p>
+                <p className="font-bold text-sm">{test.questions.length} ta</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Vaqt tartibi:</p>
+                <p className="font-bold text-sm">{test.timed ? "Sekundli taymer" : "Vaqt cheklovsiz"}</p>
+              </div>
+            </div>
+
+            <Button size="lg" onClick={handleStartCountdown} className="w-full text-base font-bold gap-2 shadow-lg shadow-primary/25 hover:scale-[1.02] transition-transform">
+              <Play className="w-5 h-5 fill-current" /> Testni Boshlash
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // 2. 5 SONYALIK DYNAMIC COUNTDOWN
+  if (stage === "countdown") {
+    return (
+      <div className="min-h-[85vh] flex flex-col items-center justify-center p-4">
+        <div className="relative flex items-center justify-center">
+          {/* Pulsatsiyalanuvchi halqa */}
+          <div className="w-48 h-48 rounded-full border-4 border-primary/30 animate-ping absolute" />
+          <div className="w-44 h-44 rounded-full border-4 border-primary bg-primary/10 flex flex-col items-center justify-center shadow-2xl backdrop-blur-md z-10">
+            <span className="text-7xl font-black text-primary animate-pulse">{countdown}</span>
           </div>
-        )}
-
-        <button onClick={() => setLocation("/monitoring")} className="text-sm text-primary underline">
-          Monitoring ro'yxatiga qaytish
-        </button>
-      </div>
-    );
-  }
-
-  // ── Pauza ekrani ──
-  if (pauseLeft !== null) {
-    return (
-      <div className="max-w-md mx-auto flex flex-col items-center justify-center py-20 text-center animate-in fade-in duration-300">
-        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-          <span className="text-3xl font-black text-primary tabular-nums">{pauseLeft}</span>
         </div>
-        <p className="font-medium">Keyingi savolga tayyorlaning...</p>
+        <h2 className="text-2xl font-bold mt-8 animate-bounce">Tayyormisiz?</h2>
+        <p className="text-muted-foreground text-sm mt-1">Test bir ozdan so'ng boshlanadi...</p>
       </div>
     );
   }
 
-  if (!currentQuestion) return null;
+  // 3. YAKUNLANGAN NATIJA SAHIFASI
+  if (stage === "completed" && resultData) {
+    const percentage = resultData.percentage || Math.round((resultData.score / resultData.total) * 100);
+    return (
+      <div className="min-h-[85vh] flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg border-primary/20 text-center shadow-2xl">
+          <CardContent className="p-8 space-y-6">
+            <div className="w-20 h-20 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20">
+              <Trophy className="w-10 h-10 animate-bounce" />
+            </div>
 
-  const answeredCount = Object.keys(answers).length;
-  const currentAnswer = answers[currentQuestion.id];
-  const mm = qSecondsLeft !== null ? Math.floor(qSecondsLeft / 60) : 0;
-  const ss = qSecondsLeft !== null ? qSecondsLeft % 60 : 0;
-  const timeLow = qSecondsLeft !== null && qSecondsLeft <= 10;
-  const canAdvance = data.test.has_options ? currentAnswer?.chosen_index !== undefined : !!currentAnswer?.text_answer?.trim();
+            <div className="space-y-1">
+              <h2 className="text-2xl font-black">Test Yakunlandi!</h2>
+              <p className="text-sm text-muted-foreground">{studentName}, natijangiz bilan tanishing</p>
+            </div>
+
+            <div className="py-6 bg-muted/30 rounded-2xl border border-border/50">
+              <span className="text-5xl font-black text-primary">{percentage}%</span>
+              <p className="text-xs text-muted-foreground mt-2 font-medium">
+                To'g'ri javoblar: <span className="text-foreground font-bold">{resultData.score}</span> / {resultData.total}
+              </p>
+            </div>
+
+            <Button onClick={() => setLocation("/monitoring")} className="w-full">
+              Bosh sahifaga qaytish
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // 4. TEST TOPSHIRISH (TESTING)
+  const q = test.questions[currentQIndex];
+  const progressPercent = ((currentQIndex + 1) / test.questions.length) * 100;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5 pb-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-bold text-base">{data.test.subject}</h1>
-          <p className="text-muted-foreground text-xs">{qIndex + 1}/{data.questions.length}-savol • {answeredCount} javob berildi</p>
+    <div className="max-w-3xl mx-auto space-y-6 py-6 px-4">
+      {/* Yuqori Panel: Progress & Taymer */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
+          <span>Savol {currentQIndex + 1} / {test.questions.length}</span>
+          {test.timed && questionTimeLeft !== null && (
+            <span className={`flex items-center gap-1 font-mono text-sm px-2.5 py-0.5 rounded-full border ${
+              questionTimeLeft <= 5 ? "bg-red-500/10 border-red-500 text-red-500 animate-pulse" : "bg-muted border-border"
+            }`}>
+              <Clock className="w-3.5 h-3.5" /> {questionTimeLeft}s
+            </span>
+          )}
         </div>
-        {data.test.timed ? (
-          <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 font-mono font-bold text-sm tabular-nums ${
-            timeLow ? "bg-red-100 text-red-600 animate-pulse" : "bg-primary/10 text-primary"
-          }`}>
-            <Clock className="w-3.5 h-3.5" />
-            {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5 bg-muted text-muted-foreground text-xs font-medium">
-            <InfinityIcon className="w-3.5 h-3.5" /> Vaqt cheklovsiz
-          </div>
-        )}
+        <Progress value={progressPercent} className="h-2.5 bg-muted" />
       </div>
 
-      {/* Progress bar */}
-      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-        <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${((qIndex + 1) / data.questions.length) * 100}%` }} />
-      </div>
+      {/* Pauza oralig'i ekrani */}
+      {inPause ? (
+        <Card className="py-16 text-center border-dashed">
+          <CardContent className="space-y-3">
+            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto animate-pulse" />
+            <h3 className="text-lg font-bold">Javobingiz qabul qilindi!</h3>
+            <p className="text-xs text-muted-foreground">Keyingi savol yuklanmoqda...</p>
+          </CardContent>
+        </Card>
+      ) : (
+        /* Savol Card */
+        <Card className="border-primary/20 shadow-xl overflow-hidden">
+          <CardContent className="p-6 space-y-6">
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-md">
+                {q.difficulty === "oson" ? "Oson" : q.difficulty === "qiyin" ? "Qiyin" : "O'rta"} daraja
+              </span>
+              <h2 className="text-lg sm:text-xl font-bold leading-relaxed">{q.question}</h2>
+            </div>
 
-      <div key={currentQuestion.id} className="rounded-xl border p-5 animate-in fade-in slide-in-from-right-2 duration-300">
-        <p className="font-semibold text-lg mb-4">{currentQuestion.question}</p>
-        {data.test.has_options ? (
-          <div className="grid gap-2">
-            {currentQuestion.options.map((opt, oi) => (
-              <button
-                key={oi}
-                onClick={() => selectOption(oi)}
-                className={`text-left px-4 py-3 rounded-lg border text-sm transition-colors ${
-                  currentAnswer?.chosen_index === oi ? "border-primary bg-primary/10 font-medium" : "hover:bg-accent"
-                }`}
+            {/* Optionlar yoki Text inputs */}
+            {test.has_options ? (
+              <div className="grid gap-3">
+                {q.options.map((opt, idx) => {
+                  const isSelected = selectedOption === idx;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedOption(idx)}
+                      className={`w-full p-4 rounded-xl border-2 text-left font-medium text-sm transition-all flex items-center justify-between ${
+                        isSelected
+                          ? "border-primary bg-primary/10 shadow-md shadow-primary/10"
+                          : "border-border hover:border-primary/50 hover:bg-muted/50"
+                      }`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <span className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center ${
+                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        }`}>
+                          {String.fromCharCode(65 + idx)}
+                        </span>
+                        {opt}
+                      </span>
+                      {isSelected && <CheckCircle2 className="w-5 h-5 text-primary" />}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Input
+                  placeholder="Javobingizni bera yerga yozing..."
+                  value={textAnswer}
+                  onChange={(e) => setTextAnswer(e.target.value)}
+                  className="h-12 text-base"
+                />
+              </div>
+            )}
+
+            {/* Keyingi savolga o'tish */}
+            <div className="flex justify-end pt-2">
+              <Button
+                onClick={() => handleNextQuestion(false)}
+                disabled={(test.has_options ? selectedOption === null : !textAnswer.trim()) || submitting}
+                className="gap-2 px-6 font-bold"
               >
-                {opt}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <input
-            type="text"
-            autoFocus
-            placeholder="Javobingizni yozing..."
-            value={currentAnswer?.text_answer ?? ""}
-            onChange={(e) => setTextAnswer(e.target.value)}
-            className="w-full border rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        )}
-      </div>
-
-      <button
-        onClick={goNext}
-        disabled={submitting || !canAdvance}
-        className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-      >
-        {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : isLast ? <Trophy className="w-4 h-4" /> : null}
-        {isLast ? "Yakunlash" : "Keyingi savol"}
-      </button>
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {currentQIndex === test.questions.length - 1 ? "Testni yakunlash" : "Keyingisi"}
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
