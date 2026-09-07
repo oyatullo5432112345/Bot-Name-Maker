@@ -121,25 +121,48 @@ Javob: A`;
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Matndan avto-to'ldirish
+  // Matndan avto-to'ldirish — endi savol bloklaridan tashqari
+  // BONUS / JARIMA / YUTQAZISH / OG'IRLASH kalit so'zlari bilan
+  // maxsus katakcha turlarini ham ketma-ket joylash mumkin.
   const handleParseRawText = () => {
     if (!rawText.trim()) return;
     const blocks = rawText.trim().split(/\n\s*\n|\n(?=\d+[\.\)])/g).filter(b => b.trim().length > 0);
-    let qi = 0;
 
     setCells(prevCells => {
       const nextCells = [...prevCells];
+      let ci = 0;
+
       for (const block of blocks) {
-        // Savol turidagi birinchi bo'sh katakchani izlaymiz
-        while (qi < nextCells.length && nextCells[qi].type !== "question") {
-          qi++;
-        }
-        if (qi >= nextCells.length) break;
+        if (ci >= nextCells.length) break;
 
         const lines = block.split("\n").map(l => l.trim()).filter(Boolean);
         if (lines.length === 0) continue;
+        const firstLine = lines[0];
 
-        let questionText = lines[0].replace(/^\d+[\.\)]\s*/, "").trim();
+        const bonusMatch = firstLine.match(/^bonus\s*:?\s*(\d+)?/i);
+        const jarimaMatch = firstLine.match(/^jarima\s*:?\s*(\d+)?/i);
+        const ogirlashMatch = firstLine.match(/^o'?g'?irlash\s*:?\s*(\d+)?/i);
+        const yutqazishMatch = firstLine.match(/^(?:yutqazish|mag'?lubiyat)\b/i);
+
+        if (bonusMatch) {
+          nextCells[ci] = { ...emptyCell(), type: "bonus", points: bonusMatch[1] ? Number(bonusMatch[1]) : 20 };
+          ci++; continue;
+        }
+        if (jarimaMatch) {
+          nextCells[ci] = { ...emptyCell(), type: "penalty", points: jarimaMatch[1] ? Number(jarimaMatch[1]) : 15 };
+          ci++; continue;
+        }
+        if (ogirlashMatch) {
+          nextCells[ci] = { ...emptyCell(), type: "steal", steal_percent: ogirlashMatch[1] ? Number(ogirlashMatch[1]) : 25 };
+          ci++; continue;
+        }
+        if (yutqazishMatch) {
+          nextCells[ci] = { ...emptyCell(), type: "lose" };
+          ci++; continue;
+        }
+
+        // Aks holda — bu oddiy savol bloki
+        let questionText = firstLine.replace(/^\d+[\.\)]\s*/, "").trim();
         const options: string[] = [];
         let correctIndex = 0;
 
@@ -164,20 +187,21 @@ Javob: A`;
 
         while (options.length < 4) options.push("");
 
-        nextCells[qi] = {
-          ...nextCells[qi],
+        nextCells[ci] = {
+          ...emptyCell(),
+          type: "question",
           question: questionText,
           options: options.slice(0, 4),
           correct_index: Math.min(correctIndex, 3),
         };
-        qi++;
+        ci++;
       }
       return nextCells;
     });
 
     setAiModalOpen(false);
     setRawText("");
-    toast({ title: "Savollar to'ldirildi!", description: "Katakchalarni tekshirib chiqing." });
+    toast({ title: "Katakchalar to'ldirildi!", description: "Turlari, savollari va ballarini tekshirib chiqing." });
   };
 
   const handleImportFile = async (file: File | null) => {
@@ -323,7 +347,7 @@ Javob: A`;
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setAiModalOpen(true)} className="gap-1.5 text-primary border-primary/30">
-            <Sparkles className="w-3.5 h-3.5" /> AI Matndan joylash
+            <Sparkles className="w-3.5 h-3.5" /> Matndan avto to'ldirish
           </Button>
           <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => void handleImportFile(e.target.files?.[0] ?? null)} />
           <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={importing} className="gap-1.5">
@@ -335,7 +359,7 @@ Javob: A`;
 
       <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 flex items-start gap-1.5">
         <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
-        Katakcha turini (Savol, Bonus, Jarima, O'g'irlash) tugmalar orqali tanlang. Savollarni o'zingiz yozishingiz yoki "AI Matndan joylash" orqali tayyor matnni olib o'tishingiz mumkin.
+        Katakcha turini (Savol, Bonus, Jarima, O'g'irlash) tugmalar orqali qo'lda tanlashingiz, yoki "Matndan avto to'ldirish" orqali savol va maxsus katakchalarni bir vaqtda matn ko'rinishida joylashingiz mumkin.
       </p>
 
       <div className="space-y-3">
@@ -418,7 +442,7 @@ Javob: A`;
         <DialogContent className="max-w-lg space-y-4">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-primary">
-              <Sparkles className="w-5 h-5" /> AI orqali savollarni to'ldirish
+              <Sparkles className="w-5 h-5" /> Matndan avto to'ldirish
             </DialogTitle>
           </DialogHeader>
 
@@ -435,22 +459,28 @@ Javob: A`;
             </div>
 
             <div className="space-y-1.5">
-              <Label className="font-bold text-xs">2-qadam: AI qaytargan matnni bu yerga tashlang (Paste)</Label>
+              <Label className="font-bold text-xs">2-qadam: AI qaytargan matnni (yoki o'zingiz yozgan matnni) bu yerga tashlang</Label>
               <Textarea
-                rows={8}
-                placeholder="1. O'zbekiston poytaxti qaysi?\na) Samarqand\nb) Toshkent\nc) Buxoro\nd) Xiva\nJavob: B"
+                rows={10}
+                placeholder={"1. O'zbekiston poytaxti qaysi?\na) Samarqand\nb) Toshkent\nc) Buxoro\nd) Xiva\nJavob: B\n\nBONUS: 20\n\nJARIMA: 15\n\nYUTQAZISH\n\nOG'IRLASH: 30"}
                 value={rawText}
                 onChange={e => setRawText(e.target.value)}
                 className="font-mono text-xs"
               />
+              <p className="text-[11px] text-muted-foreground font-semibold leading-relaxed">
+                Savollarni yuqoridagi 1-4 formatida yozing. Boshqa turdagi katakchalarni ham shu yerdan qo'shishingiz mumkin — alohida qatorga:
+                <span className="font-mono"> BONUS: 20</span> (bonus ball), <span className="font-mono">JARIMA: 15</span> (ball ayirish),
+                <span className="font-mono"> YUTQAZISH</span> (mag'lubiyat — ballar nolga tushadi), <span className="font-mono">OG'IRLASH: 30</span> (raqibdan foiz o'g'irlash).
+                Har bir blok navbat bilan keyingi katakchaga joylanadi.
+              </p>
             </div>
 
             <Button onClick={handleParseRawText} disabled={!rawText.trim()} className="w-full font-bold gap-2">
-              <FileText className="w-4 h-4" /> Savollarga ajratib kataklarga joylash
+              <FileText className="w-4 h-4" /> Katakchalarga joylash
             </Button>
           </div>
         </DialogContent>
       </Dialog>
     </div>
   );
-}
+          }
