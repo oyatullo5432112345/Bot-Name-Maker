@@ -3,7 +3,7 @@ import { useParams, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Trophy, RotateCcw, Loader2, Gift, Skull, Zap,
-  HelpCircle, TrendingDown, CheckCircle2, XCircle, Play,
+  HelpCircle, TrendingDown, CheckCircle2, XCircle, Play, Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -25,7 +25,7 @@ const authH = (): HeadersInit => {
 
 interface Cell {
   id: string; position: number; type: "question"|"bonus"|"penalty"|"lose"|"steal";
-  question: string | null; options: string[] | null; correct_index: number | null;
+  question: string | null; options: string[] | null; correct_index: number | null; correct_text: string | null;
   points: number; steal_percent: number; time_seconds: number | null;
   revealed: boolean; claimed_by_team: number | null;
 }
@@ -48,6 +48,7 @@ export default function BoardGamePlayPage() {
   const [activeCell, setActiveCell] = useState<Cell | null>(null);
   const [resolving, setResolving] = useState(false);
   const [stealTarget, setStealTarget] = useState<number | null>(null);
+  const [showAnswer, setShowAnswer] = useState(false);
 
   const { data, isLoading } = useQuery<{ game: Game; cells: Cell[] }>({
     queryKey: ["board-game", params.id],
@@ -82,6 +83,7 @@ export default function BoardGamePlayPage() {
     const full = await r.json();
     setActiveCell(full);
     setStealTarget(null);
+    setShowAnswer(false);
     qc.invalidateQueries({ queryKey: ["board-game", params.id] });
   };
 
@@ -208,16 +210,32 @@ export default function BoardGamePlayPage() {
               {activeCell.type === "question" && (
                 <div className="space-y-4">
                   <p className="font-bold text-lg leading-snug">{activeCell.question}</p>
-                  <div className="grid gap-2">
-                    {activeCell.options?.map((opt, oi) => (
-                      <div key={oi} className={`px-3 py-2.5 rounded-lg border text-sm font-medium flex items-center justify-between ${
-                        oi === activeCell.correct_index ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 font-bold" : "border-border"
-                      }`}>
-                        <span>{String.fromCharCode(65 + oi)}) {opt}</span>
-                        {oi === activeCell.correct_index && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+
+                  {activeCell.options && activeCell.options.some(o => o.trim()) ? (
+                    <div className="grid gap-2">
+                      {activeCell.options.map((opt, oi) => (
+                        <div key={oi} className={`px-3 py-2.5 rounded-lg border text-sm font-medium flex items-center justify-between ${
+                          showAnswer && oi === activeCell.correct_index ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 font-bold" : "border-border"
+                        }`}>
+                          <span>{String.fromCharCode(65 + oi)}) {opt}</span>
+                          {showAnswer && oi === activeCell.correct_index && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    showAnswer && activeCell.correct_text && (
+                      <div className="px-3 py-2.5 rounded-lg border border-emerald-500 bg-emerald-500/10 text-emerald-600 font-bold text-sm">
+                        To'g'ri javob: {activeCell.correct_text}
                       </div>
-                    ))}
-                  </div>
+                    )
+                  )}
+
+                  {!showAnswer && (
+                    <Button variant="outline" className="w-full gap-1.5" onClick={() => setShowAnswer(true)}>
+                      <Eye className="w-4 h-4" /> Javobni ko'rsatish
+                    </Button>
+                  )}
+
                   <p className="text-xs text-muted-foreground text-center">To'g'ri javob berilsa +{activeCell.points} HP beriladi</p>
                   <div className="flex gap-2">
                     <Button className="flex-1 gap-1.5 bg-emerald-600 hover:bg-emerald-700 font-bold" onClick={() => resolve("correct")} disabled={resolving}>
