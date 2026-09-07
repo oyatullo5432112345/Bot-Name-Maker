@@ -14,6 +14,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -30,6 +31,13 @@ const DAYS = [
   { id: 5, name: "Juma" },
   { id: 6, name: "Shanba" },
 ];
+
+// Matndagi kun nomini (turli yozilishlarda) DAYS ro'yxatidagi id'ga moslaydi.
+function matchDay(raw: string): number | null {
+  const norm = raw.trim().toLowerCase().replace(/'/g, "");
+  const found = DAYS.find(d => d.name.toLowerCase().replace(/'/g, "").startsWith(norm) || norm.startsWith(d.name.toLowerCase().replace(/'/g, "")));
+  return found ? found.id : null;
+}
 
 const PERIOD_TIMES: Record<number, string> = {
   1: "08:00–08:45", 2: "08:55–09:40", 3: "09:50–10:35",
@@ -260,6 +268,11 @@ export default function DarsJadvaliPage() {
     unmatched: { row: { class_name: string; subject: string }; reason: string }[];
   } | null>(null);
 
+  // Matndan bir vaqtda (butun hafta uchun) jadval kiritish
+  const [textImportOpen, setTextImportOpen] = useState(false);
+  const [scheduleText, setScheduleText] = useState("");
+  const [textImporting, setTextImporting] = useState(false);
+
   useEffect(() => {
     void (async () => {
       const res = await fetch(`${API_BASE}/staff`, { headers: authHeaders() });
@@ -401,6 +414,61 @@ export default function DarsJadvaliPage() {
     } catch { /* ignore */ }
   };
 
+  // "Kun | Dars raqami | Fan | O'qituvchi" formatidagi matnni tanlangan sinf
+  // uchun bir vaqtda ko'p qatorli jadvalga aylantiradi. O'qituvchi ustuni
+  // ixtiyoriy — yozilgan ism xodimlar ro'yxati bilan (mos kelgan qismi
+  // bo'yicha) avtomatik solishtiriladi.
+  const handleTextImport = async () => {
+    if (!selectedClassId || !scheduleText.trim()) return;
+    setTextImporting(true);
+    let saved = 0;
+    const failed: string[] = [];
+
+    const lines = scheduleText.split("\n").map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      const parts = line.split("|").map(p => p.trim());
+      const dayRaw = parts[0] ?? "";
+      const periodRaw = parts[1] ?? "";
+      const subject = parts[2] ?? "";
+      const teacherRaw = (parts[3] ?? "").toLowerCase();
+
+      const day_of_week = matchDay(dayRaw);
+      const period = Number(periodRaw);
+
+      if (!day_of_week || !period || period < 1 || period > 8 || !subject) {
+        failed.push(line);
+        continue;
+      }
+
+      const teacher_id = teacherRaw
+        ? staff.find(s => s.full_name.toLowerCase().includes(teacherRaw) || teacherRaw.includes(s.full_name.toLowerCase()))?.id ?? null
+        : null;
+
+      try {
+        const res = await fetch(`${API_BASE}/timetable`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ class_id: selectedClassId, day_of_week, period, subject, teacher_id }),
+        });
+        if (res.ok) saved++;
+        else failed.push(line);
+      } catch {
+        failed.push(line);
+      }
+    }
+
+    setTextImporting(false);
+    setTextImportOpen(false);
+    setScheduleText("");
+    void loadTimetable(selectedClassId);
+
+    if (failed.length === 0) {
+      toast({ title: "Muvaffaqiyatli", description: `${saved} ta dars jadvalga qo'shildi` });
+    } else {
+      toast({ variant: "destructive", title: `${saved} ta qo'shildi, ${failed.length} ta o'tmadi`, description: failed.slice(0, 3).join(" | ") });
+    }
+  };
+
   const usedPeriods = new Set(
     timetable.filter(e => e.day_of_week === selectedDay && (!editEntry || e.id !== editEntry.id))
       .map(e => e.period)
@@ -436,10 +504,16 @@ export default function DarsJadvaliPage() {
         </div>
 
         {selectedClassId && isEditor && (
-          <Button variant="outline" onClick={openAdd}>
-            <Pencil className="w-4 h-4 mr-2" />
-            Bitta darsni qo'lda tuzatish
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={openAdd}>
+              <Pencil className="w-4 h-4 mr-2" />
+              Bitta darsni qo'lda tuzatish
+            </Button>
+            <Button variant="outline" onClick={() => setTextImportOpen(true)}>
+              <Upload className="w-4 h-4 mr-2" />
+              Matndan yuklash
+            </Button>
+          </div>
         )}
       </div>
 
@@ -631,6 +705,35 @@ export default function DarsJadvaliPage() {
             <Button onClick={handleSave} disabled={saving || !formSubject.trim() || (!editEntry && !formPeriod)}>
               {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Saqlash
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={textImportOpen} onOpenChange={setTextImportOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedClassName} — Matndan jadval yuklash</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Har bir darsni yangi qatorga yozing</Label>
+            <Textarea
+              placeholder={"Dushanba | 1 | Matematika | Aliyeva Gulnora\nDushanba | 2 | Ona tili\nSeshanba | 1 | Tarix | Karimov Bobur"}
+              rows={8}
+              value={scheduleText}
+              onChange={e => setScheduleText(e.target.value)}
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Format: <span className="font-mono">Kun | Dars raqami | Fan | O'qituvchi</span> — o'qituvchi ixtiyoriy,
+              yozgan ismingiz xodimlar ro'yxati bilan avtomatik solishtiriladi. Band bo'lgan soat bo'lsa, eskisi yangisi bilan almashadi.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTextImportOpen(false)}>Bekor qilish</Button>
+            <Button onClick={handleTextImport} disabled={textImporting || !scheduleText.trim()}>
+              {textImporting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Jadvalga qo'shish
             </Button>
           </DialogFooter>
         </DialogContent>
