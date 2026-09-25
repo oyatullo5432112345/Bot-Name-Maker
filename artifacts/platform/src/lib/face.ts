@@ -1,6 +1,10 @@
 // Face ID — brauzerda yuzni aniqlash va tanish (@vladmandic/face-api, CDN orqali).
-// Kutubxona va modellar faqat Face ID sahifalari ochilganda yuklanadi (~7 MB, keyin kesh).
+// Kutubxona va modellar faqat Face ID sahifalari ochilganda yuklanadi (~12 MB, keyin kesh).
 // Rasm serverga YUBORILMAYDI — faqat 128 sonli yuz izi (descriptor).
+//
+// Ikki xil yuz topuvchi:
+//  • "ssd"  — SSD MobileNet: bir kadrda bir nechta yuz, yon tomondan (profil) va uzoqdan ham topadi
+//  • "tiny" — Tiny detector: juda tez, sekin telefonlar uchun zaxira
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -46,7 +50,7 @@ function loadScript(src: string): Promise<void> {
   });
 }
 
-/** face-api va 3 ta modelni yuklaydi (bir marta) */
+/** face-api va modellarni yuklaydi (bir marta, parallel) */
 export function loadFaceApi(onProgress?: (msg: string) => void): Promise<any> {
   if (loading) return loading;
   loading = (async () => {
@@ -60,12 +64,19 @@ export function loadFaceApi(onProgress?: (msg: string) => void): Promise<any> {
     } catch {
       /* WebGL bo'lmasa — standart backend */
     }
-    onProgress?.("Yuzni aniqlash modeli…");
-    await faceapi.nets.tinyFaceDetector.load(MODEL_URL);
-    onProgress?.("Yuz nuqtalari modeli…");
-    await faceapi.nets.faceLandmark68Net.load(MODEL_URL);
-    onProgress?.("Yuzni tanish modeli (~6 MB)…");
-    await faceapi.nets.faceRecognitionNet.load(MODEL_URL);
+    onProgress?.("Modellar yuklanmoqda (~12 MB, bir marta)…");
+    let done = 0;
+    const step = (name: string) => () => {
+      done++;
+      onProgress?.(`Modellar: ${done}/4 · ${name}`);
+    };
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.load(MODEL_URL).then(step("tez aniqlash")),
+      faceapi.nets.faceLandmark68Net.load(MODEL_URL).then(step("yuz nuqtalari")),
+      faceapi.nets.faceRecognitionNet.load(MODEL_URL).then(step("yuzni tanish")),
+      // SSD bo'lmasa ham ishlaymiz (Tiny bilan) — xatoni yutamiz
+      faceapi.nets.ssdMobilenetv1.load(MODEL_URL).then(step("ko'p yuz / profil"), () => step("ko'p yuz — o'tkazib yuborildi")()),
+    ]);
     onProgress?.("Tayyor");
     return faceapi;
   })().catch((e) => {
@@ -75,21 +86,28 @@ export function loadFaceApi(onProgress?: (msg: string) => void): Promise<any> {
   return loading;
 }
 
+export type Detector = "ssd" | "tiny";
+
+export function hasSsd(faceapi: any): boolean {
+  return !!faceapi?.nets?.ssdMobilenetv1?.isLoaded;
+}
+
 /**
- * "Isitish": birinchi aniqlash WebGL shaderlarini kompilyatsiya qiladi (1–3 soniya).
+ * "Isitish": birinchi aniqlash WebGL shaderlarini kompilyatsiya qiladi (1–4 soniya).
  * Buni kiosk ochilganda bo'sh kadrlarda oldindan qilamiz — birinchi o'quvchi kutmaydi.
  */
 export async function warmup(faceapi: any): Promise<void> {
   try {
     const c = document.createElement("canvas");
-    c.width = 224;
-    c.height = 224;
+    c.width = 320;
+    c.height = 240;
     const ctx = c.getContext("2d");
     if (ctx) {
       ctx.fillStyle = "#777";
-      ctx.fillRect(0, 0, 224, 224);
+      ctx.fillRect(0, 0, 320, 240);
     }
-    await faceapi.detectSingleFace(c, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }));
+    await faceapi.detectAllFaces(c, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 }));
+    if (hasSsd(faceapi)) await faceapi.detectAllFaces(c, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }));
     const f = document.createElement("canvas");
     f.width = 150;
     f.height = 150;
@@ -100,18 +118,79 @@ export async function warmup(faceapi: any): Promise<void> {
   }
 }
 
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface FaceResult {
   descriptor: Float32Array;
   score: number;
-  box: { x: number; y: number; width: number; height: number };
+  box: Box;
+  /** Boshning burilishi: 0 — to'g'ri, ±0.3 ≈ 30°, ±0.6 va undan ko'p — profil */
+  yaw: number;
+  /** Bosh egilishi: taxminan 0.45 — to'g'ri, kichik — yuqoriga, katta — pastga */
+  pitch: number;
 }
 
-/** Kadrdagi eng aniq (bitta) yuz: joylashuvi + 128 sonli izi */
-export async function detectFace(faceapi: any, input: HTMLVideoElement, inputSize = 320): Promise<FaceResult | null> {
-  const opts = new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.5 });
-  const r = await faceapi.detectSingleFace(input, opts).withFaceLandmarks().withFaceDescriptor();
-  if (!r) return null;
-  return { descriptor: r.descriptor, score: r.detection.score, box: r.detection.box };
+type Pt = { x: number; y: number };
+
+/** 68 nuqtadan boshning burilishi (yaw) va egilishini (pitch) taxminlash */
+export function headPose(points: Pt[]): { yaw: number; pitch: number } {
+  const nose = points[30];
+  const jl = points[0];
+  const jr = points[16];
+  const el = points[36];
+  const er = points[45];
+  const chin = points[8];
+  if (!nose || !jl || !jr || !el || !er || !chin) return { yaw: 0, pitch: 0.45 };
+  const dl = Math.hypot(nose.x - jl.x, nose.y - jl.y);
+  const dr = Math.hypot(nose.x - jr.x, nose.y - jr.y);
+  const yaw = dl + dr > 0 ? (dl - dr) / (dl + dr) : 0;
+  const eyeY = (el.y + er.y) / 2;
+  const span = chin.y - eyeY;
+  const pitch = span > 0 ? (nose.y - eyeY) / span : 0.45;
+  return { yaw, pitch };
+}
+
+/**
+ * Kadrdagi BARCHA yuzlar (kattasidan kichigiga): joylashuv, 128 sonli iz, bosh holati.
+ * SSD — profil va bir nechta odam uchun; Tiny — tez zaxira.
+ */
+export async function detectFaces(
+  faceapi: any,
+  input: HTMLVideoElement | HTMLCanvasElement,
+  detector: Detector = "ssd",
+  opts: { inputSize?: number; minScore?: number; maxFaces?: number } = {}
+): Promise<FaceResult[]> {
+  const maxFaces = opts.maxFaces ?? 6;
+  const useSsd = detector === "ssd" && hasSsd(faceapi);
+  const o = useSsd
+    ? new faceapi.SsdMobilenetv1Options({ minConfidence: opts.minScore ?? 0.45, maxResults: maxFaces })
+    : new faceapi.TinyFaceDetectorOptions({ inputSize: opts.inputSize ?? 416, scoreThreshold: opts.minScore ?? 0.45 });
+  const rs: any[] = await faceapi.detectAllFaces(input, o).withFaceLandmarks().withFaceDescriptors();
+  return rs
+    .map((r) => {
+      const b = r.detection.box;
+      const pose = headPose(r.landmarks?.positions ?? []);
+      return {
+        descriptor: r.descriptor as Float32Array,
+        score: r.detection.score as number,
+        box: { x: b.x, y: b.y, width: b.width, height: b.height },
+        yaw: pose.yaw,
+        pitch: pose.pitch,
+      };
+    })
+    .sort((a, b) => b.box.width - a.box.width)
+    .slice(0, maxFaces);
+}
+
+/** Kadrdagi eng katta (bitta) yuz — ro'yxatga olish uchun */
+export async function detectFace(faceapi: any, input: HTMLVideoElement, inputSize = 416, detector: Detector = "tiny"): Promise<FaceResult | null> {
+  const all = await detectFaces(faceapi, input, detector, { inputSize, maxFaces: 3, minScore: 0.5 });
+  return all[0] ?? null;
 }
 
 export function distance(a: ArrayLike<number>, b: ArrayLike<number>): number {
@@ -133,7 +212,7 @@ export interface Person {
   left: string | null; // bugun ketgan vaqti
 }
 
-/** Eng yaqin 2 ta odamni topadi (ishonch uchun farqni ham tekshiramiz) */
+/** Eng yaqin 2 ta odamni topadi (ishonch uchun farqni ham tekshiramiz) — oddiy variant */
 export function bestMatches(desc: Float32Array, people: Person[]): { best: { p: Person; d: number } | null; second: number } {
   let best: { p: Person; d: number } | null = null;
   let second = Infinity;
@@ -153,16 +232,85 @@ export function bestMatches(desc: Float32Array, people: Person[]): { best: { p: 
   return { best, second };
 }
 
+// ─── Tez qidiruv: hamma yuz izlari bitta Float32Array da (1000+ o'quvchi uchun ham ~1 ms) ───
+
+export interface FaceIndex<P extends Person = Person> {
+  people: P[];
+  mat: Float32Array; // namunalar ketma-ket: [n × 128]
+  start: Int32Array; // har bir odamning birinchi namunasi
+  end: Int32Array; // … oxirgisidan keyingi
+}
+
+export function buildIndex<P extends Person>(people: P[]): FaceIndex<P> {
+  let n = 0;
+  for (const p of people) for (const d of p.d) if (d?.length === 128) n++;
+  const mat = new Float32Array(n * 128);
+  const start = new Int32Array(people.length);
+  const end = new Int32Array(people.length);
+  let k = 0;
+  people.forEach((p, i) => {
+    start[i] = k;
+    for (const d of p.d) {
+      if (d?.length !== 128) continue;
+      mat.set(d, k * 128);
+      k++;
+    }
+    end[i] = k;
+  });
+  return { people, mat, start, end };
+}
+
+/** Eng yaqin odam va ikkinchi eng yaqin (boshqa) odamgacha masofa */
+export function matchIndex<P extends Person>(desc: ArrayLike<number>, idx: FaceIndex<P>): { best: { p: P; d: number } | null; second: number } {
+  const { mat, start, end, people } = idx;
+  let bi = -1;
+  let bd = Infinity; // kvadrat masofa
+  let sd = Infinity;
+  for (let i = 0; i < people.length; i++) {
+    let m = Infinity;
+    for (let k = start[i]!; k < end[i]!; k++) {
+      const off = k * 128;
+      const bound = m < sd ? m : sd; // bundan uzoq bo'lsa — natijaga ta'sir qilmaydi
+      let s = 0;
+      for (let j = 0; j < 128; j++) {
+        const x = (desc[j] as number) - mat[off + j]!;
+        s += x * x;
+        if (s >= bound) break; // bu namuna yaqinroq emas — to'xtaymiz
+      }
+      if (s < m && s < bound) m = s;
+    }
+    if (m < bd) {
+      sd = bd;
+      bd = m;
+      bi = i;
+    } else if (m < sd) {
+      sd = m;
+    }
+  }
+  return bi < 0 ? { best: null, second: Infinity } : { best: { p: people[bi]!, d: Math.sqrt(bd) }, second: Math.sqrt(sd) };
+}
+
 // ─── Kamera ─────────────────────────────────────────────────────────────────
 
-export async function startCamera(video: HTMLVideoElement, facing: "user" | "environment"): Promise<MediaStream> {
+/**
+ * hi = true (kiosk): 1280×720 va 60 kadr/s gacha — uzoqdagi yuzlar aniqroq,
+ * tez harakatda surat kamroq "xiralashadi" (qisqa ekspozitsiya).
+ */
+export async function startCamera(video: HTMLVideoElement, facing: "user" | "environment", hi = false): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error("Bu brauzer kamerani qo'llab-quvvatlamaydi. Chrome yoki Safari'da oching (https).");
   }
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
-  });
+  const want: MediaTrackConstraints = hi
+    ? { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }
+    : { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } };
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: want });
+  } catch (e) {
+    if ((e as Error).name === "NotAllowedError") throw e;
+    // Ba'zi eski qurilmalar talabni qabul qilmaydi — oddiy rejim
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: facing } });
+  }
   video.srcObject = stream;
   video.muted = true;
   video.playsInline = true;
@@ -177,12 +325,15 @@ export function stopCamera(stream: MediaStream | null): void {
 // ─── Ovoz (fayl kerak emas) ─────────────────────────────────────────────────
 
 let audioCtx: AudioContext | null = null;
+let lastBeep = 0;
 export function beep(kind: "ok" | "late" | "error" | "again"): void {
   try {
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AC) return;
     audioCtx ??= new AC();
     const ctx = audioCtx;
+    // Bir vaqtda bir nechta o'quvchi tanilsa — ovozlar ustma-ust tushmasin
+    const offset = Math.max(0, lastBeep - ctx.currentTime);
     const tones: Record<typeof kind, number[]> = {
       ok: [880, 1320],
       late: [660, 520],
@@ -194,7 +345,7 @@ export function beep(kind: "ok" | "late" | "error" | "again"): void {
       const g = ctx.createGain();
       o.type = "sine";
       o.frequency.value = f;
-      const t = ctx.currentTime + i * 0.13;
+      const t = ctx.currentTime + offset + i * 0.13;
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
@@ -202,6 +353,7 @@ export function beep(kind: "ok" | "late" | "error" | "again"): void {
       o.start(t);
       o.stop(t + 0.13);
     });
+    lastBeep = ctx.currentTime + offset + tones[kind].length * 0.13;
   } catch {
     /* ovozsiz davom etamiz */
   }

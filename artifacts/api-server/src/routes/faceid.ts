@@ -286,8 +286,8 @@ router.post("/faceid/enroll", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Ota-ona roziligi belgilanmagan — yuz ma'lumoti saqlanmaydi" });
     return;
   }
-  if (!Array.isArray(descriptors) || descriptors.length < 1 || descriptors.length > 5 || !descriptors.every(isDescriptor)) {
-    res.status(400).json({ error: "Yuz namunalari noto'g'ri (1–5 ta, har biri 128 son)" });
+  if (!Array.isArray(descriptors) || descriptors.length < 1 || descriptors.length > 8 || !descriptors.every(isDescriptor)) {
+    res.status(400).json({ error: "Yuz namunalari noto'g'ri (1–8 ta, har biri 128 son)" });
     return;
   }
   const student = await queryOne<{ full_name: string; class_name: string }>(
@@ -297,17 +297,24 @@ router.post("/faceid/enroll", async (req, res): Promise<void> => {
   if (!student) { res.status(404).json({ error: "O'quvchi topilmadi" }); return; }
   if (!canTouchClass(u, student.class_name)) { res.status(403).json({ error: "Bu sinf sizga biriktirilmagan" }); return; }
 
-  // Namunalarning o'zi bir-biriga mosmi (kadrda boshqa odam bo'lib qolmaganmi)
+  // Namunalarning o'zi bir-biriga mosmi (kadrda boshqa odam bo'lib qolmaganmi).
+  // Namunalar turli burchakdan (to'g'ri → yon) olinadi, shuning uchun "zanjir" tekshiruvi:
+  // har bir yangi namuna oldingilaridan biriga yaqin, va to'g'ri qarangan namunadan juda uzoq emas.
   const ds = descriptors as number[][];
   for (let i = 1; i < ds.length; i++) {
-    if (dist(ds[0]!, ds[i]!) > 0.6) {
+    let near = Infinity;
+    for (let j = 0; j < i; j++) near = Math.min(near, dist(ds[j]!, ds[i]!));
+    if (near > 0.65 || dist(ds[0]!, ds[i]!) > 0.9) {
       res.status(422).json({ error: "Namunalar bir-biriga o'xshamadi — kadrda faqat bitta o'quvchi bo'lsin va qayta urinib ko'ring" });
       return;
     }
   }
 
-  // Boshqa o'quvchiga juda o'xshashmi (xato odamni ro'yxatga olish / egizaklar)
+  // Boshqa o'quvchiga juda o'xshashmi (xato odamni ro'yxatga olish / egizaklar).
+  // Faqat to'g'ri va biroz burilgan (birinchi 3 ta) namunalar solishtiriladi — yon namunalar
+  // har xil odamlarda ham bir-biriga yaqinroq bo'ladi va keraksiz ogohlantirish beradi.
   if (!force) {
+    const front = ds.slice(0, 3);
     const others = await query<{ student_login: string; descriptors: number[][]; full_name: string; class_name: string }>(
       `SELECT fp.student_login, fp.descriptors, u.full_name, u.class_name
          FROM face_profiles fp JOIN users u ON u.login = fp.student_login
@@ -316,9 +323,9 @@ router.post("/faceid/enroll", async (req, res): Promise<void> => {
     );
     let best: { name: string; class_name: string; d: number } | null = null;
     for (const o of others) {
-      for (const od of o.descriptors ?? []) {
+      for (const od of (o.descriptors ?? []).slice(0, 3)) {
         if (!isDescriptor(od)) continue;
-        for (const d of ds) {
+        for (const d of front) {
           const v = dist(d, od);
           if (!best || v < best.d) best = { name: o.full_name, class_name: o.class_name, d: v };
         }

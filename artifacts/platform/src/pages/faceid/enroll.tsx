@@ -1,5 +1,5 @@
 // Face ID — o'quvchilar yuzini ro'yxatga olish (sinf rahbari / admin).
-// Kamera 3 ta namuna oladi → 128 sonli yuz izlari serverga yuboriladi. Rasm saqlanmaydi.
+// Kamera 7 ta burchakdan namuna oladi → 128 sonli yuz izlari serverga yuboriladi. Rasm saqlanmaydi.
 
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
@@ -12,24 +12,40 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Camera, CheckCircle2, Loader2, ScanFace, ShieldCheck, SwitchCamera, Trash2, X } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
-import { api, beep, detectFace, loadFaceApi, startCamera, stopCamera } from "@/lib/face";
+import { api, beep, detectFaces, distance, hasSsd, loadFaceApi, startCamera, stopCamera, type FaceResult } from "@/lib/face";
 
 interface ClassRow { class_name: string; total: number; enrolled: number }
 interface StudentRow { login: string; full_name: string; enrolled: boolean; samples: number; updated_at: string | null }
 
-const SAMPLES = 3;
-const HINTS = ["To'g'ri kameraga qarang", "Boshni biroz chapga buring", "Boshni biroz o'ngga buring"];
+// 7 ta burchak: to'g'ri, ikki tomonga biroz, ikki tomonga ko'proq (yarim profil), yuqori, past.
+// Shunda kioskda yon tomondan (~45° gacha) va boshini egib o'tsa ham taniydi.
+// Chap/o'ng kamera tomoniga qarab almashishi mumkin — shuning uchun "qaysi tomonga" emas, "farq" tekshiriladi.
+interface PoseCtx { yaw0: number; pitch0: number; side: number } // side: 1-burilish ishorasi (+1/−1)
+const POSES: { hint: string; ok: (f: FaceResult, c: PoseCtx) => boolean }[] = [
+  { hint: "To'g'ri kameraga qarang", ok: (f) => Math.abs(f.yaw) < 0.15 },
+  { hint: "Boshni biroz chapga buring", ok: (f, c) => Math.abs(f.yaw - c.yaw0) >= 0.12 },
+  { hint: "Endi biroz o'ngga buring", ok: (f, c) => (f.yaw - c.yaw0) * c.side <= -0.12 },
+  { hint: "Chapga ko'proq buring (yarim yon)", ok: (f, c) => (f.yaw - c.yaw0) * c.side >= 0.25 },
+  { hint: "O'ngga ko'proq buring (yarim yon)", ok: (f, c) => (f.yaw - c.yaw0) * c.side <= -0.25 },
+  { hint: "Biroz yuqoriga qarang", ok: (f, c) => f.pitch - c.pitch0 <= -0.04 },
+  { hint: "Biroz pastga qarang", ok: (f, c) => f.pitch - c.pitch0 >= 0.04 },
+];
+const SAMPLES = POSES.length;
+const POSE_WAIT_MS = 3000; // shu vaqt ichida kerakli holat bo'lmasa — bor holatni olamiz (qotib qolmasin)
+const CHAIN_MAX = 0.62; // yangi namuna oldingilaridan biriga shunchalik yaqin bo'lishi kerak (o'sha odam)
 
 function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onClose: () => void; onSaved: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const runningRef = useRef(false);
   const samplesRef = useRef<number[][]>([]);
+  const poseCtxRef = useRef<PoseCtx>({ yaw0: 0, pitch0: 0.45, side: 1 });
+  const poseStartRef = useRef(0);
   const [consent, setConsent] = useState(false);
   const [stage, setStage] = useState<"consent" | "loading" | "capture" | "saving" | "similar" | "error">("consent");
   const [progress, setProgress] = useState("");
   const [count, setCount] = useState(0);
-  const [hint, setHint] = useState(HINTS[0]!);
+  const [hint, setHint] = useState(POSES[0]!.hint);
   const [error, setError] = useState("");
   const [similar, setSimilar] = useState<{ name: string; class_name: string } | null>(null);
   const [facing, setFacing] = useState<"user" | "environment">("environment");
@@ -65,28 +81,55 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
     const video = videoRef.current;
     if (!runningRef.current || !video) return;
     try {
-      const face = await detectFace(fa, video, 416);
-      const big = face && face.box.width >= video.videoWidth * 0.22;
-      if (face && face.score >= 0.75 && big) {
+      const n = samplesRef.current.length;
+      const pose = POSES[n]!;
+      const faces = await detectFaces(fa, video, hasSsd(fa) ? "ssd" : "tiny", { inputSize: 416, maxFaces: 3, minScore: 0.5 });
+      const face = faces[0];
+      const big = !!face && face.box.width >= video.videoWidth * 0.22;
+      const crowd = !!face && faces.length > 1 && faces[1]!.box.width > face.box.width * 0.6;
+      const good = !!face && big && !crowd && face.score >= (n === 0 ? 0.75 : 0.55);
+      // Shu odammi? (oldingi namunalardan biriga yaqin bo'lishi kerak)
+      const same =
+        !!face &&
+        (n === 0 ||
+          (samplesRef.current.some((s) => distance(face.descriptor, s) <= CHAIN_MAX) &&
+            distance(face.descriptor, samplesRef.current[0]!) <= 0.85));
+      const waited = Date.now() - poseStartRef.current > POSE_WAIT_MS;
+      const posed = !!face && (pose.ok(face, poseCtxRef.current) || waited);
+
+      if (face && good && same && posed) {
+        if (n === 0) poseCtxRef.current = { yaw0: face.yaw, pitch0: face.pitch, side: 1 };
+        if (n === 1) poseCtxRef.current.side = face.yaw - poseCtxRef.current.yaw0 >= 0 ? 1 : -1;
         samplesRef.current.push(Array.from(face.descriptor));
-        const n = samplesRef.current.length;
-        setCount(n);
+        const k = samplesRef.current.length;
+        setCount(k);
         beep("again");
-        if (n >= SAMPLES) {
+        if (k >= SAMPLES) {
           runningRef.current = false;
           stopCamera(streamRef.current);
           await save();
           return;
         }
-        setHint(HINTS[n] ?? HINTS[0]!);
-        setTimeout(() => void captureLoop(fa), 900); // namunalar orasida pauza — har xil burchak
+        setHint(POSES[k]!.hint);
+        poseStartRef.current = Date.now() + 500;
+        setTimeout(() => void captureLoop(fa), 500); // namunalar orasida qisqa pauza
         return;
       }
-      setHint(!face ? "Yuz ko'rinmayapti — kamerani yuzga qarating" : !big ? "Yaqinroq keling" : HINTS[samplesRef.current.length] ?? HINTS[0]!);
+      setHint(
+        !face
+          ? "Yuz ko'rinmayapti — kamerani yuzga qarating"
+          : crowd
+            ? "Kadrda faqat bitta o'quvchi bo'lsin"
+            : !big
+              ? "Yaqinroq keling"
+              : !same
+                ? "Boshni kamroq buring (kadrda faqat shu o'quvchi)"
+                : pose.hint
+      );
     } catch {
       /* keyingi kadr */
     }
-    setTimeout(() => void captureLoop(fa), 250);
+    setTimeout(() => void captureLoop(fa), 150);
   };
 
   const begin = async (face = facing) => {
@@ -97,7 +140,9 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
       streamRef.current = await startCamera(videoRef.current!, face);
       samplesRef.current = [];
       setCount(0);
-      setHint(HINTS[0]!);
+      setHint(POSES[0]!.hint);
+      poseCtxRef.current = { yaw0: 0, pitch0: 0.45, side: 1 };
+      poseStartRef.current = Date.now();
       setStage("capture");
       runningRef.current = true;
       void captureLoop(fa);
@@ -252,7 +297,7 @@ export default function FaceEnrollPage() {
         {isManager && <Link href="/faceid"><Button variant="ghost" size="icon"><ArrowLeft className="w-5 h-5" /></Button></Link>}
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2"><ScanFace className="w-5 h-5 text-primary" /> Yuzlarni ro'yxatga olish</h1>
-          <p className="text-sm text-muted-foreground">Har bir o'quvchi uchun bir marta, ~10 soniya</p>
+          <p className="text-sm text-muted-foreground">Har bir o'quvchi uchun bir marta, ~15 soniya (7 burchak)</p>
         </div>
       </div>
 
@@ -297,7 +342,12 @@ export default function FaceEnrollPage() {
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate">{s.full_name}</div>
               {s.enrolled ? (
-                <Badge variant="secondary" className="mt-0.5 text-[11px]">Ro'yxatda · {s.samples} namuna</Badge>
+                <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                  <Badge variant="secondary" className="text-[11px]">Ro'yxatda · {s.samples} namuna</Badge>
+                  {s.samples < SAMPLES && (
+                    <span className="text-[11px] text-amber-600 dark:text-amber-400">yon tomondan tanishi uchun qayta oling</span>
+                  )}
+                </div>
               ) : (
                 <div className="text-xs text-muted-foreground">Ro'yxatga olinmagan</div>
               )}

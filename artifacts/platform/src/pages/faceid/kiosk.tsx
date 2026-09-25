@@ -1,14 +1,21 @@
 // Face ID kiosk — maktab eshigiga qo'yiladigan telefon/planshet.
-// Bitta qurilma KELDI va KETDI ni o'zi ajratadi (AVTO rejim) yoki qo'lda tanlanadi.
-// Tezlik uchun: natija ekranga DARHOL chiqadi, server esa fonda xabardor qilinadi.
+// • Bir kadrda bir nechta o'quvchi (6 tagacha) bir vaqtda tanladi
+// • Tez yurib o'tsa ham: har bir yuz kadrlar orasida kuzatiladi, ovozlar yig'iladi
+// • Yon tomondan (~45° gacha) — SSD topuvchi + ro'yxatga olishdagi 7 burchak
+// • Bitta qurilma KELDI va KETDI ni o'zi ajratadi (AVTO) yoki qo'lda tanlanadi
+// • Natija ekranga DARHOL chiqadi, server fonda xabardor qilinadi
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import {
   ScanFace, CheckCircle2, Clock, XCircle, LogOut, SwitchCamera, WifiOff, Loader2,
-  LogIn, DoorOpen, ArrowDownLeft, ArrowUpRight,
+  LogIn, DoorOpen, ArrowDownLeft, ArrowUpRight, Users, Zap, UserX,
 } from "lucide-react";
-import { api, beep, bestMatches, detectFace, loadFaceApi, startCamera, stopCamera, warmup, type Person } from "@/lib/face";
+import {
+  api, beep, buildIndex, detectFaces, hasSsd, loadFaceApi, startCamera, stopCamera, warmup,
+  type Box, type Detector, type FaceIndex, type FaceResult, type Person,
+} from "@/lib/face";
+import { associate, matchFrame, VoteBook, type Track } from "@/lib/face-track";
 
 interface Settings {
   late_after: string;
@@ -32,13 +39,17 @@ interface Event {
   kind: "in" | "late" | "out" | "early";
 }
 
-type Banner =
-  | { kind: "idle" }
-  | { kind: "closer" }
-  | { kind: "unknown" }
-  | { kind: "in" | "late"; login: string; name: string; cls: string; time: string }
-  | { kind: "out"; login: string; name: string; cls: string; time: string; early?: boolean; end?: string | null }
-  | { kind: "already_in" | "already_out"; login: string; name: string; cls: string; time: string };
+type ToastKind = "in" | "late" | "out" | "early" | "already_in" | "already_out" | "unknown";
+interface Toast {
+  id: number;
+  kind: ToastKind;
+  login: string;
+  name: string;
+  cls: string;
+  time: string;
+  end?: string | null;
+  until: number;
+}
 
 interface ScanReply {
   event: Action;
@@ -50,11 +61,32 @@ interface ScanReply {
   lessons_end?: string | null;
 }
 
+interface DrawItem {
+  box: Box;
+  color: string;
+  text: string;
+}
+
 const QUEUE_KEY = "faceid_queue_v2";
 const MODE_KEY = "faceid_mode";
-const LOOP_GAP_MS = 30; // kadrlar orasidagi pauza (aniqlashning o'zi tezlikni belgilaydi)
-const SAME_PERSON_QUIET_MS = 6000; // bir odam kamera oldida tursa — qayta ko'rsatmaymiz
-const MARGIN = 0.06; // 1-va 2-eng yaqin odam orasidagi minimal farq
+const DET_KEY = "faceid_detector"; // qo'lda tanlangan: "ssd" | "tiny"
+const LOOP_GAP_MS = 10; // kadrlar orasidagi pauza (tezlikni aniqlashning o'zi belgilaydi)
+const MARGIN = 0.06; // 1- va 2-eng yaqin odam orasidagi minimal farq
+const VOTE_WINDOW_MS = 1500; // tasdiqlash uchun ovozlar shu oraliqda yig'iladi
+const TRACK_TTL_MS = 1000; // yuz 1 soniya ko'rinmasa — kuzatuv tugaydi
+const QUIET_MS = 8000; // tanilgan o'quvchi 8 soniya qayta ko'rsatilmaydi
+const QUIET_ALREADY_MS = 15000; // "bugun keldi" kabi eslatmalar — 15 soniya
+const UNKNOWN_AFTER_MS = 1800; // shuncha vaqt tanilmasa — "Tanilmadi"
+const UNKNOWN_GAP_MS = 3000;
+const MAX_TOASTS = 4;
+const SLOW_MS = 320; // SSD kadri bundan sekin bo'lsa — Tez rejimga o'tamiz
+
+const COLORS = {
+  ok: "#34D399",
+  wait: "#22D3EE",
+  unknown: "#F59E0B",
+  small: "#94A3B8",
+};
 
 // O'zbekiston vaqti (qurilma soat mintaqasi noto'g'ri bo'lsa ham)
 function uzClock(withSeconds = false): string {
@@ -90,6 +122,103 @@ function readMode(): Mode {
     return "auto";
   }
 }
+function readDetector(): Detector | null {
+  try {
+    const d = localStorage.getItem(DET_KEY);
+    return d === "ssd" || d === "tiny" ? d : null;
+  } catch {
+    return null;
+  }
+}
+function shortName(n: string): string {
+  return n.split(" ").slice(0, 2).join(" ");
+}
+
+let toastSeq = 0;
+
+// Eski Safari'da ctx.roundRect yo'q — o'zimiz chizamiz
+function pill(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function toastStyle(k: ToastKind): { card: string; head: string; title: (t: Toast) => string } {
+  switch (k) {
+    case "in":
+      return { card: "bg-emerald-500/25 border-emerald-400/60", head: "text-emerald-300", title: () => "KELDI · Xush kelibsiz!" };
+    case "late":
+      return { card: "bg-amber-500/25 border-amber-400/60", head: "text-amber-200", title: () => "KELDI · Kechikdingiz" };
+    case "out":
+      return { card: "bg-sky-500/25 border-sky-400/60", head: "text-sky-300", title: () => "KETDI · Yaxshi boring!" };
+    case "early":
+      return {
+        card: "bg-amber-500/25 border-amber-400/60",
+        head: "text-amber-200",
+        title: (t) => `KETDI · Erta${t.end ? ` (darslar ${t.end} da tugaydi)` : ""}`,
+      };
+    case "already_in":
+      return { card: "bg-[#0D1430]/80 border-white/15", head: "text-slate-300", title: (t) => `Bugun keldi · ${t.time}` };
+    case "already_out":
+      return { card: "bg-[#0D1430]/80 border-white/15", head: "text-slate-300", title: (t) => `Ketgan · ${t.time}` };
+    default:
+      return { card: "bg-red-500/20 border-red-400/50", head: "text-red-200", title: () => "Tanilmadi" };
+  }
+}
+
+function ToastIcon({ k, className }: { k: ToastKind; className: string }) {
+  if (k === "in") return <CheckCircle2 className={className} />;
+  if (k === "late") return <Clock className={className} />;
+  if (k === "out" || k === "early") return <DoorOpen className={className} />;
+  if (k === "unknown") return <UserX className={className} />;
+  return <ScanFace className={className} />;
+}
+
+function ToastCard({ t, compact }: { t: Toast; compact: boolean }) {
+  const s = toastStyle(t.kind);
+  const already = t.kind === "already_in" || t.kind === "already_out";
+  if (compact) {
+    return (
+      <div className={`rounded-2xl border px-4 py-3 backdrop-blur flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-150 ${s.card}`}>
+        <ToastIcon k={t.kind} className={`w-7 h-7 shrink-0 ${s.head}`} />
+        <div className="min-w-0 flex-1">
+          <div className="text-xl sm:text-2xl font-bold truncate">{t.kind === "unknown" ? "Tanilmadi" : t.name}</div>
+          <div className={`text-sm sm:text-base truncate ${s.head}`}>
+            {t.kind === "unknown" ? "To'g'ri qarang yoki navbatchiga murojaat qiling" : already ? `${t.cls} · ${s.title(t)}` : `${s.title(t)} · ${t.cls} · ${t.time}`}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={`rounded-3xl border px-6 py-5 sm:py-7 text-center backdrop-blur animate-in fade-in zoom-in-95 duration-150 ${s.card}`}>
+      {t.kind === "unknown" ? (
+        <>
+          <div className="text-2xl sm:text-3xl font-bold text-red-200">Tanilmadi</div>
+          <div className="mt-1 text-sm sm:text-lg text-slate-300">To'g'ri qarang yoki navbatchi o'qituvchiga murojaat qiling</div>
+        </>
+      ) : already ? (
+        <>
+          <div className="text-2xl sm:text-4xl font-bold">{t.name}</div>
+          <div className="mt-1 text-base sm:text-xl text-slate-300">{t.cls} · {s.title(t)}</div>
+        </>
+      ) : (
+        <>
+          <div className={`flex items-center justify-center gap-3 ${s.head}`}>
+            <ToastIcon k={t.kind} className="w-8 h-8" />
+            <span className="text-lg sm:text-2xl font-semibold">{s.title(t)}</span>
+          </div>
+          <div className="mt-2 text-3xl sm:text-5xl font-bold">{t.name}</div>
+          <div className="mt-2 text-lg sm:text-2xl text-slate-200">{t.cls} · {t.time}</div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function FaceKioskPage() {
   const [, navigate] = useLocation();
@@ -98,29 +227,42 @@ export default function FaceKioskPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const faceapiRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
   const peopleRef = useRef<KPerson[]>([]);
+  const indexRef = useRef<FaceIndex<KPerson>>(buildIndex<KPerson>([]));
   const settingsRef = useRef<Settings>({ late_after: "08:00", notify: true, threshold: 0.48, min_stay: 20 });
   const skewRef = useRef(0); // server soati − qurilma soati
   const startsRef = useRef<Record<string, string>>({}); // sinf → birinchi dars boshlanishi (2 smena uchun)
   const modeRef = useRef<Mode>(readMode());
-  const candRef = useRef<{ login: string; count: number } | null>(null);
-  const unknownSinceRef = useRef<number | null>(null);
-  const lastShownRef = useRef<{ login: string; at: number } | null>(null);
-  const bannerUntilRef = useRef(0);
+  const tracksRef = useRef<Track[]>([]);
+  const votesRef = useRef(new VoteBook(VOTE_WINDOW_MS));
+  const shownUntilRef = useRef(new Map<string, number>()); // login → shu vaqtgacha qayta ko'rsatilmaydi
+  const lastUnknownRef = useRef(0);
+  const hintRef = useRef<"idle" | "closer" | "scan">("idle");
   const runningRef = useRef(false);
   const facingRef = useRef<"user" | "environment">("user");
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
+  const [manualDet] = useState(readDetector);
+  const detRef = useRef<Detector>(manualDet ?? "ssd");
+  const manualDetRef = useRef<boolean>(manualDet !== null);
+  const perfRef = useRef({ ema: 0, frames: 0, shownAt: 0, faces: 0 });
 
   const [phase, setPhase] = useState<"loading" | "ready" | "running" | "error">("loading");
   const [progress, setProgress] = useState("Tayyorlanmoqda…");
   const [error, setError] = useState("");
   const [mode, setModeState] = useState<Mode>(modeRef.current);
   const [facing, setFacing] = useState<"user" | "environment">("user");
-  const [banner, setBanner] = useState<Banner>({ kind: "idle" });
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [hint, setHint] = useState<"idle" | "closer" | "scan">("idle");
   const [events, setEvents] = useState<Event[]>([]);
   const [counts, setCounts] = useState({ arrived: 0, left: 0, enrolled: 0 });
   const [pending, setPending] = useState(readQueue().length);
   const [clock, setClock] = useState(uzClock(true));
   const [online, setOnline] = useState(navigator.onLine);
+  const [perf, setPerf] = useState<{ det: Detector; fps: number; faces: number; auto: boolean }>({
+    det: detRef.current,
+    fps: 0,
+    faces: 0,
+    auto: false,
+  });
 
   const recount = () => {
     const ps = peopleRef.current;
@@ -137,13 +279,42 @@ export default function FaceKioskPage() {
     }
   };
 
+  const setDetector = (d: Detector, manual: boolean) => {
+    detRef.current = d;
+    perfRef.current = { ema: 0, frames: 0, shownAt: 0, faces: perfRef.current.faces };
+    setPerf((p) => ({ ...p, det: d, fps: 0, auto: !manual && d === "tiny" }));
+    if (manual) {
+      manualDetRef.current = true;
+      try {
+        localStorage.setItem(DET_KEY, d);
+      } catch {
+        /* e'tiborsiz */
+      }
+    }
+  };
+
   // ── Yuz izlari va bugungi holat
   const loadPeople = useCallback(async () => {
     const t0 = Date.now();
     const data = await api<{ now: number; settings: Settings; starts?: Record<string, string>; people: KPerson[] }>("/faceid/descriptors");
     startsRef.current = data.starts ?? {};
     skewRef.current = data.now - Math.round((t0 + Date.now()) / 2);
+    // Kiosk ichida belgilangan (hali serverga yetmagan) holatni yo'qotmaymiz
+    const old = new Map(peopleRef.current.map((p) => [p.login, p]));
+    for (const p of data.people) {
+      const o = old.get(p.login);
+      if (!o) continue;
+      if (!p.arrived && o.arrived) {
+        p.arrived = o.arrived;
+        p.arrived_ms = o.arrived_ms;
+      }
+      if (!p.left && o.left) {
+        p.left = o.left;
+        p.left_ms = o.left_ms;
+      }
+    }
     peopleRef.current = data.people;
+    indexRef.current = buildIndex(data.people);
     settingsRef.current = data.settings;
     recount();
   }, []);
@@ -155,6 +326,7 @@ export default function FaceKioskPage() {
         const [fa] = await Promise.all([loadFaceApi((m) => alive && setProgress(m)), loadPeople()]);
         if (alive) setProgress("Tayyorlanmoqda (bir martalik)…");
         await warmup(fa);
+        if (!hasSsd(fa)) setDetector("tiny", false);
         faceapiRef.current = fa;
         if (alive) setPhase("ready");
       } catch (e) {
@@ -180,7 +352,17 @@ export default function FaceKioskPage() {
       stopCamera(streamRef.current);
       void wakeRef.current?.release().catch(() => {});
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadPeople]);
+
+  // ── Muddati o'tgan xabarlarni olib tashlash
+  useEffect(() => {
+    const t = setInterval(() => {
+      const now = Date.now();
+      setToasts((list) => (list.some((x) => x.until <= now) ? list.filter((x) => x.until > now) : list));
+    }, 250);
+    return () => clearInterval(t);
+  }, []);
 
   // ── Internet yo'qligida to'plangan belgilarni qayta yuborish
   useEffect(() => {
@@ -202,46 +384,75 @@ export default function FaceKioskPage() {
     return () => clearInterval(t);
   }, []);
 
-  const showBanner = (b: Banner, ms: number) => {
-    setBanner(b);
-    bannerUntilRef.current = Date.now() + ms;
+  const addToast = (t: Omit<Toast, "id" | "until">, ms: number) => {
+    const until = Date.now() + ms;
+    setToasts((list) =>
+      [{ ...t, id: ++toastSeq, until }, ...list.filter((x) => !(t.login && x.login === t.login))].slice(0, MAX_TOASTS)
+    );
   };
 
   const pushEvent = (e: Omit<Event, "key">) => {
-    setEvents((list) => [{ ...e, key: `${e.name}-${e.time}-${e.kind}-${Date.now()}` }, ...list].slice(0, 14));
+    setEvents((list) => [{ ...e, key: `${e.name}-${e.time}-${e.kind}-${Date.now()}-${Math.random()}` }, ...list].slice(0, 16));
   };
 
-  // ── Yuz ramkasi (video object-cover bo'yicha)
-  const drawBox = (box: { x: number; y: number; width: number; height: number } | null, color: string) => {
+  const setHintOnce = (h: "idle" | "closer" | "scan") => {
+    if (hintRef.current === h) return;
+    hintRef.current = h;
+    setHint(h);
+  };
+
+  // ── Yuz ramkalari va ismlar (video object-cover bo'yicha, oldingi kamerada ko'zgu)
+  const drawFaces = (items: DrawItem[]) => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const cw = canvas.clientWidth;
     const ch = canvas.clientHeight;
-    if (canvas.width !== cw) canvas.width = cw;
-    if (canvas.height !== ch) canvas.height = ch;
+    const W = Math.round(cw * dpr);
+    const H = Math.round(ch * dpr);
+    if (canvas.width !== W) canvas.width = W;
+    if (canvas.height !== H) canvas.height = H;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cw, ch);
-    if (!box || !video.videoWidth) return;
+    if (!video.videoWidth || items.length === 0) return;
     const scale = Math.max(cw / video.videoWidth, ch / video.videoHeight);
     const ox = (cw - video.videoWidth * scale) / 2;
     const oy = (ch - video.videoHeight * scale) / 2;
-    let x = box.x * scale + ox;
-    const y = box.y * scale + oy;
-    const w = box.width * scale;
-    const h = box.height * scale;
-    if (facingRef.current === "user") x = cw - x - w;
-    const c = Math.min(w, h) * 0.22;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 5;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(x, y + c); ctx.lineTo(x, y); ctx.lineTo(x + c, y);
-    ctx.moveTo(x + w - c, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + c);
-    ctx.moveTo(x + w, y + h - c); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - c, y + h);
-    ctx.moveTo(x + c, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - c);
-    ctx.stroke();
+    for (const it of items) {
+      let x = it.box.x * scale + ox;
+      const y = it.box.y * scale + oy;
+      const w = it.box.width * scale;
+      const h = it.box.height * scale;
+      if (facingRef.current === "user") x = cw - x - w;
+      const c = Math.min(w, h) * 0.22;
+      ctx.strokeStyle = it.color;
+      ctx.lineWidth = 4;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(x, y + c); ctx.lineTo(x, y); ctx.lineTo(x + c, y);
+      ctx.moveTo(x + w - c, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + c);
+      ctx.moveTo(x + w, y + h - c); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - c, y + h);
+      ctx.moveTo(x + c, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - c);
+      ctx.stroke();
+      if (it.text) {
+        const fs = Math.max(13, Math.min(22, w * 0.13));
+        ctx.font = `700 ${fs}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+        const tw = ctx.measureText(it.text).width;
+        const ph = fs + 10;
+        const pw = tw + 18;
+        const px = Math.min(Math.max(4, x + w / 2 - pw / 2), cw - pw - 4);
+        const py = Math.max(4, y - ph - 8);
+        ctx.fillStyle = it.color;
+        pill(ctx, px, py, pw, ph, ph / 2);
+        ctx.fill();
+        ctx.fillStyle = "#05070F";
+        ctx.textBaseline = "middle";
+        ctx.fillText(it.text, px + 9, py + ph / 2 + 1);
+      }
+    }
   };
 
   // ── Keldi yoki ketdi? (server bilan bir xil qoida — natijani kutmasdan ko'rsatish uchun)
@@ -257,35 +468,30 @@ export default function FaceKioskPage() {
   };
 
   // ── Tasdiqlangan o'quvchi: darhol ekranga, server — fonda
-  const onRecognized = (p: KPerson, d: number) => {
-    const last = lastShownRef.current;
-    if (last && last.login === p.login && Date.now() - last.at < SAME_PERSON_QUIET_MS) return;
-    lastShownRef.current = { login: p.login, at: Date.now() };
-
+  const onRecognized = (p: KPerson, d: number): Action => {
     const action = decide(p);
     const time = uzClock();
     const base = { login: p.login, name: p.name, cls: p.class_name };
+    const now = Date.now();
 
-    if (action === "already_in") {
-      showBanner({ kind: "already_in", ...base, time: p.arrived ?? time }, 1600);
-      return;
+    if (action === "already_in" || action === "already_out") {
+      shownUntilRef.current.set(p.login, now + QUIET_ALREADY_MS);
+      addToast({ kind: action, ...base, time: (action === "already_in" ? p.arrived : p.left) ?? time }, 1600);
+      return action;
     }
-    if (action === "already_out") {
-      showBanner({ kind: "already_out", ...base, time: p.left ?? time }, 1600);
-      return;
-    }
+    shownUntilRef.current.set(p.login, now + QUIET_MS);
 
     if (action === "in") {
       const late = time > (startsRef.current[p.class_name] ?? settingsRef.current.late_after);
       p.arrived = time;
-      p.arrived_ms = Date.now() + skewRef.current;
-      showBanner({ kind: late ? "late" : "in", ...base, time }, 2200);
+      p.arrived_ms = now + skewRef.current;
+      addToast({ kind: late ? "late" : "in", ...base, time }, 2800);
       beep(late ? "late" : "ok");
       pushEvent({ name: p.name, class_name: p.class_name, time, kind: late ? "late" : "in" });
     } else {
       p.left = time;
-      p.left_ms = Date.now() + skewRef.current;
-      showBanner({ kind: "out", ...base, time }, 2200);
+      p.left_ms = now + skewRef.current;
+      addToast({ kind: "out", ...base, time }, 2800);
       beep("again");
       pushEvent({ name: p.name, class_name: p.class_name, time, kind: "out" });
     }
@@ -302,13 +508,13 @@ export default function FaceKioskPage() {
         // Server aniqlashtirishi: kechikish, erta ketish
         if (r.event === "in") {
           p.arrived = r.time;
-          const k = r.status === "late" ? "late" : "in";
-          setBanner((b) => ((b.kind === "in" || b.kind === "late") && b.login === p.login ? { ...b, kind: k, time: r.time } : b));
+          const k: ToastKind = r.status === "late" ? "late" : "in";
+          setToasts((list) => list.map((t) => (t.login === p.login && (t.kind === "in" || t.kind === "late") ? { ...t, kind: k, time: r.time } : t)));
           setEvents((list) => list.map((e) => (e.name === p.name && (e.kind === "in" || e.kind === "late") ? { ...e, kind: k, time: r.time } : e)));
         } else if (r.event === "out") {
           p.left = r.time;
           if (r.early) {
-            setBanner((b) => (b.kind === "out" && b.login === p.login ? { ...b, early: true, end: r.lessons_end } : b));
+            setToasts((list) => list.map((t) => (t.login === p.login && t.kind === "out" ? { ...t, kind: "early", end: r.lessons_end } : t)));
             setEvents((list) => list.map((e) => (e.name === p.name && e.kind === "out" ? { ...e, kind: "early" } : e)));
           }
         }
@@ -322,6 +528,80 @@ export default function FaceKioskPage() {
           setPending(q.length);
         }
       });
+    return action;
+  };
+
+  // ── Bitta kadrni qayta ishlash: hamma yuzlar bir vaqtda
+  const processFrame = (faces: FaceResult[], video: HTMLVideoElement) => {
+    const now = Date.now();
+    const minFace = Math.max(56, Math.min(video.videoWidth, video.videoHeight) * 0.08);
+    const usable = faces.filter((f) => f.box.width >= minFace);
+    const small = faces.filter((f) => f.box.width < minFace);
+    const { tracks, pairs } = associate(tracksRef.current, usable, now, TRACK_TTL_MS);
+    tracksRef.current = tracks;
+    votesRef.current.prune(now);
+    perfRef.current.faces = faces.length;
+
+    const th = settingsRef.current.threshold;
+    const matches = matchFrame(usable, indexRef.current, th, MARGIN);
+    const items: DrawItem[] = small.map((f) => ({ box: f.box, color: COLORS.small, text: "" }));
+
+    for (const [face, track] of pairs) {
+      const m = matches.find((x) => x.face === face);
+      const p = m?.p ?? null;
+      if (m && p) {
+        track.matched = true;
+        track.logins = track.logins.filter((l) => now - l.t < VOTE_WINDOW_MS);
+        const conflict = track.logins.some((l) => l.login !== p.login);
+        track.logins.push({ login: p.login, t: now });
+        if ((shownUntilRef.current.get(p.login) ?? 0) > now) {
+          items.push({ box: face.box, color: COLORS.ok, text: shortName(p.name) });
+          continue;
+        }
+        if (conflict) {
+          // Shu yuz yaqinda boshqa o'quvchiga ham o'xshadi — shoshilmaymiz
+          items.push({ box: face.box, color: COLORS.wait, text: "…" });
+          continue;
+        }
+        const total = votesRef.current.add(p.login, m.strong ? 2 : 1, now);
+        if (total >= 2) {
+          votesRef.current.clear(p.login);
+          onRecognized(p, m.d);
+          items.push({ box: face.box, color: COLORS.ok, text: shortName(p.name) });
+        } else {
+          items.push({ box: face.box, color: COLORS.wait, text: "…" });
+        }
+      } else {
+        if (!track.matched && !track.unknownShown && track.frames >= 3 && now - track.first > UNKNOWN_AFTER_MS) {
+          track.unknownShown = true;
+          if (now - lastUnknownRef.current > UNKNOWN_GAP_MS) {
+            lastUnknownRef.current = now;
+            addToast({ kind: "unknown", login: "", name: "", cls: "", time: "" }, 1600);
+          }
+        }
+        items.push({ box: face.box, color: COLORS.unknown, text: track.unknownShown ? "Tanilmadi" : "" });
+      }
+    }
+
+    drawFaces(items);
+    setHintOnce(faces.length === 0 ? "idle" : usable.length === 0 ? "closer" : "scan");
+  };
+
+  // ── Tezlikni kuzatish: SSD sekin bo'lsa — avtomatik Tez rejim
+  const trackPerf = (ms: number) => {
+    const pr = perfRef.current;
+    pr.frames++;
+    pr.ema = pr.ema ? pr.ema * 0.85 + ms * 0.15 : ms;
+    if (detRef.current === "ssd" && !manualDetRef.current && pr.frames > 15 && pr.ema > SLOW_MS) {
+      setDetector("tiny", false);
+      return;
+    }
+    const now = Date.now();
+    if (now - pr.shownAt > 1000) {
+      pr.shownAt = now;
+      const fps = Math.max(1, Math.round(1000 / (pr.ema + LOOP_GAP_MS)));
+      setPerf((p) => (p.fps === fps && p.faces === pr.faces && p.det === detRef.current ? p : { ...p, fps, faces: pr.faces, det: detRef.current }));
+    }
   };
 
   // ── Asosiy sikl
@@ -329,48 +609,25 @@ export default function FaceKioskPage() {
     if (!runningRef.current) return;
     const video = videoRef.current;
     const fa = faceapiRef.current;
+    const t0 = performance.now();
+    let worked = false;
     try {
-      if (video && fa && video.readyState >= 2) {
-        const face = await detectFace(fa, video, 224);
-        const now = Date.now();
-        if (!face) {
-          candRef.current = null;
-          unknownSinceRef.current = null;
-          drawBox(null, "");
-          if (now > bannerUntilRef.current) setBanner({ kind: "idle" });
-        } else if (face.box.width < video.videoWidth * 0.14) {
-          candRef.current = null;
-          drawBox(face.box, "#94A3B8");
-          if (now > bannerUntilRef.current) setBanner({ kind: "closer" });
-        } else {
-          const { best, second } = bestMatches(face.descriptor, peopleRef.current);
-          const th = settingsRef.current.threshold;
-          const confident = best && best.d < th && second - best.d > MARGIN;
-          if (confident) {
-            unknownSinceRef.current = null;
-            drawBox(face.box, "#22D3EE");
-            const strong = best.d < th * 0.8; // juda aniq — bitta kadr yetarli
-            const c = candRef.current;
-            const count = c && c.login === best.p.login ? c.count + 1 : 1;
-            candRef.current = { login: best.p.login, count };
-            if (strong || count >= 2) {
-              candRef.current = null;
-              onRecognized(best.p as KPerson, best.d);
-            }
-          } else {
-            candRef.current = null;
-            drawBox(face.box, "#F59E0B");
-            unknownSinceRef.current ??= now;
-            if (now - unknownSinceRef.current > 1500 && now > bannerUntilRef.current) {
-              showBanner({ kind: "unknown" }, 1500);
-              unknownSinceRef.current = now + 1500;
-            }
-          }
+      if (video && fa && video.readyState >= 2 && video.videoWidth) {
+        const det = detRef.current;
+        let faces: FaceResult[];
+        try {
+          faces = await detectFaces(fa, video, det, { inputSize: 416, maxFaces: 6, minScore: det === "ssd" ? 0.4 : 0.45 });
+        } catch (e) {
+          if (det === "ssd") setDetector("tiny", false); // SSD ishlamasa — zaxira
+          throw e;
         }
+        processFrame(faces, video);
+        worked = true;
       }
     } catch {
       /* bitta kadr xatosi — davom etamiz */
     }
+    if (worked) trackPerf(performance.now() - t0);
     setTimeout(() => void loop(), LOOP_GAP_MS);
   };
 
@@ -396,7 +653,8 @@ export default function FaceKioskPage() {
     setFacing(face);
     try {
       stopCamera(streamRef.current);
-      streamRef.current = await startCamera(videoRef.current!, face);
+      streamRef.current = await startCamera(videoRef.current!, face, true);
+      tracksRef.current = [];
       await document.documentElement.requestFullscreen?.().catch(() => {});
       await requestWake();
       beep("again"); // iOS: ovozni foydalanuvchi bosishi bilan "uyg'otamiz"
@@ -417,6 +675,11 @@ export default function FaceKioskPage() {
 
   const switchCamera = async () => {
     await start(facingRef.current === "user" ? "environment" : "user");
+  };
+
+  const toggleDetector = () => {
+    if (!hasSsd(faceapiRef.current)) return;
+    setDetector(detRef.current === "ssd" ? "tiny" : "ssd", true);
   };
 
   const exit = () => {
@@ -440,16 +703,7 @@ export default function FaceKioskPage() {
     </button>
   );
 
-  const bannerStyle =
-    banner.kind === "in"
-      ? "bg-emerald-500/25 border-emerald-400/60"
-      : banner.kind === "late" || (banner.kind === "out" && banner.early)
-        ? "bg-amber-500/25 border-amber-400/60"
-        : banner.kind === "out"
-          ? "bg-sky-500/25 border-sky-400/60"
-          : banner.kind === "unknown"
-            ? "bg-red-500/20 border-red-400/50"
-            : "bg-[#0D1430]/70 border-white/10";
+  const compact = toasts.length > 1;
 
   return (
     <div className="fixed inset-0 bg-[#05070F] text-white overflow-hidden select-none">
@@ -494,17 +748,29 @@ export default function FaceKioskPage() {
             </button>
           </div>
         </div>
-        <div className="flex justify-center">
+        <div className="flex flex-wrap items-center justify-center gap-2">
           <div className="inline-flex rounded-full bg-black/50 border border-white/10 p-1 backdrop-blur">
             {modeBtn("auto", "AVTO")}
             {modeBtn("in", "KELDI")}
             {modeBtn("out", "KETDI")}
           </div>
+          {phase === "running" && (
+            <button
+              onClick={toggleDetector}
+              className="inline-flex items-center gap-2 rounded-full bg-black/50 border border-white/10 px-3 py-1.5 text-xs sm:text-sm text-slate-200 backdrop-blur"
+              title="Aniq rejim — ko'p yuz va yon tomondan; Tez rejim — sekin telefonlar uchun"
+            >
+              <Zap className={`w-4 h-4 ${perf.det === "ssd" ? "text-cyan-300" : "text-amber-300"}`} />
+              <span className="font-semibold">{perf.det === "ssd" ? "Aniq" : perf.auto ? "Tez (avto)" : "Tez"}</span>
+              {perf.fps > 0 && <span className="text-slate-400 tabular-nums">{perf.fps} kadr/s</span>}
+              <span className="flex items-center gap-1 text-slate-300 tabular-nums"><Users className="w-3.5 h-3.5" />{perf.faces}</span>
+            </button>
+          )}
         </div>
       </div>
 
       {(!online || pending > 0) && (
-        <div className="absolute top-32 sm:top-36 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-amber-500/20 border border-amber-400/40 px-4 py-1.5 text-sm text-amber-200">
+        <div className="absolute top-36 sm:top-40 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-amber-500/20 border border-amber-400/40 px-4 py-1.5 text-sm text-amber-200 whitespace-nowrap">
           <WifiOff className="w-4 h-4" />
           {online ? `${pending} ta belgi yuborilmoqda…` : `Internet yo'q — ${pending} ta belgi saqlandi, keyin yuboriladi`}
         </div>
@@ -517,7 +783,7 @@ export default function FaceKioskPage() {
               <>
                 <Loader2 className="w-12 h-12 mx-auto animate-spin text-cyan-400" />
                 <div className="mt-5 text-lg font-semibold">{progress}</div>
-                <div className="mt-2 text-sm text-slate-400">Birinchi marta ~7 MB yuklanadi, keyingi safar tez ochiladi.</div>
+                <div className="mt-2 text-sm text-slate-400">Birinchi marta ~12 MB yuklanadi, keyingi safar tez ochiladi.</div>
               </>
             )}
             {phase === "ready" && (
@@ -528,9 +794,10 @@ export default function FaceKioskPage() {
                   {counts.enrolled} ta o'quvchi · kech qolish {settingsRef.current.late_after} dan keyin
                 </div>
                 <div className="mt-4 text-sm text-slate-400 text-left space-y-1">
+                  <div>• Bir vaqtda <b className="text-slate-200">bir nechta o'quvchi</b> o'tsa ham har birini taniydi</div>
                   <div>• <b className="text-slate-200">AVTO</b>: kelganda — KELDI, {settingsRef.current.min_stay} daqiqadan keyin — KETDI</div>
-                  <div>• Kirish va chiqish eshigi alohida bo'lsa — KELDI yoki KETDI ni tanlang</div>
-                  <div>• Telefonni yuz balandligiga, yorug' joyga qo'ying; quvvatga ulang</div>
+                  <div>• Telefonni o'quvchilar <b className="text-slate-200">yuradigan yo'lga qaratib</b>, 1–3 m oldinga, yuz balandligiga qo'ying</div>
+                  <div>• Yorug' joy, orqada deraza bo'lmasin; quvvatga ulang</div>
                 </div>
                 <button
                   onClick={() => void start()}
@@ -555,49 +822,24 @@ export default function FaceKioskPage() {
 
       {phase === "running" && (
         <div className="absolute bottom-0 inset-x-0 p-4 sm:p-8">
-          <div className={`mx-auto max-w-3xl rounded-3xl border px-6 py-5 sm:py-7 text-center backdrop-blur transition-colors duration-150 ${bannerStyle}`}>
-            {banner.kind === "idle" && <div className="text-xl sm:text-3xl font-semibold text-slate-200">Kameraga qarang</div>}
-            {banner.kind === "closer" && <div className="text-xl sm:text-3xl font-semibold text-slate-200">Yaqinroq keling</div>}
-            {(banner.kind === "in" || banner.kind === "late") && (
-              <>
-                <div className={`flex items-center justify-center gap-3 ${banner.kind === "in" ? "text-emerald-300" : "text-amber-200"}`}>
-                  {banner.kind === "in" ? <CheckCircle2 className="w-8 h-8" /> : <Clock className="w-8 h-8" />}
-                  <span className="text-lg sm:text-2xl font-semibold">{banner.kind === "in" ? "KELDI · Xush kelibsiz!" : "KELDI · Kechikdingiz"}</span>
+          <div className="mx-auto max-w-4xl">
+            {toasts.length === 0 ? (
+              <div className="rounded-3xl border border-white/10 bg-[#0D1430]/70 px-6 py-5 sm:py-7 text-center backdrop-blur">
+                <div className="text-xl sm:text-3xl font-semibold text-slate-200">
+                  {hint === "closer" ? "Yaqinroq keling" : hint === "scan" ? "Aniqlanmoqda…" : "Kameraga qarang"}
                 </div>
-                <div className="mt-2 text-3xl sm:text-5xl font-bold">{banner.name}</div>
-                <div className="mt-2 text-lg sm:text-2xl text-slate-200">{banner.cls} · {banner.time}</div>
-              </>
-            )}
-            {banner.kind === "out" && (
-              <>
-                <div className={`flex items-center justify-center gap-3 ${banner.early ? "text-amber-200" : "text-sky-300"}`}>
-                  <DoorOpen className="w-8 h-8" />
-                  <span className="text-lg sm:text-2xl font-semibold">
-                    {banner.early ? `KETDI · Erta (darslar ${banner.end ?? ""} da tugaydi)` : "KETDI · Yaxshi boring!"}
-                  </span>
-                </div>
-                <div className="mt-2 text-3xl sm:text-5xl font-bold">{banner.name}</div>
-                <div className="mt-2 text-lg sm:text-2xl text-slate-200">{banner.cls} · {banner.time}</div>
-              </>
-            )}
-            {(banner.kind === "already_in" || banner.kind === "already_out") && (
-              <>
-                <div className="text-2xl sm:text-4xl font-bold">{banner.name}</div>
-                <div className="mt-1 text-base sm:text-xl text-slate-300">
-                  {banner.kind === "already_in" ? `Bugun keldi · ${banner.time}` : `Ketgan · ${banner.time}`}
-                </div>
-              </>
-            )}
-            {banner.kind === "unknown" && (
-              <>
-                <div className="text-2xl sm:text-3xl font-bold text-red-200">Tanilmadi</div>
-                <div className="mt-1 text-sm sm:text-lg text-slate-300">To'g'ri qarang yoki navbatchi o'qituvchiga murojaat qiling</div>
-              </>
+              </div>
+            ) : (
+              <div className={compact ? "grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3" : ""}>
+                {toasts.map((t) => (
+                  <ToastCard key={t.id} t={t} compact={compact} />
+                ))}
+              </div>
             )}
           </div>
 
           {events.length > 0 && (
-            <div className="mx-auto max-w-3xl mt-3 flex gap-2 overflow-x-auto pb-1">
+            <div className="mx-auto max-w-4xl mt-3 flex gap-2 overflow-x-auto pb-1">
               {events.map((e) => (
                 <div key={e.key} className="shrink-0 flex items-center gap-1.5 rounded-full bg-black/50 border border-white/10 px-3 py-1.5 text-sm">
                   {e.kind === "in" || e.kind === "late" ? (
@@ -605,7 +847,7 @@ export default function FaceKioskPage() {
                   ) : (
                     <ArrowUpRight className={`w-4 h-4 ${e.kind === "early" ? "text-amber-300" : "text-sky-300"}`} />
                   )}
-                  {e.name.split(" ").slice(0, 2).join(" ")} · {e.class_name} · {e.time}
+                  {shortName(e.name)} · {e.class_name} · {e.time}
                 </div>
               ))}
             </div>

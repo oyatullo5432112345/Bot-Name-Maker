@@ -6,7 +6,7 @@
 
 CREATE TABLE IF NOT EXISTS face_profiles (
   student_login TEXT PRIMARY KEY,
-  descriptors   JSONB NOT NULL,                 -- [[128 son], [128 son], ...] — 1..5 ta namuna
+  descriptors   JSONB NOT NULL,                 -- [[128 son], [128 son], ...] — 1..8 ta namuna (turli burchak)
   consent       BOOLEAN NOT NULL DEFAULT FALSE, -- ota-ona roziligi olingan
   consent_by    TEXT NOT NULL DEFAULT '',       -- rozilikni tasdiqlagan xodim logini
   enrolled_by   TEXT NOT NULL DEFAULT '',
