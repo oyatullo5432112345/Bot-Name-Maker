@@ -25,15 +25,25 @@ import {
 // ─── Tashqi bog'liqliklar (features.ts dan beriladi) ─────────────────────────
 
 export interface GameWho {
-  kind: "student" | "staff" | "admin";
+  kind: "student" | "staff" | "admin" | "guest"; // guest — platformada yo'q guruh admini
   tgId: number;
   full_name?: string;
   login?: string;
   role?: string;
 }
 
+export interface GameGroupAuth {
+  ok: boolean;
+  staff: boolean;
+  groupAdmin: boolean;
+  anonymous: boolean;
+  name: string;
+}
+
 export interface GameDeps {
   whoIs(tgId: number): Promise<GameWho | null>;
+  /** Guruhda: platforma o'qituvchisi yoki guruh admini/egasi (anonim ham) */
+  groupAuth(ctx: Context): Promise<GameGroupAuth>;
   canUseClass(who: GameWho, classId: string): Promise<boolean>;
   isManagement(who: GameWho | null): boolean;
   menuButtons: Set<string>;
@@ -72,6 +82,8 @@ type Setup =
       count: number;
       seconds: number;
       awaiting?: boolean; // o'qituvchi savollarini yozib yuborishini kutyapmiz
+      starterName?: string; // o'yinni boshlovchi (guruh admini bo'lsa — Telegram ismi)
+      byGroupAdmin?: boolean; // platforma xodimi emas, guruh admini boshlagan
     };
 
 const setups = createSessionStore<Setup>("bot_games", { type: "idle" });
@@ -110,6 +122,7 @@ interface Game {
   teacherId: number;
   teacherName: string;
   teacherLogin: string;
+  awards: boolean; // tanga faqat maktab o'qituvchisi boshlagan o'yinda beriladi
   title: string;
   questions: GQ[];
   seconds: number;
@@ -320,6 +333,7 @@ async function onAnswer(pollId: string, user: { id: number; first_name: string; 
 
 async function awardTanga(g: Game, list: Player[]): Promise<Map<number, number>> {
   const given = new Map<number, number>();
+  if (!g.awards) return given;
   const enoughPlayers = list.length >= 3;
   const enoughQuestions = g.idx + 1 >= Math.min(5, g.questions.length);
   if (!enoughPlayers || !enoughQuestions) return given;
@@ -389,7 +403,9 @@ async function finish(g: Game, silent = false): Promise<void> {
   if (fastest?.fastMs != null) text += `⚡ Eng tez javob: ${esc(fastest.name)} — ${(fastest.fastMs / 1000).toFixed(1)} s\n`;
   if (longest && longest.best >= 2) text += `🔥 Eng uzun seriya: ${esc(longest.name)} — ${longest.best} ta\n`;
   text += `🎯 Umumiy natija: ${pct}% to'g'ri`;
-  if (list.some((p) => !p.login)) {
+  if (!g.awards) {
+    text += `\n\n<i>🪙 Tanga maktab o'qituvchisi boshlagan o'yinlarda beriladi.</i>`;
+  } else if (list.some((p) => !p.login)) {
     text += `\n\n<i>🪙 Tanga faqat botga ulangan o'quvchilarga beriladi.</i>`;
   }
 
@@ -504,7 +520,12 @@ async function chatsFor(who: GameWho): Promise<ChatRow[]> {
   return out.sort((a, b) => (a.class_name ?? a.title).localeCompare(b.class_name ?? b.title, "uz", { numeric: true }));
 }
 
-async function openSetup(ctx: Context, who: GameWho, pre?: ChatRow): Promise<void> {
+async function openSetup(
+  ctx: Context,
+  who: GameWho,
+  pre?: ChatRow,
+  opts: { byGroupAdmin?: boolean; starterName?: string } = {}
+): Promise<void> {
   const tgId = who.tgId;
   let chat = pre;
   if (!chat) {
@@ -542,6 +563,8 @@ async function openSetup(ctx: Context, who: GameWho, pre?: ChatRow): Promise<voi
     classId: chat.class_id,
     count: 10,
     seconds: 20,
+    byGroupAdmin: opts.byGroupAdmin,
+    starterName: opts.starterName,
   });
   await showSources(ctx, tgId);
 }
@@ -646,13 +669,38 @@ export function registerGames(priv: Composer<Context>, group: Composer<Context>,
     if (!ctx.from) return;
     const who = await deps.whoIs(ctx.from.id);
     if (!isStaff(who)) {
-      await ctx.reply("🎮 O'yinni o'qituvchi boshlaydi. Sinf guruhingizda kuting — savollar o'sha yerda chiqadi!");
+      await ctx.reply("🎮 O'yin sinf guruhida boshlanadi: guruh admini yoki o'qituvchi guruhda /oyin yozsin. Savollar o'sha yerda chiqadi!");
       return;
     }
     await openSetup(ctx, who);
   };
   priv.hears(deps.gameButton, entry);
   priv.command("oyin", entry);
+
+  // Guruhdan "Botni ochish" havolasi: /start oyin_<chatId>
+  priv.command("start", async (ctx, next) => {
+    const payload = typeof ctx.match === "string" ? ctx.match.trim() : "";
+    const m = /^oyin_(-?\d+)$/.exec(payload);
+    if (!m || !ctx.from) { await next(); return; }
+    const chatId = Number(m[1]);
+    const linked = await getLinkedChat(chatId);
+    if (!linked) { await ctx.reply("Bu guruh hali ulanmagan. Guruhda /boglash yozing."); return; }
+    const who = await deps.whoIs(ctx.from.id);
+    let groupAdmin = false;
+    try {
+      const mem = await ctx.api.getChatMember(chatId, ctx.from.id);
+      groupAdmin = mem.status === "creator" || mem.status === "administrator";
+    } catch { /* e'tiborsiz */ }
+    const staff = isStaff(who);
+    if (!staff && !groupAdmin) { await ctx.reply("⛔ O'yinni guruh admini yoki o'qituvchi boshlaydi."); return; }
+    const cls = linked.class_id ? await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [linked.class_id]) : null;
+    await openSetup(
+      ctx,
+      who ?? { kind: "guest", tgId: ctx.from.id },
+      { chat_id: chatId, title: linked.title, purpose: linked.purpose, class_id: linked.class_id, class_name: cls?.name ?? null },
+      { byGroupAdmin: !staff, starterName: [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") }
+    );
+  });
 
   priv.callbackQuery("q:cancel", async (ctx) => {
     setups.set(ctx.from.id, { type: "idle" });
@@ -812,7 +860,8 @@ export function registerGames(priv: Composer<Context>, group: Composer<Context>,
     const s = getS(ctx.from.id);
     if (s.type !== "setup" || !s.src) { await ctx.answerCallbackQuery("Sessiya tugagan"); return; }
     const who = await deps.whoIs(ctx.from.id);
-    if (!isStaff(who)) { await ctx.answerCallbackQuery("⛔"); return; }
+    const staffStarter = isStaff(who);
+    if (!staffStarter && !s.byGroupAdmin) { await ctx.answerCallbackQuery("⛔"); return; }
     if (games.has(s.chatId)) { await ctx.answerCallbackQuery({ text: "Bu guruhda o'yin allaqachon ketmoqda", show_alert: true }); return; }
 
     await ctx.answerCallbackQuery("🚀 Boshlandi!");
@@ -834,8 +883,9 @@ export function registerGames(priv: Composer<Context>, group: Composer<Context>,
       className: s.className,
       classId: s.classId,
       teacherId: ctx.from.id,
-      teacherName: nameOf(who),
-      teacherLogin: loginOf(who),
+      teacherName: staffStarter && who ? nameOf(who) : s.starterName ?? ctx.from.first_name,
+      teacherLogin: staffStarter && who ? loginOf(who) : `tg:${ctx.from.id}`,
+      awards: staffStarter,
       title: srcLabel(s.src),
       questions,
       seconds: s.seconds,
@@ -955,44 +1005,87 @@ export function registerGames(priv: Composer<Context>, group: Composer<Context>,
 
   // ═════════════════════ GURUH ═════════════════════
 
-  group.command("oyin", async (ctx) => {
-    if (!ctx.from) return;
-    const who = await deps.whoIs(ctx.from.id);
-    if (!isStaff(who)) {
-      await ctx.reply("🎮 O'yinni o'qituvchi boshlaydi. Tayyor turing! 😉");
-      return;
-    }
-    if (games.has(ctx.chat.id)) {
-      await ctx.reply("🎮 O'yin allaqachon ketmoqda! Boshqaruv — o'qituvchining shaxsiy chatida.");
-      return;
-    }
+  /** Guruh admini / o'qituvchiga shaxsiy chatda sozlash oynasini ochish */
+  const openFromGroup = async (
+    ctx: Context,
+    user: { id: number; first_name: string; last_name?: string },
+    auth: GameGroupAuth
+  ): Promise<boolean> => {
+    if (!ctx.chat) return false;
     const linked = await getLinkedChat(ctx.chat.id);
-    if (!linked) {
+    if (!linked) return false;
+    const cls = linked.class_id ? await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [linked.class_id]) : null;
+    const who = (await deps.whoIs(user.id)) ?? { kind: "guest" as const, tgId: user.id };
+    const starterName = auth.staff ? undefined : [user.first_name, user.last_name].filter(Boolean).join(" ");
+    try {
+      await openSetup(
+        ctx,
+        { ...who, tgId: user.id },
+        { chat_id: ctx.chat.id, title: linked.title, purpose: linked.purpose, class_id: linked.class_id, class_name: cls?.name ?? null },
+        { byGroupAdmin: !auth.staff, starterName }
+      );
+      return true;
+    } catch {
+      return false; // foydalanuvchi botga hali /start yozmagan — shaxsiy xabar yuborib bo'lmaydi
+    }
+  };
+
+  group.command("oyin", async (ctx) => {
+    if (games.has(ctx.chat.id)) {
+      await ctx.reply("🎮 O'yin allaqachon ketmoqda! Boshqaruv — boshlovchining shaxsiy chatida.");
+      return;
+    }
+    if (!(await getLinkedChat(ctx.chat.id))) {
       await ctx.reply("Avval guruhni sinfga ulang: /boglash");
       return;
     }
-    const cls = linked.class_id ? await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [linked.class_id]) : null;
-    if (linked.class_id && !deps.isManagement(who) && !(await deps.canUseClass(who, linked.class_id))) {
-      await ctx.reply("⛔ Bu guruh sizga biriktirilmagan.");
+    const auth = await deps.groupAuth(ctx);
+    if (!auth.ok) {
+      await ctx.reply("🎮 O'yinni guruh admini yoki o'qituvchi boshlaydi. Tayyor turing! 😉");
       return;
     }
-    try {
-      await openSetup(ctx, who, {
-        chat_id: ctx.chat.id,
-        title: linked.title,
-        purpose: linked.purpose,
-        class_id: linked.class_id,
-        class_name: cls?.name ?? null,
+    const setupKb = new InlineKeyboard().text("⚙️ O'yinni sozlash", "g:oyin");
+    // Anonim admin — kimligini bilmaymiz, tugma orqali aniqlaymiz
+    if (auth.anonymous || !ctx.from) {
+      await ctx.reply("🎮 <b>Bilimlar jangi</b>\n\nSozlamalarni ochish uchun pastdagi tugmani bosing (faqat adminlar/o'qituvchilar).", {
+        parse_mode: "HTML",
+        reply_markup: setupKb,
       });
-      await ctx.reply(`🎮 ${esc(nameOf(who))}, o'yin sozlamalarini shaxsiy chatga yubordim — 2 ta tugma va boshlaymiz!`, {
+      return;
+    }
+    if (await openFromGroup(ctx, ctx.from, auth)) {
+      await ctx.reply(`🎮 ${esc(auth.name)}, sozlamalarni shaxsiy chatga yubordim — 2 ta tugma va boshlaymiz!`, {
         parse_mode: "HTML",
         reply_markup: new InlineKeyboard().url("⚙️ Sozlamalarni ochish", `https://t.me/${ctx.me.username}`),
       });
-    } catch {
-      await ctx.reply("Avval botga shaxsiy chatda /start yozing, keyin qayta urinib ko'ring.", {
-        reply_markup: new InlineKeyboard().url("🤖 Botni ochish", `https://t.me/${ctx.me.username}?start=oyin`),
+    } else {
+      await ctx.reply("🎮 Sozlash uchun botni oching va START ni bosing 👇", {
+        reply_markup: new InlineKeyboard().url("🤖 Botni ochish", `https://t.me/${ctx.me.username}?start=oyin_${ctx.chat.id}`),
       });
     }
+  });
+
+  group.callbackQuery("g:oyin", async (ctx) => {
+    if (!ctx.chat) { await ctx.answerCallbackQuery(); return; }
+    if (games.has(ctx.chat.id)) { await ctx.answerCallbackQuery({ text: "O'yin allaqachon ketmoqda", show_alert: true }); return; }
+    const auth = await deps.groupAuth(ctx);
+    if (!auth.ok) { await ctx.answerCallbackQuery({ text: "⛔ Faqat guruh admini yoki o'qituvchi", show_alert: true }); return; }
+    if (await openFromGroup(ctx, ctx.from, auth)) {
+      await ctx.answerCallbackQuery({ text: "✅ Sozlamalar shaxsiy chatda!", show_alert: false });
+    } else {
+      await ctx.answerCallbackQuery({ url: `https://t.me/${ctx.me.username}?start=oyin_${ctx.chat.id}` });
+    }
+  });
+
+  group.command("oyin_stop", async (ctx) => {
+    const g = games.get(ctx.chat.id);
+    if (!g) return;
+    const auth = await deps.groupAuth(ctx);
+    if (ctx.from?.id !== g.teacherId && !auth.ok) {
+      await ctx.reply("⛔ O'yinni faqat boshlovchi, guruh admini yoki o'qituvchi to'xtata oladi.");
+      return;
+    }
+    await finish(g);
   });
 
   group.command("natija", async (ctx) => {
@@ -1006,14 +1099,4 @@ export function registerGames(priv: Composer<Context>, group: Composer<Context>,
     );
   });
 
-  group.command("oyin_stop", async (ctx) => {
-    const g = games.get(ctx.chat.id);
-    if (!g || !ctx.from) return;
-    const who = await deps.whoIs(ctx.from.id);
-    if (ctx.from.id !== g.teacherId && !deps.isManagement(who)) {
-      await ctx.reply("⛔ O'yinni faqat boshlagan o'qituvchi to'xtata oladi.");
-      return;
-    }
-    await finish(g);
-  });
 }
