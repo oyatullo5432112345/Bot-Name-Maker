@@ -56,6 +56,9 @@ const MonitoringIndex = lazy(() => import("@/pages/monitoring/index"));
 const MonitoringAdmin = lazy(() => import("@/pages/monitoring/admin"));
 const MonitoringTake = lazy(() => import("@/pages/monitoring/take"));
 const MonitoringAnalytics = lazy(() => import("@/pages/monitoring/analytics"));
+const FaceIdPage = lazy(() => import("@/pages/faceid/index"));
+const FaceEnrollPage = lazy(() => import("@/pages/faceid/enroll"));
+const FaceKioskPage = lazy(() => import("@/pages/faceid/kiosk"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -77,6 +80,17 @@ function ProtectedRoute({ component: Component, roles }: { component: React.Comp
           <Component />
         </Suspense>
       </AppLayout>
+    </AuthGuard>
+  );
+}
+
+// To'liq ekran sahifa (menyusiz) — Face ID kiosk uchun
+function KioskRoute({ component: Component, roles }: { component: React.ComponentType; roles?: string[] }) {
+  return (
+    <AuthGuard roles={roles}>
+      <Suspense fallback={<div className="fixed inset-0 bg-[#05070F]" />}>
+        <Component />
+      </Suspense>
     </AuthGuard>
   );
 }
@@ -154,6 +168,9 @@ function Router() {
 
       <Route path="/qollanmalar"><ProtectedRoute component={QollanmalarPage} /></Route>
       <Route path="/announcements"><ProtectedRoute component={AnnouncementsPage} /></Route>
+      <Route path="/faceid/kiosk"><KioskRoute component={FaceKioskPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
+      <Route path="/faceid/enroll"><ProtectedRoute component={FaceEnrollPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari"]} /></Route>
+      <Route path="/faceid"><ProtectedRoute component={FaceIdPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/chat"><ProtectedRoute component={ChatPage} /></Route>
 
       <Route path="/games/board/new"><ProtectedRoute component={BoardGameNew} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>

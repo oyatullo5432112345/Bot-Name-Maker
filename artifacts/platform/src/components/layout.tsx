@@ -9,7 +9,7 @@ import {
   Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays,
   MessageSquare, Library, Award,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
-  Wallet, ChevronRight, Settings, Sparkles, AlertTriangle,
+  Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -345,6 +345,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const canViewClasses = !isMudir && ["admin","director","zam_direktor","zavuch"].includes(user.role);
   const canViewStudents = !isMudir && ["admin","director","zam_direktor","zavuch","sinf_rahbari"].includes(user.role);
   const canViewDavomat = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"].includes(user.role);
+  const canUseFaceId = !isMudir && ["admin","director","zam_direktor","zavuch","sinf_rahbari"].includes(user.role);
   const canManageLibrary = !isMudir && ["admin","kutubxonachi"].includes(user.role);
   const initials = user.full_name?.[0]?.toUpperCase() ?? "U";
   const isDark = theme === "dark";
@@ -399,6 +400,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <NavLink href="/darslik" icon={BookOpen} label="Darslik" active={isActive("/darslik")} />
             <NavLink href="/baholash" icon={ClipboardList} label="Baholash" active={isActive("/baholash")} />
             {canViewDavomat && <NavLink href="/davomat" icon={CalendarCheck} label="Davomat" active={isActive("/davomat")} />}
+            {canUseFaceId && <NavLink href={user.role === "sinf_rahbari" ? "/faceid/enroll" : "/faceid"} icon={ScanFace} label="Face ID" active={isActive("/faceid")} />}
             <NavLink href="/dars-jadvali" icon={CalendarDays} label="Dars jadvali" active={isActive("/dars-jadvali")} />
             <NavLink href="/library" icon={Library} label="Kutubxona" active={isActive("/library")} />
             <NavLink href="/certificate" icon={Award} label="Sertifikat" active={isActive("/certificate")} />

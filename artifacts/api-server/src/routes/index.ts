@@ -28,6 +28,7 @@ import wheelGamesRouter from "./wheel-games.js";
 import adminResetRouter from "./admin-reset.js";
 import riddlesRouter from "./riddles.js";
 import telegramWebappRouter from "./telegram-webapp.js";
+import faceidRouter from "./faceid.js";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use(boardGamesRouter);
 router.use(wheelGamesRouter);
 router.use(adminResetRouter);
 router.use(riddlesRouter);
+router.use(faceidRouter);
 
 export default router;
