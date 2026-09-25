@@ -169,7 +169,7 @@ export function generateMath(level: MathLevel, count: number): GQ[] {
     const g = pick(gens)();
     if (seen.has(g.q)) continue;
     seen.add(g.q);
-    out.push({ ...g, q: `🧮 ${g.q}` });
+    out.push(g);
   }
   return out;
 }

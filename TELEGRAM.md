@@ -30,28 +30,25 @@ Avtomatik (O'zbekiston vaqti):
 - **Shanba 16:00** — haftalik TOP (maktab kanali + har bir sinf guruhi)
 - Guruhga yangi o'quvchi qo'shilsa — "Botga ulanish" tugmasi
 
-### 4. 🎮 Bilimlar jangi — sinf guruhidagi o'yin
-**O'qituvchi uchun (2–3 bosish):**
-1. Botda **🎮 Sinf o'yini** tugmasini bosing (yoki sinf guruhida `/oyin` yozing).
-2. Savollar manbaini tanlang:
-   - **🧮 Tez hisob** — bot o'zi misol tuzadi, tayyorgarlik kerak emas (1–4 / 5–7 / 8–11 sinf darajalari).
-   - **✍️ O'z savollarim** — oddiy matn bilan yozasiz, avtomatik saqlanadi:
-     ```
-     # Geografiya — 5-sinf
-     O'zbekiston poytaxti qaysi shahar?
-     + Toshkent
-     - Samarqand
-     - Buxoro
-     ```
-   - **📚 Saqlangan to'plamlar**, **📋 Platformadagi test** (ochiq testlar ko'rsatilmaydi), **🧠 Topishmoqlar**.
-3. **🚀 BOSHLASH**. O'yin paytida shaxsiy chatda panel: **⏭ Keyingi · ⏸ Pauza · ⏹ Tugatish**.
+### 4. 🎮 Bilimlar jangi — sinf guruhidagi jonli bellashuv
+**Boshlash (guruh admini yoki o'qituvchi):** guruhda `/oyin` yoki botda **🎮 Sinf o'yini** → savollar manbai → **🚀 BOSHLASH**.
 
-**O'quvchilar uchun:** guruhda Telegram quiz-savollari chiqadi, variantni bosadi.
-- To'g'ri javob — 10 ball, tezlik bonusi — +5 gacha, har 3 ta ketma-ket to'g'ri — 🔥 +3
-- Har savoldan keyin: nechta kishi topdi, eng tezkor, seriyalar, TOP-3
-- Oxirida 🥇🥈🥉 va tanga: 15 / 10 / 5 + qatnashgani uchun 2 (kamida 1 ta to'g'ri javob; kuniga ko'pi bilan 30 tanga; kamida 3 qatnashchi)
-- O'qituvchiga batafsil hisobot: har bir o'quvchi natijasi va **qatnashmaganlar ro'yxati**
-- Guruhda `/natija` — joriy hisob
+**Savollar manbai:** 🧮 Tez hisob (bot o'zi tuzadi, 3 daraja) · ✍️ O'z savollari (oddiy matn, saqlanadi) · 📚 Saqlangan to'plamlar · 📋 Platformadagi test (ochiq testlar ko'rsatilmaydi) · 🧠 Topishmoqlar.
+
+**O'yin qanday ko'rinadi (dizaynli rasm-kartochkalar):**
+1. Kirish kartochkasi — sinf, savollar soni, vaqt, raundlar
+2. Har savol — kartochka + Telegram quiz. Vaqt tugagach kartochka izohiga natija yoziladi (to'g'ri javob, nechta kishi topdi, eng tezkor, seriyalar)
+3. Raund yakunida — reyting jadvali (+ shu raundda qo'shilgan ball)
+4. Oxirida — G'oliblar shohsupasi (liga belgisi bilan) + to'liq ro'yxat, reyting va tanga
+
+**Ball:** to'g'ri javob 10 + tezlik 5 gacha, raund ko'paytmasi: **I raund ×1 · II raund ×2 · Final ×3**, har 3 ta ketma-ket to'g'ri — +3.
+
+**Liga va reyting (o'yinlar orasida saqlanadi):** Bronza (0) → Kumush (150) → Oltin (400) → Platina (800) → Olmos (1400) → Afsona (2200).
+Har o'yindan keyin reyting = ball ÷ 5 + o'rin bonusi (25 / 15 / 8). `/profil` — shaxsiy kartochka, `/liga` — sinf ligasi.
+
+**Tanga:** 15 / 10 / 5 + qatnashgani uchun 2 (maktab o'qituvchisi boshlagan o'yinda; kamida 3 qatnashchi; kuniga 30 gacha).
+
+**Boshqaruv (boshlovchining shaxsiy chatida):** ⏭ Keyingi · ⏸ Pauza · ⏹ Tugatish. Oxirida batafsil hisobot va qatnashmaganlar ro'yxati.
 
 ### 5. Maktab kanali
 - Botni kanalga **admin** qiling → bot rahbarga "🏫 Ha, maktab kanali" tugmasini yuboradi.
@@ -80,6 +77,8 @@ Avtomatik (O'zbekiston vaqti):
 - `artifacts/api-server/src/bot/features.ts` — barcha yangi bot funksiyalari
 - `artifacts/api-server/src/bot/games.ts` — Bilimlar jangi o'yini
 - `artifacts/api-server/src/bot/game-questions.ts` — Tez hisob generatori va savol formati
+- `artifacts/api-server/src/bot/game-cards.ts` — o'yin kartochkalari dizayni (SVG → PNG)
+- `artifacts/api-server/assets/fonts/` — kartochkalar shriftlari (Poppins, DejaVu Sans)
 - `artifacts/api-server/src/lib/tg-shared.ts` — guruh/kanal bazasi, yuborish, vaqt yordamchilari
 - `artifacts/api-server/src/routes/telegram-webapp.ts` — Mini App kirish
 - `artifacts/platform/src/lib/telegram-webapp.ts` — frontend Mini App SDK

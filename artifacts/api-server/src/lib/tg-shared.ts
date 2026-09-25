@@ -338,6 +338,24 @@ CREATE TABLE IF NOT EXISTS tg_games (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_tg_games_chat ON tg_games(chat_id, created_at DESC);
+
+-- O'yinchilar reytingi va ligasi (Bronza → Kumush → Oltin → Platina → Olmos → Afsona)
+CREATE TABLE IF NOT EXISTS tg_player_stats (
+  tg_id        BIGINT PRIMARY KEY,
+  name         TEXT NOT NULL DEFAULT '',
+  login        TEXT,
+  class_name   TEXT NOT NULL DEFAULT '',
+  rating       INTEGER NOT NULL DEFAULT 0,
+  games        INTEGER NOT NULL DEFAULT 0,
+  wins         INTEGER NOT NULL DEFAULT 0,
+  podiums      INTEGER NOT NULL DEFAULT 0,
+  correct      INTEGER NOT NULL DEFAULT 0,
+  answered     INTEGER NOT NULL DEFAULT 0,
+  best_streak  INTEGER NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tg_player_stats_class ON tg_player_stats(class_name, rating DESC);
+
 `;
 
 export async function ensureTelegramSchema(): Promise<void> {

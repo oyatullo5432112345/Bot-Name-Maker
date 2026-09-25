@@ -47,6 +47,7 @@ const B = {
   mPost: "📣 Kanalga e'lon",
   mChats: "🔗 Guruh va kanallar",
   game: "🎮 Sinf o'yini",
+  gameProfile: "🎮 O'yin profilim",
 } as const;
 const ALL_BUTTONS = new Set<string>(Object.values(B));
 
@@ -255,7 +256,8 @@ function menuFor(who: Who): Keyboard {
   if (who.kind === "student") {
     kb.text(B.lessons).text(B.grades).row()
       .text(B.att).text(B.rating).row()
-      .text(B.news).text(B.help).row();
+      .text(B.news).text(B.gameProfile).row()
+      .text(B.help);
   } else if (isManagement(who)) {
     kb.text(B.mToday).text(B.tAttendance).row()
       .text(B.mPost).text(B.tMessage).row()
@@ -302,7 +304,8 @@ function helpText(who: Who | null): string {
       `${B.rating} — sinfdagi haftalik o'rningiz\n` +
       `${B.news} — maktab e'lonlari\n` +
       `${B.app} — to'liq platforma (Telegram ichida ochiladi)\n\n` +
-      `🎮 O'qituvchi sinf guruhida "Bilimlar jangi" boshlasa — tez va to'g'ri javob bering, g'oliblar tanga oladi!\n` +
+      `🎮 "Bilimlar jangi" — sinf guruhidagi jonli bellashuv. Tez va to'g'ri javob bering: reyting to'playsiz, ligangiz ko'tariladi (Bronza → Afsona), g'oliblar tanga oladi.\n` +
+      `${B.gameProfile} — ligangiz, reytingingiz va statistikangiz (/profil), sinf ligasi — /liga\n` +
       `🔔 Baho qo'yilsa yoki darsga kelmagan deb belgilansangiz, bot darhol xabar beradi.` +
       common
     );
@@ -390,6 +393,7 @@ export function registerTelegramFeatures(bot: Bot, opts: { websiteUrl: string; a
     isManagement: (w) => isManagement(w as Who | null),
     menuButtons: ALL_BUTTONS,
     gameButton: B.game,
+    profileButton: B.gameProfile,
   });
   startScheduler();
 
@@ -405,6 +409,8 @@ export function registerTelegramFeatures(bot: Bot, opts: { websiteUrl: string; a
           { command: "davomat", description: "Davomat" },
           { command: "reyting", description: "Haftalik reyting" },
           { command: "oyin", description: "Bilimlar jangi — sinf o'yini (o'qituvchi)" },
+          { command: "profil", description: "O'yin profilim: liga va reyting" },
+          { command: "liga", description: "Sinf o'yin ligasi" },
           { command: "sertifikat", description: "Sertifikat olish" },
           { command: "yordam", description: "Adminga savol yozish" },
         ],
@@ -416,6 +422,8 @@ export function registerTelegramFeatures(bot: Bot, opts: { websiteUrl: string; a
           { command: "reyting", description: "Haftalik reyting" },
           { command: "oyin", description: "🎮 Bilimlar jangi (o'qituvchi boshlaydi)" },
           { command: "natija", description: "O'yindagi joriy hisob" },
+          { command: "profil", description: "Mening ligam va reytingim" },
+          { command: "liga", description: "Sinf o'yin ligasi" },
           { command: "boglash", description: "Guruhni sinfga ulash (o'qituvchi)" },
           { command: "sozlamalar", description: "Avto-xabarlar sozlamasi (o'qituvchi)" },
           { command: "uzish", description: "Guruhni uzish (o'qituvchi)" },
