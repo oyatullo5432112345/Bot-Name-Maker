@@ -1,0 +1,582 @@
+import { Router, type IRouter } from "express";
+import { z } from "zod";
+import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
+import { query, queryOne } from "../lib/db.js";
+import {
+  LoginBody,
+  LoginResponse,
+  GetMeResponse,
+  LogoutResponse,
+} from "@workspace/api-zod";
+import { logger } from "../lib/logger.js";
+import { getChatIdByPhone, normalizePhone } from "../bot/settings.js";
+
+// ─── Imzolangan token (HMAC-SHA256) ──────────────────────────────────────────
+// Avval token faqat base64(JSON) edi — imzosiz, ya'ni har kim o'zi
+// {"role":"admin",...} yasab, admin bo'lib kirishi mumkin edi.
+// Endi har bir token maxfiy kalit bilan imzolanadi va imzo tekshirilmasa rad etiladi.
+const TOKEN_SECRET = process.env["TOKEN_SECRET"] ?? process.env["JWT_SECRET"];
+if (!TOKEN_SECRET) {
+  logger.error(
+    "⚠️  TOKEN_SECRET (yoki JWT_SECRET) environment variable o'rnatilmagan! " +
+    "Tokenlar vaqtinchalik kalit bilan imzolanmoqda — buni Render'da albatta sozlang."
+  );
+}
+const SECRET = TOKEN_SECRET ?? "insecure-dev-secret-o-zgartiring";
+
+// ─── Parol xesh(hash)lash (bcrypt) ───────────────────────────────────────────
+// Eski bazada parollar oddiy matn (plaintext) holida saqlangan edi.
+// Endi yangi parollar bcrypt bilan xeshlanadi. Eski (hali xeshlanmagan)
+// parollar bilan ham kirish davom etadi — muvaffaqiyatli kirishda ular
+// avtomatik ravishda bcrypt xeshiga "yangilanadi" (upgrade-on-login),
+// shuning uchun alohida katta migratsiya oynasi shart emas.
+const BCRYPT_ROUNDS = 10;
+
+export async function hashPassword(plain: string): Promise<string> {
+  return bcrypt.hash(plain, BCRYPT_ROUNDS);
+}
+
+function looksHashed(stored: string): boolean {
+  return stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$");
+}
+
+/**
+ * Kiritilgan parolni bazadagi qiymat bilan solishtiradi.
+ * - Agar bazada bcrypt xeshi bo'lsa — bcrypt.compare bilan tekshiradi.
+ * - Agar bazada hali eski plaintext parol bo'lsa — to'g'ridan-to'g'ri
+ *   solishtiradi (vaqt-doimiy taqqoslash bilan) va agar mos kelsa,
+ *   `onUpgrade` callback orqali xeshlangan variantga yangilaydi.
+ */
+export async function verifyPassword(
+  plain: string,
+  stored: string,
+  onUpgrade?: (newHash: string) => Promise<void>
+): Promise<boolean> {
+  if (looksHashed(stored)) {
+    return bcrypt.compare(plain, stored);
+  }
+  const a = Buffer.from(plain);
+  const b = Buffer.from(stored);
+  const matches = a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (matches && onUpgrade) {
+    const newHash = await hashPassword(plain);
+    await onUpgrade(newHash).catch(() => { /* xeshni yangilab bo'lmasa ham kirishga ruxsat beramiz */ });
+  }
+  return matches;
+}
+
+// ─── Sessiya tokeni muddati ──────────────────────────────────────────────────
+// Avval token muddatsiz edi (bir marta olingan token abadiy amal qilardi).
+// Endi har bir sessiya tokeni 30 kundan keyin avtomatik eskiradi.
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 kun
+
+function sign(data: string): string {
+  return crypto.createHmac("sha256", SECRET).update(data).digest("base64url");
+}
+
+function createSignedToken(payload: unknown): string {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${body}.${sign(body)}`;
+}
+
+function parseSignedToken<T>(token: string): T | null {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [body, sig] = parts as [string, string];
+  const expected = sign(body);
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return null;
+  }
+  try {
+    return JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+interface MagicTokenData {
+  payload: Record<string, unknown>;
+  expiresAt: number;
+}
+
+export function createMagicToken(payload: Record<string, unknown>): string {
+  const data: MagicTokenData = {
+    payload,
+    expiresAt: Date.now() + 15 * 60 * 1000,
+  };
+  return createSignedToken(data);
+}
+
+function parseMagicToken(token: string): MagicTokenData | null {
+  const data = parseSignedToken<MagicTokenData>(token);
+  if (!data?.payload || !data.expiresAt) return null;
+  return data;
+}
+
+const router: IRouter = Router();
+
+const ADMIN_ID = process.env["ADMIN_ID"] ?? "";
+const ADMIN_PASSWORD = process.env["ADMIN_PASSWORD"] ?? ADMIN_ID;
+
+function createToken(payload: object): string {
+  // Har bir sessiya tokeniga yaratilgan vaqt + amal qilish muddatini qo'shamiz.
+  const withExpiry = { ...payload, _issuedAt: Date.now(), _expiresAt: Date.now() + SESSION_TTL_MS };
+  return createSignedToken(withExpiry);
+}
+
+/** Sessiya tokeni (30 kun) — Telegram Mini App kirishi uchun ham ishlatiladi */
+export function createSessionToken(payload: object): string {
+  return createToken(payload);
+}
+
+function parseToken(token: string): Record<string, unknown> | null {
+  const data = parseSignedToken<Record<string, unknown>>(token);
+  if (!data) return null;
+  const expiresAt = data["_expiresAt"] as number | undefined;
+  // Eski (v1) tokenlarda _expiresAt yo'q edi — ularni ham vaqtincha qabul qilamiz,
+  // lekin yangi login qilinganda ular avtomatik yangi, muddatli tokenga almashadi.
+  if (typeof expiresAt === "number" && Date.now() > expiresAt) {
+    return null;
+  }
+  return data;
+}
+
+export function getAuthUser(authHeader: string | undefined): Record<string, unknown> | null {
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7);
+  return parseToken(token);
+}
+
+import type { Request, Response, NextFunction } from "express";
+
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) {
+    res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
+    return;
+  }
+  (req as Request & { user: Record<string, unknown> }).user = user;
+  next();
+}
+
+// POST /api/auth/login
+router.post("/auth/login", async (req, res): Promise<void> => {
+  const parsed = LoginBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { login, password } = parsed.data;
+  const trimmedLogin = login.trim();
+  const trimmedPassword = password.trim();
+
+  if (trimmedLogin === "admin" && trimmedPassword === ADMIN_PASSWORD.trim()) {
+    const payload = {
+      id: "admin",
+      role: "admin",
+      full_name: "Administrator",
+      login: "admin",
+      class_name: null,
+      class_id: null,
+      telegram_id: null,
+    };
+    const token = createToken(payload);
+    res.setHeader("X-Auth-Token", token);
+    res.json(LoginResponse.parse({ ...payload, token }));
+    return;
+  }
+
+  type StaffRow = { id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean; pro_expires_at?: string | null };
+
+  const staff = await queryOne<StaffRow>(
+    "SELECT id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach, pro_expires_at FROM staff WHERE LOWER(login) = LOWER($1)",
+    [trimmedLogin]
+  );
+
+  const staffPasswordOk = staff
+    ? await verifyPassword(trimmedPassword, staff.password, async (newHash) => {
+        await query("UPDATE staff SET password = $1 WHERE id = $2", [newHash, staff.id]);
+      })
+    : false;
+
+  if (staff && staffPasswordOk) {
+    let class_name: string | null = null;
+    if (staff.class_id) {
+      const cls = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [staff.class_id]);
+      class_name = cls?.name ?? null;
+    }
+    const isTeachingRole = ["teacher", "sinf_rahbari"].includes(staff.role);
+    const subjects = isTeachingRole ? (staff.subjects ?? []) : undefined;
+    const payload = {
+      id: staff.id,
+      role: staff.role,
+      full_name: staff.full_name,
+      login: staff.login,
+      class_name,
+      class_id: staff.class_id,
+      telegram_id: staff.telegram_id,
+      subjects,
+      can_teach: staff.can_teach ?? false,
+      pro_expires_at: (staff as Record<string, unknown>)["pro_expires_at"] as string | null ?? null,
+    };
+    const token = createToken(payload);
+    res.setHeader("X-Auth-Token", token);
+    res.json(LoginResponse.parse({ ...payload, token }));
+    return;
+  }
+
+  type StudentRow = { id: string; telegram_id: number; full_name: string; class_name: string; login: string; password: string; pro_expires_at?: string | null };
+
+  const student = await queryOne<StudentRow>(
+    "SELECT id, telegram_id, full_name, class_name, login, password, pro_expires_at FROM users WHERE LOWER(login) = LOWER($1)",
+    [trimmedLogin]
+  );
+
+  const studentPasswordOk = student
+    ? await verifyPassword(trimmedPassword, student.password, async (newHash) => {
+        await query("UPDATE users SET password = $1 WHERE id = $2", [newHash, student.id]);
+      })
+    : false;
+
+  if (student && studentPasswordOk) {
+    const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [student.class_name]);
+    const payload = {
+      id: student.id ?? String(student.telegram_id),
+      role: "student",
+      full_name: student.full_name,
+      login: student.login,
+      class_name: student.class_name,
+      class_id: cls?.id ?? null,
+      telegram_id: student.telegram_id,
+      pro_expires_at: (student as Record<string, unknown>)["pro_expires_at"] as string | null ?? null,
+    };
+    const token = createToken(payload);
+    res.setHeader("X-Auth-Token", token);
+    res.json(LoginResponse.parse({ ...payload, token }));
+    return;
+  }
+
+  logger.warn({ login }, "Failed login attempt");
+  res.status(401).json({ error: "Login yoki parol noto'g'ri" });
+});
+
+function generateStudentLogin(firstName: string): string {
+  const base = firstName
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ".")
+    .replace(/\.+/g, ".")
+    .replace(/^\.+|\.+$/g, "") || "student";
+  return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
+async function uniqueLogin(base: string): Promise<string> {
+  let login = base;
+  let suffix = 1;
+  while (true) {
+    const [a, b] = await Promise.all([
+      queryOne("SELECT login FROM staff WHERE LOWER(login) = LOWER($1)", [login]),
+      queryOne("SELECT login FROM users WHERE LOWER(login) = LOWER($1)", [login]),
+    ]);
+    if (!a && !b) return login;
+    login = `${base}${suffix}`;
+    suffix++;
+  }
+}
+
+const STAFF_ROLE_SLUG: Record<string, string> = {
+  director: "direktor",
+  mudir: "direktor",
+  zam_direktor: "zamdirektor",
+  zavuch: "zavuch",
+  kutubxonachi: "kutubxona",
+  teacher: "fan",
+};
+
+function generateStaffPassword(role: string, className: string | null): string {
+  if (role === "sinf_rahbari" && className) {
+    return "3maktab" + className.toLowerCase().replace(/\s+/g, "");
+  }
+  return "3maktab" + (STAFF_ROLE_SLUG[role] ?? role);
+}
+
+function generateStudentPassword(className: string): string {
+  return "3maktab" + className.toLowerCase().replace(/\s+/g, "");
+}
+
+// POST /api/auth/register
+router.post("/auth/register", async (req, res): Promise<void> => {
+  const { last_name, first_name, phone_number, class_name, code_id } = req.body as {
+    last_name?: string;
+    first_name?: string;
+    phone_number?: string;
+    class_name?: string;
+    code_id?: string;
+  };
+
+  if (!first_name || first_name.trim().length < 2) {
+    res.status(400).json({ error: "Ismni kiriting (kamida 2 ta harf)" });
+    return;
+  }
+  if (!last_name || last_name.trim().length < 2) {
+    res.status(400).json({ error: "Familiyani kiriting (kamida 2 ta harf)" });
+    return;
+  }
+  if (!phone_number || phone_number.trim().length < 7) {
+    res.status(400).json({ error: "Telefon raqamni kiriting" });
+    return;
+  }
+  if (!class_name || class_name.trim().length < 1) {
+    res.status(400).json({ error: "Sinfni tanlang" });
+    return;
+  }
+
+  const full_name = `${last_name.trim()} ${first_name.trim()}`;
+  const login = await uniqueLogin(generateStudentLogin(first_name.trim()));
+  const password = generateStudentPassword(class_name.trim());
+
+  const normalizedPhone = normalizePhone(phone_number);
+  const phoneUsers = await query("SELECT login FROM users WHERE phone_number = $1", [normalizedPhone]);
+
+  if (phoneUsers.length >= 2) {
+    res.status(400).json({ error: "Bu telefon raqami bilan maksimal 2 ta foydalanuvchi ro'yxatdan o'ta oladi" });
+    return;
+  }
+
+  const linkedChatId = getChatIdByPhone(normalizedPhone);
+  const telegram_id = linkedChatId ?? Date.now();
+  const registration_date = new Date().toISOString();
+
+  const pro_expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    const passwordHash = await hashPassword(password);
+    await query(
+      "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date, pro_expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+      [telegram_id, full_name, normalizedPhone, class_name, login, passwordHash, registration_date, pro_expires_at]
+    );
+
+    if (code_id) {
+      await query(
+        "UPDATE registration_codes SET used = true, used_at = $1 WHERE id = $2",
+        [new Date().toISOString(), code_id]
+      );
+    }
+
+    const payload = {
+      id: String(telegram_id),
+      role: "student",
+      full_name,
+      login,
+      class_name,
+      class_id: null,
+      telegram_id,
+      pro_expires_at,
+    };
+    const token = createToken(payload);
+    res.json({ ...LoginResponse.parse({ ...payload, token }), password });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message ?? "Xatolik yuz berdi" });
+  }
+});
+router.post("/auth/register-staff", async (req, res): Promise<void> => {
+  const { last_name, first_name, full_name: rawFullName, role, class_id, subjects, code_id } = req.body as {
+    last_name?: string;
+    first_name?: string;
+    full_name?: string;
+    role?: string;
+    class_id?: string | null;
+    subjects?: string[];
+    code_id?: string;
+  };
+
+  const full_name = (first_name && last_name)
+    ? `${last_name.trim()} ${first_name.trim()}`
+    : (rawFullName ?? "");
+
+  const allowedRoles = ["director", "mudir", "zam_direktor", "zavuch", "sinf_rahbari", "teacher", "kutubxonachi"];
+  if (!role || !allowedRoles.includes(role)) {
+    res.status(400).json({ error: "Noto'g'ri rol tanlandi" });
+    return;
+  }
+  if (!full_name || full_name.trim().length < 2) {
+    res.status(400).json({ error: "Ism familiyani to'liq kiriting" });
+    return;
+  }
+
+  const SINGLE_SLOT_ROLES = ["director", "mudir", "zam_direktor", "zavuch", "kutubxonachi"];
+  if (SINGLE_SLOT_ROLES.includes(role)) {
+    const existingRole = await queryOne("SELECT id FROM staff WHERE role = $1", [role]);
+    if (existingRole) {
+      const roleNames: Record<string, string> = {
+        director: "Direktor", mudir: "Obidov Boburjon",
+        zam_direktor: "Direktor o'rinbosari", zavuch: "Zavuch", kutubxonachi: "Kutubxonachi",
+      };
+      res.status(400).json({ error: `${roleNames[role] ?? role} allaqachon ro'yxatdan o'tgan` });
+      return;
+    }
+  }
+
+  if ((role === "sinf_rahbari" || role === "teacher") && class_id) {
+    const existingRahbar = await queryOne(
+      "SELECT id FROM staff WHERE role IN ('sinf_rahbari','teacher') AND class_id = $1",
+      [class_id]
+    );
+    if (existingRahbar) {
+      res.status(400).json({ error: "Bu sinf uchun sinf rahbari allaqachon tayinlangan" });
+      return;
+    }
+  }
+
+  if (role === "sinf_rahbari" && !class_id) {
+    res.status(400).json({ error: "Sinf rahbari uchun sinf tanlanishi shart" });
+    return;
+  }
+
+  // Login va parol endi qo'lda kiritilmaydi — avtomatik generatsiya qilinadi
+  // (login: ismning bosh harfi katta bilan; parol: 3maktab + sinf yoki lavozim).
+  let classNameForPassword: string | null = null;
+  if (class_id) {
+    const cls = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [class_id]);
+    classNameForPassword = cls?.name ?? null;
+  }
+
+  const loginFirstName = (first_name && first_name.trim()) || full_name.trim().split(" ")[0] || "xodim";
+  const login = await uniqueLogin(generateStudentLogin(loginFirstName));
+  const password = generateStaffPassword(role, classNameForPassword);
+
+  const pro_expires_at_staff = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    const passwordHash = await hashPassword(password);
+    const newStaff = await queryOne<{ id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; pro_expires_at: string | null }>(
+      "INSERT INTO staff (full_name, role, class_id, login, password, telegram_id, subjects, can_teach, pro_expires_at) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8) RETURNING id, full_name, role, class_id, login, password, telegram_id, pro_expires_at",
+      [full_name.trim(), role, class_id ?? null, login, passwordHash,
+       subjects ?? [],
+       role === "teacher" || role === "sinf_rahbari",
+       pro_expires_at_staff]
+    );
+
+    if (!newStaff) {
+      res.status(500).json({ error: "Qo'shishda xatolik yuz berdi" });
+      return;
+    }
+
+    if (code_id) {
+      await query(
+        "UPDATE registration_codes SET used = true, used_at = $1 WHERE id = $2",
+        [new Date().toISOString(), code_id]
+      );
+    }
+
+    let class_name: string | null = classNameForPassword;
+    if (!class_name && newStaff.class_id) {
+      const cls = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [newStaff.class_id]);
+      class_name = cls?.name ?? null;
+    }
+
+    const payload = {
+      id: newStaff.id,
+      role: newStaff.role,
+      full_name: newStaff.full_name,
+      login: newStaff.login,
+      class_name,
+      class_id: newStaff.class_id,
+      telegram_id: newStaff.telegram_id,
+      pro_expires_at: newStaff.pro_expires_at ?? null,
+    };
+    const token = createToken(payload);
+    // Diqqat: bu yerda ataylab bazadagi (xeshlangan) `newStaff.password` emas,
+    // balki foydalanuvchi kiritgan asl (plaintext) `password` qaytariladi —
+    // aks holda admin ekranida bcrypt xeshi ko'rsatilib qolardi.
+    res.status(201).json({ ...payload, token, password });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message ?? "Xatolik yuz berdi" });
+  }
+});
+
+// GET /api/auth/bot-login?token=xxx
+router.get("/auth/bot-login", async (req, res): Promise<void> => {
+  const token = req.query["token"];
+  if (typeof token !== "string" || !token) {
+    res.status(400).json({ error: "Token kerak" });
+    return;
+  }
+
+  const entry = parseMagicToken(token);
+  if (!entry) {
+    res.status(401).json({ error: "Token yaroqsiz" });
+    return;
+  }
+  if (entry.expiresAt < Date.now()) {
+    res.status(401).json({ error: "Token muddati o'tgan (15 daqiqa). Botdan qayta havolani oling." });
+    return;
+  }
+
+  const authToken = createToken(entry.payload);
+  res.json(LoginResponse.parse({ ...entry.payload, token: authToken }));
+});
+
+// GET /api/auth/me
+router.get("/auth/me", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) {
+    res.status(401).json({ error: "Autentifikatsiya talab qilinadi" });
+    return;
+  }
+  res.json(GetMeResponse.parse(user));
+});
+
+// POST /api/auth/logout
+router.post("/auth/logout", async (_req, res): Promise<void> => {
+  res.json(LogoutResponse.parse({ ok: true }));
+});
+
+// PATCH /api/auth/update-credentials — login va/yoki parolni o'zgartirish
+// (avtomatik berilgan login/parol yoqmasa, foydalanuvchi o'zi tahrirlaydi).
+// Ishlaydi: o'quvchi, o'qituvchi/xodim va admin uchun ham.
+const UpdateCredentialsBody = z.object({
+  login: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9._]+$/, "Login faqat lotin harflar, raqam va nuqtadan iborat bo'lsin").optional(),
+  password: z.string().min(4).max(64).optional(),
+});
+
+router.patch("/auth/update-credentials", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  if (user["role"] === "admin") { res.status(400).json({ error: "Admin login/paroli bu yerdan o'zgartirilmaydi" }); return; }
+
+  const parsed = UpdateCredentialsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { login: newLogin, password: newPassword } = parsed.data;
+  if (!newLogin && !newPassword) { res.status(400).json({ error: "Hech narsa o'zgartirilmadi" }); return; }
+
+  const isStudent = user["role"] === "student";
+  const table = isStudent ? "users" : "staff";
+  const userId = user["id"] as string;
+
+  if (newLogin) {
+    const trimmed = newLogin.trim();
+    const [existStaff, existStudent] = await Promise.all([
+      queryOne("SELECT id FROM staff WHERE LOWER(login) = LOWER($1) AND id != $2", [trimmed, isStudent ? "" : userId]),
+      queryOne("SELECT id FROM users WHERE LOWER(login) = LOWER($1) AND id != $2", [trimmed, isStudent ? userId : ""]),
+    ]);
+    if (existStaff || existStudent) {
+      res.status(400).json({ error: "Bu login band. Boshqasini tanlang." });
+      return;
+    }
+    await query(`UPDATE ${table} SET login = $1 WHERE id = $2`, [trimmed, userId]);
+  }
+
+  if (newPassword) {
+    const hash = await hashPassword(newPassword);
+    await query(`UPDATE ${table} SET password = $1 WHERE id = $2`, [hash, userId]);
+  }
+
+  const fresh = await queryOne<{ login: string }>(`SELECT login FROM ${table} WHERE id = $1`, [userId]);
+  res.json({ ok: true, login: fresh?.login ?? user["login"] });
+});
+
+export default router;
