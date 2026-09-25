@@ -75,6 +75,31 @@ export function loadFaceApi(onProgress?: (msg: string) => void): Promise<any> {
   return loading;
 }
 
+/**
+ * "Isitish": birinchi aniqlash WebGL shaderlarini kompilyatsiya qiladi (1–3 soniya).
+ * Buni kiosk ochilganda bo'sh kadrlarda oldindan qilamiz — birinchi o'quvchi kutmaydi.
+ */
+export async function warmup(faceapi: any): Promise<void> {
+  try {
+    const c = document.createElement("canvas");
+    c.width = 224;
+    c.height = 224;
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#777";
+      ctx.fillRect(0, 0, 224, 224);
+    }
+    await faceapi.detectSingleFace(c, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }));
+    const f = document.createElement("canvas");
+    f.width = 150;
+    f.height = 150;
+    await faceapi.nets.faceLandmark68Net.detectLandmarks(f);
+    await faceapi.nets.faceRecognitionNet.computeFaceDescriptor(f);
+  } catch {
+    /* isitish shart emas — xato bo'lsa ham davom etamiz */
+  }
+}
+
 export interface FaceResult {
   descriptor: Float32Array;
   score: number;
@@ -103,7 +128,9 @@ export interface Person {
   name: string;
   class_name: string;
   d: number[][];
-  arrived: string | null;
+  arrived: string | null; // bugun kelgan vaqti "07:52"
+  arrived_ms: number | null; // ms (qancha vaqt o'tganini hisoblash uchun)
+  left: string | null; // bugun ketgan vaqti
 }
 
 /** Eng yaqin 2 ta odamni topadi (ishonch uchun farqni ham tekshiramiz) */

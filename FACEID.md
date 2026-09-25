@@ -7,17 +7,25 @@ Yuzni tanish **telefonning o'zida** bajariladi (`@vladmandic/face-api`, WebGL), 
 
 1. **Ro'yxatga olish** — `Face ID → Yuzlarni ro'yxatga olish` (sinf rahbari o'z sinfini, admin hammasini)
    - Sinfni tanlang → o'quvchini bosing → **"Ota-ona roziligi olingan"** belgisini qo'ying → kamera 3 ta namuna oladi (~10 soniya)
-   - Bot o'xshash yuzni (boshqa o'quvchi / egizak) sezsa — ogohlantiradi
-2. **Ertalab** — admin `Face ID → ▶ Bugungi Face ID ni boshlash` ni bosadi va telefonni eshik yoniga qo'yadi
-   - O'quvchi kameraga qaraydi → ekranda ismi, sinfi, vaqti chiqadi, ovozli signal
-   - Davomatga avtomatik **"keldi"** yoki **"kech qoldi"** (sozlamadagi vaqtdan keyin) yoziladi
-   - O'quvchiga Telegram bot orqali "Maktabga keldingiz: 07:52" xabari boradi
+   - O'xshash yuz (boshqa o'quvchi / egizak) sezilsa — ogohlantiradi
+2. **Kiosk** — admin `Face ID → ▶ Bugungi Face ID ni boshlash` ni bosadi va telefonni eshik yoniga qo'yadi
+   - **AVTO rejim** (bitta eshik): bugun kelmagan bo'lsa → **KELDI**; kelganiga 20 daqiqadan ko'p bo'lsa → **KETDI**
+   - Kirish va chiqish eshigi alohida bo'lsa — kioskda **KELDI** yoki **KETDI** rejimini tanlang
+   - **Kech qoldi** — sinfning bugungi birinchi darsi boshlanganidan keyin kelsa (dars jadvalidan; 2 smena ham to'g'ri ishlaydi).
+     Jadval kiritilmagan bo'lsa — sozlamadagi vaqt (standart 08:00)
+   - **Erta ketdi** — sinfning bugungi oxirgi darsi tugashidan oldin chiqsa
+   - Davomatga avtomatik yoziladi, o'quvchiga Telegram xabar: "Keldingiz 07:52" / "Chiqdingiz 13:35"
    - Internet uzilsa — belgilar telefonda saqlanadi va keyin avtomatik yuboriladi
-3. **Boshqaruv sahifasi** (`/faceid`) — bugun kim keldi (sinflar kesimida), kechikkanlar, oxirgi kelganlar,
+3. **Boshqaruv sahifasi** (`/faceid`) — keldi / kechikdi / ketdi / erta ketdi, sinflar kesimida, oxirgi harakatlar,
    sozlamalar va **"Kelmaganlarni sinf rahbarlariga yuborish"** (Telegram)
 
+## Tezlik
+- Natija ekranga **darhol** chiqadi (server javobini kutmaydi), server fonda xabardor qilinadi
+- Yuz aniq tanilsa — 1 kadr, shubhali bo'lsa — 2 kadr (odatda 0,3–0,6 soniya)
+- Modellar kiosk ochilganda oldindan "isitiladi" — birinchi o'quvchi ham kutmaydi
+- Bir o'quvchi kamera oldida tursa, 6 soniya davomida qayta ko'rsatilmaydi — keyingi o'quvchi darhol o'tadi
+
 ## Aniqlik
-- Bir odam **3 ta ketma-ket kadrda** tanilgandan keyingina belgilanadi
 - Eng yaqin 2 ta odam orasidagi farq ham tekshiriladi (adashmaslik uchun)
 - Sozlamada: Qat'iy / O'rtacha (tavsiya) / Yumshoq
 - **Cheklov:** tizim rasm va tirik odamni ajratmaydi (liveness yo'q) — kiosk navbatchi nazoratida tursin

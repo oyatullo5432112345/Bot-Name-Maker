@@ -28,6 +28,11 @@ CREATE TABLE IF NOT EXISTS face_checkins (
 );
 CREATE INDEX IF NOT EXISTS idx_face_checkins_date ON face_checkins(date, class_name);
 
+-- Keldi / ketdi: ketish vaqti va "erta ketdi" belgisi
+ALTER TABLE face_checkins ADD COLUMN IF NOT EXISTS left_at TIMESTAMPTZ;
+ALTER TABLE face_checkins ADD COLUMN IF NOT EXISTS left_early BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE face_checkins ALTER COLUMN checked_at DROP NOT NULL;
+
 CREATE TABLE IF NOT EXISTS face_settings (
   id         SMALLINT PRIMARY KEY,
   data       JSONB NOT NULL DEFAULT '{}'::jsonb,
