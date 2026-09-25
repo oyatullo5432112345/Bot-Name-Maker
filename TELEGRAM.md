@@ -30,7 +30,30 @@ Avtomatik (O'zbekiston vaqti):
 - **Shanba 16:00** — haftalik TOP (maktab kanali + har bir sinf guruhi)
 - Guruhga yangi o'quvchi qo'shilsa — "Botga ulanish" tugmasi
 
-### 4. Maktab kanali
+### 4. 🎮 Bilimlar jangi — sinf guruhidagi o'yin
+**O'qituvchi uchun (2–3 bosish):**
+1. Botda **🎮 Sinf o'yini** tugmasini bosing (yoki sinf guruhida `/oyin` yozing).
+2. Savollar manbaini tanlang:
+   - **🧮 Tez hisob** — bot o'zi misol tuzadi, tayyorgarlik kerak emas (1–4 / 5–7 / 8–11 sinf darajalari).
+   - **✍️ O'z savollarim** — oddiy matn bilan yozasiz, avtomatik saqlanadi:
+     ```
+     # Geografiya — 5-sinf
+     O'zbekiston poytaxti qaysi shahar?
+     + Toshkent
+     - Samarqand
+     - Buxoro
+     ```
+   - **📚 Saqlangan to'plamlar**, **📋 Platformadagi test** (ochiq testlar ko'rsatilmaydi), **🧠 Topishmoqlar**.
+3. **🚀 BOSHLASH**. O'yin paytida shaxsiy chatda panel: **⏭ Keyingi · ⏸ Pauza · ⏹ Tugatish**.
+
+**O'quvchilar uchun:** guruhda Telegram quiz-savollari chiqadi, variantni bosadi.
+- To'g'ri javob — 10 ball, tezlik bonusi — +5 gacha, har 3 ta ketma-ket to'g'ri — 🔥 +3
+- Har savoldan keyin: nechta kishi topdi, eng tezkor, seriyalar, TOP-3
+- Oxirida 🥇🥈🥉 va tanga: 15 / 10 / 5 + qatnashgani uchun 2 (kamida 1 ta to'g'ri javob; kuniga ko'pi bilan 30 tanga; kamida 3 qatnashchi)
+- O'qituvchiga batafsil hisobot: har bir o'quvchi natijasi va **qatnashmaganlar ro'yxati**
+- Guruhda `/natija` — joriy hisob
+
+### 5. Maktab kanali
 - Botni kanalga **admin** qiling → bot rahbarga "🏫 Ha, maktab kanali" tugmasini yuboradi.
 - Yoki shaxsiy chatda: `/kanal @kanal_nomi`.
 - Saytda e'lon qo'shilganda u kanalga ham avtomatik chiqadi ("Telegram kanal va guruhlarga ham yuborish" belgisi).
@@ -55,6 +78,8 @@ Avtomatik (O'zbekiston vaqti):
 
 ## Fayllar
 - `artifacts/api-server/src/bot/features.ts` — barcha yangi bot funksiyalari
+- `artifacts/api-server/src/bot/games.ts` — Bilimlar jangi o'yini
+- `artifacts/api-server/src/bot/game-questions.ts` — Tez hisob generatori va savol formati
 - `artifacts/api-server/src/lib/tg-shared.ts` — guruh/kanal bazasi, yuborish, vaqt yordamchilari
 - `artifacts/api-server/src/routes/telegram-webapp.ts` — Mini App kirish
 - `artifacts/platform/src/lib/telegram-webapp.ts` — frontend Mini App SDK

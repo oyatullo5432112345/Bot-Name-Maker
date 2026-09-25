@@ -27,11 +27,13 @@ import boardGamesRouter from "./board-games.js";
 import wheelGamesRouter from "./wheel-games.js";
 import adminResetRouter from "./admin-reset.js";
 import riddlesRouter from "./riddles.js";
+import telegramWebappRouter from "./telegram-webapp.js";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
+router.use(telegramWebappRouter);
 router.use(supportRouter);
 router.use(libraryRouter);
 router.use(certificateRouter);

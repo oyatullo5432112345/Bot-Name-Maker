@@ -48,7 +48,7 @@ function looksHashed(stored: string): boolean {
  *   solishtiradi (vaqt-doimiy taqqoslash bilan) va agar mos kelsa,
  *   `onUpgrade` callback orqali xeshlangan variantga yangilaydi.
  */
-async function verifyPassword(
+export async function verifyPassword(
   plain: string,
   stored: string,
   onUpgrade?: (newHash: string) => Promise<void>
@@ -125,6 +125,11 @@ function createToken(payload: object): string {
   // Har bir sessiya tokeniga yaratilgan vaqt + amal qilish muddatini qo'shamiz.
   const withExpiry = { ...payload, _issuedAt: Date.now(), _expiresAt: Date.now() + SESSION_TTL_MS };
   return createSignedToken(withExpiry);
+}
+
+/** Sessiya tokeni (30 kun) — Telegram Mini App kirishi uchun ham ishlatiladi */
+export function createSessionToken(payload: object): string {
+  return createToken(payload);
 }
 
 function parseToken(token: string): Record<string, unknown> | null {

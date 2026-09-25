@@ -3,10 +3,14 @@ import { logger } from "./lib/logger.js";
 import { createServer } from "http";
 import { initSettings } from "./bot/settings.js";
 import { startMonitoringScheduler } from "./routes/monitoring.js";
+import { ensureTelegramSchema } from "./lib/tg-shared.js";
 
 // Bot sozlamalarini bazadan yuklaymiz — bot yoqilmagan bo'lsa ham,
 // admin panel /api/settings orqali ularni o'qiy/yoza olishi kerak.
 void initSettings();
+
+// Telegram guruh/kanal jadvallari (idempotent)
+void ensureTelegramSchema();
 
 // Monitoring testlarini rejalashtirilgan vaqtida avtomatik ochish
 startMonitoringScheduler();
@@ -80,7 +84,10 @@ if (!BOT_TOKEN) {
         app.use(webhookPath, webhookCallback(bot, "express"));
 
         try {
-          await bot.api.setWebhook(webhookUrl);
+          // poll_answer — "Bilimlar jangi" javoblari, my_chat_member — bot guruh/kanalga qo'shilishi
+          await bot.api.setWebhook(webhookUrl, {
+            allowed_updates: ["message", "edited_message", "callback_query", "my_chat_member", "poll_answer", "channel_post"],
+          });
           logger.info({ webhookUrl }, "Telegram bot webhook o'rnatildi ✅");
         } catch (err) {
           logger.error({ err }, "Webhook o'rnatishda xatolik");
@@ -111,6 +118,7 @@ if (!BOT_TOKEN) {
         process.once("SIGTERM", () => gracefulShutdown("SIGTERM", stopDev));
 
         await bot.start({
+          allowed_updates: ["message", "edited_message", "callback_query", "my_chat_member", "poll_answer", "channel_post"],
           onStart: () => logger.info("Telegram bot ishga tushdi (polling) ✅"),
         });
       }

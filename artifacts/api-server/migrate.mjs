@@ -41,6 +41,7 @@ const SQL_FILES = [
   "008_zukko_game.sql",
   "009_monitoring_multi_correct.sql",
   "010_games_stats_ownership.sql",
+  "011_telegram_integration.sql",
 ];
 
 // Qo'shimcha ustunlar (agar mavjud bo'lmasa qo'shiladi)

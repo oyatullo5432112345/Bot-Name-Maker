@@ -19,7 +19,8 @@ import {
   findRoleByCode,
   type RoleRegCodes,
 } from "./settings.js";
-import { createMagicToken } from "../routes/auth.js";
+import { createMagicToken, verifyPassword } from "../routes/auth.js";
+import { registerTelegramFeatures, sendMainMenu } from "./features.js";
 import { generateCertificatePNG, todayUzDate } from "../lib/certificate-generator.js";
 import { createSessionStore } from "./session-store.js";
 import { initSettings } from "./settings.js";
@@ -362,12 +363,12 @@ async function sendAccountInfo(
 
     await ctx.reply(
       `🎉 *Akkauntingiz muvaffaqiyatli bog'landi\\!*\n\n` +
-      `👤 *${u.full_name.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}*\n` +
-      `🏫 Sinf: ${(u.class_name ?? "—").replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}\n\n` +
+      `👤 *${u2.full_name.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}*\n` +
+      `🏫 Sinf: ${(u2.class_name ?? "—").replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}\n\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `🔑 *Kirish ma'lumotlari:*\n` +
-      `👤 Login: \`${u.login}\`\n` +
-      `🔒 Parol: \`${u.password}\`\n` +
+      `👤 Login: \`${u2.login}\`\n` +
+      (u2.password && !u2.password.startsWith("$2") ? `🔒 Parol: \`${u2.password}\`\n` : "") +
       `━━━━━━━━━━━━━━━━━━━━\n\n` +
       `📌 *"Bir bosish"* tugmasi 15 daqiqa amal qiladi\\.`,
       { parse_mode: "MarkdownV2", reply_markup: kb }
@@ -419,6 +420,11 @@ export function createBot(): Bot {
 
   const bot = new Bot(token);
 
+  // Yangi Telegram funksiyalari: rol menyulari, davomat, sinf guruhlari,
+  // maktab kanali, avtomatik postlar. ENG BOSHIDA ro'yxatdan o'tadi —
+  // guruh xabarlari quyidagi eski handlerlarga tushmasligi uchun.
+  registerTelegramFeatures(bot, { websiteUrl: WEBSITE_URL, adminId: ADMIN_ID });
+
   // ─── /start ────────────────────────────────────────────────────────────────
   bot.command("start", async (ctx) => {
     const userId = ctx.from?.id;
@@ -446,6 +452,7 @@ export function createBot(): Bot {
         "_(Havola 15 daqiqa amal qiladi)_",
         { parse_mode: "Markdown", reply_markup: adminKb }
       );
+      await sendMainMenu(ctx, userId);
       return;
     }
 
@@ -516,6 +523,7 @@ export function createBot(): Bot {
           `_(Havola 15 daqiqa amal qiladi)_`,
           { parse_mode: "Markdown", reply_markup: kb }
         );
+        await sendMainMenu(ctx, userId);
       } else {
         await sendWelcome(ctx, false);
       }
@@ -779,6 +787,7 @@ export function createBot(): Bot {
           reply_markup: kb,
         }
       );
+      await sendMainMenu(ctx, userId);
     } else {
       // Saytda hali ro'yxatdan o'tmagan — faylga saqlab qo'yamiz
       linkPhoneToChatId(normalized, userId);
@@ -1151,6 +1160,7 @@ export function createBot(): Bot {
       // Video yo'q — to'g'ridan akkaunt bog'lash
       await ctx.editMessageText("⏳ Akkauntingiz bog'lanmoqda...");
       await sendAccountInfo(ctx, table, dbId, ctx.from.id);
+      await sendMainMenu(ctx, ctx.from.id);
     }
   });
 
@@ -1162,6 +1172,30 @@ export function createBot(): Bot {
     await ctx.answerCallbackQuery("✅ Barakalla!");
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() });
     await sendAccountInfo(ctx, table, dbId, ctx.from.id);
+    await sendMainMenu(ctx, ctx.from.id);
+  });
+
+  // ─── /mahfiykod — admin ro'yxat kodini o'rnatadi ───────────────────────────
+  bot.command("mahfiykod", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId || !isAdmin(userId)) {
+      await ctx.reply("⛔ Bu buyruq faqat admin uchun.");
+      return;
+    }
+    const current = getStaffRegCode();
+    userStates.set(userId, { type: "awaiting_new_reg_code" });
+    await ctx.reply(
+      "🔐 *Maxfiy kodni o'rnatish*\n\n" +
+      (current
+        ? `Hozirgi kod: \`${current}\`\n\n`
+        : "Hozirda kod o'rnatilmagan (hamma ro'yxatdan o'ta oladi).\n\n") +
+      "Yangi kodni yuboring.\n" +
+      "Kodni o'chirish uchun: `-` yuboring.",
+      {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard().text("❌ Bekor qilish", "admin_panel"),
+      }
+    );
   });
 
   // ─── Message handler ─────────────────────────────────────────────────────────
@@ -1243,7 +1277,7 @@ export function createBot(): Bot {
       let found = false;
 
       if (staffData) {
-        if (password === staffData.password) {
+        if (await verifyPassword(password, staffData.password)) {
           found = true;
           await query("UPDATE staff SET telegram_id = $1 WHERE id = $2", [userId, staffData.id]);
           const payload = { id: staffData.id, role: staffData.role, full_name: staffData.full_name, login: staffData.login, telegram_id: userId, subjects: staffData.subjects ?? [] };
@@ -1254,12 +1288,13 @@ export function createBot(): Bot {
             .row()
             .url("🌐 Oddiy kirish", `${WEBSITE_URL}/login`);
           await ctx.reply(
-            `✅ *Muvaffaqiyatli kirdingiz!*\n\n👤 *${staffData.full_name}*\n💼 ${STAFF_ROLE_LABELS[staffData.role] ?? staffData.role}\n\n📌 Havola 15 daqiqa amal qiladi\\.`,
+            `✅ *Muvaffaqiyatli kirdingiz\\!*\n\n👤 *${staffData.full_name.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}*\n💼 ${(STAFF_ROLE_LABELS[staffData.role] ?? staffData.role).replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}\n\n📌 Havola 15 daqiqa amal qiladi\\.`,
             { parse_mode: "MarkdownV2", reply_markup: kb }
           );
+          await sendMainMenu(ctx, userId);
         }
       } else if (userData) {
-        if (password === userData.password) {
+        if (await verifyPassword(password, userData.password)) {
           found = true;
           await query("UPDATE users SET telegram_id = $1 WHERE telegram_id = $2", [userId, userData.telegram_id]);
           const cls = userData.class_name
@@ -1273,7 +1308,7 @@ export function createBot(): Bot {
             .row()
             .url("🌐 Oddiy kirish", `${WEBSITE_URL}/login`);
           await ctx.reply(
-            `✅ *Muvaffaqiyatli kirdingiz\\!*\n\n👤 *${userData.full_name}*\n🏫 ${(userData.class_name ?? "—").replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")} sinf\n\n📌 Havola 15 daqiqa amal qiladi\\.`,
+            `✅ *Muvaffaqiyatli kirdingiz\\!*\n\n👤 *${userData.full_name.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")}*\n🏫 ${(userData.class_name ?? "—").replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")} sinf\n\n📌 Havola 15 daqiqa amal qiladi\\.`,
             { parse_mode: "MarkdownV2", reply_markup: kb }
           );
         }
@@ -1312,6 +1347,7 @@ export function createBot(): Bot {
         const waitMsg1 = await ctx.reply("⏳ Akkauntingiz bog'lanmoqda...");
         await sendAccountInfo(ctx, "users", u.id, userId);
         await ctx.api.deleteMessage(ctx.chat.id, waitMsg1.message_id).catch(() => {});
+        await sendMainMenu(ctx, userId);
         return;
       }
 
@@ -1332,6 +1368,7 @@ export function createBot(): Bot {
         const waitMsg2 = await ctx.reply("⏳ Akkauntingiz bog'lanmoqda...");
         await sendAccountInfo(ctx, "staff", d.id, userId);
         await ctx.api.deleteMessage(ctx.chat.id, waitMsg2.message_id).catch(() => {});
+        await sendMainMenu(ctx, userId);
         return;
       }
 
@@ -1351,6 +1388,7 @@ export function createBot(): Bot {
         const waitMsg3 = await ctx.reply("⏳ Akkauntingiz bog'lanmoqda...");
         await sendAccountInfo(ctx, "staff", d.id, userId);
         await ctx.api.deleteMessage(ctx.chat.id, waitMsg3.message_id).catch(() => {});
+        await sendMainMenu(ctx, userId);
         return;
       }
     }
@@ -1535,29 +1573,6 @@ export function createBot(): Bot {
 
     // ── Oddiy foydalanuvchi ───────────────────────────────────────────────
     await ctx.reply("Boshlash uchun /start yuboring.");
-  });
-
-  // ─── /mahfiykod — admin ro'yxat kodini o'rnatadi ───────────────────────────
-  bot.command("mahfiykod", async (ctx) => {
-    const userId = ctx.from?.id;
-    if (!userId || !isAdmin(userId)) {
-      await ctx.reply("⛔ Bu buyruq faqat admin uchun.");
-      return;
-    }
-    const current = getStaffRegCode();
-    userStates.set(userId, { type: "awaiting_new_reg_code" });
-    await ctx.reply(
-      "🔐 *Maxfiy kodni o'rnatish*\n\n" +
-      (current
-        ? `Hozirgi kod: \`${current}\`\n\n`
-        : "Hozirda kod o'rnatilmagan (hamma ro'yxatdan o'ta oladi).\n\n") +
-      "Yangi kodni yuboring.\n" +
-      "Kodni o'chirish uchun: `-` yuboring.",
-      {
-        parse_mode: "Markdown",
-        reply_markup: new InlineKeyboard().text("❌ Bekor qilish", "admin_panel"),
-      }
-    );
   });
 
   bot.catch((err) => {

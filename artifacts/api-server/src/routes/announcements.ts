@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
 import { requireAuth, getAuthUser } from "./auth.js";
+import { publishAnnouncement, getWebsiteUrl } from "../lib/tg-shared.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
@@ -15,7 +17,7 @@ router.get("/announcements", requireAuth, async (req, res): Promise<void> => {
       author_name: string; role_filter: string | null;
       pinned: boolean; created_at: string;
     }>(
-      `SELECT id, title, content, author_name, role_filter, pinned, created_at
+      `SELECT id, title, content, author_name, role_filter, pinned, priority, created_at
        FROM announcements
        WHERE role_filter IS NULL OR role_filter = $1 OR role_filter = 'all'
        ORDER BY pinned DESC, created_at DESC
@@ -40,8 +42,8 @@ router.post("/announcements", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const { title, content, role_filter, pinned } = req.body as {
-    title?: string; content?: string; role_filter?: string; pinned?: boolean;
+  const { title, content, role_filter, pinned, priority, publish_telegram } = req.body as {
+    title?: string; content?: string; role_filter?: string; pinned?: boolean; priority?: string; publish_telegram?: boolean;
   };
 
   if (!title?.trim() || !content?.trim()) {
@@ -51,8 +53,8 @@ router.post("/announcements", requireAuth, async (req, res): Promise<void> => {
 
   try {
     const row = await queryOne<{ id: string; created_at: string }>(
-      `INSERT INTO announcements (title, content, author_name, author_login, role_filter, pinned)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO announcements (title, content, author_name, author_login, role_filter, pinned, priority)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, created_at`,
       [
         title.trim(),
@@ -61,9 +63,24 @@ router.post("/announcements", requireAuth, async (req, res): Promise<void> => {
         user.login,
         role_filter ?? null,
         pinned ?? false,
+        ["normal", "important", "urgent"].includes(priority ?? "") ? priority : "normal",
       ]
     );
     res.status(201).json(row);
+
+    // Maktab kanali / ustozlar guruhiga ham chiqaramiz (orqa fonda).
+    // Frontend `publish_telegram: false` yuborsa — chiqarilmaydi.
+    if (publish_telegram !== false && row) {
+      void publishAnnouncement({
+        title: title.trim(),
+        content: content.trim(),
+        authorName: String(user.full_name ?? user.login),
+        roleFilter: role_filter ?? null,
+        websiteUrl: getWebsiteUrl(),
+      })
+        .then((n) => (n > 0 ? query("UPDATE announcements SET tg_published = TRUE WHERE id = $1", [row.id]) : null))
+        .catch((err) => logger.warn({ err }, "E'lonni Telegramga chiqarishda xato"));
+    }
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

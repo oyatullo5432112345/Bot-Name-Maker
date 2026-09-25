@@ -53,7 +53,7 @@ export default function AnnouncementsPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ title: "", content: "", role_filter: "all", priority: "normal" as Priority });
+  const [form, setForm] = useState({ title: "", content: "", role_filter: "all", priority: "normal" as Priority, publish_telegram: true });
 
   const canPost = user && ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"].includes(user.role);
   const canDelete = user && ["admin", "director"].includes(user.role);
@@ -80,6 +80,7 @@ export default function AnnouncementsPage() {
           content: data.content,
           priority: data.priority,
           role_filter: data.role_filter === "all" ? null : data.role_filter,
+          publish_telegram: data.publish_telegram,
         }),
       });
       if (!r.ok) throw new Error("Xatolik");
@@ -89,7 +90,7 @@ export default function AnnouncementsPage() {
       void qc.invalidateQueries({ queryKey: ["announcements"] });
       void qc.invalidateQueries({ queryKey: ["announcements-unread-count"] });
       setOpen(false);
-      setForm({ title: "", content: "", role_filter: "all", priority: "normal" });
+      setForm({ title: "", content: "", role_filter: "all", priority: "normal", publish_telegram: true });
       toast({ title: "✅ E'lon joylashtirildi" });
     },
     onError: () => toast({ variant: "destructive", title: "Xatolik", description: "E'lon joylashtirishda muammo yuz berdi" }),
@@ -167,6 +168,12 @@ export default function AnnouncementsPage() {
                     </Select>
                   </div>
                 </div>
+                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                  <input type="checkbox" className="h-4 w-4 accent-primary"
+                    checked={form.publish_telegram}
+                    onChange={e => setForm(f => ({ ...f, publish_telegram: e.target.checked }))} />
+                  📢 Telegram kanal va guruhlarga ham yuborish
+                </label>
                 <Button className="w-full" disabled={!form.title.trim() || !form.content.trim() || createMutation.isPending}
                   onClick={() => createMutation.mutate(form)}>
                   {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}

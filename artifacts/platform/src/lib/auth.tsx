@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useGetMe, setAuthTokenGetter } from "@workspace/api-client-react";
 import { AuthContext } from "./auth-context";
+import { isInTelegram, telegramAutoLogin, linkTelegramAccount } from "./telegram-webapp";
 
 const TOKEN_KEY = "talim_auth_token";
 // Faqat UI uchun "sekin ulanish" belgisi — bu vaqt tugashi HECH QACHON
@@ -14,6 +15,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [slow, setSlow] = useState(false);
   const tokenSetup = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tgTried = useRef(false);
 
   if (!tokenSetup.current) {
     setAuthTokenGetter(() => localStorage.getItem(TOKEN_KEY));
@@ -35,7 +37,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (initialized) return;
 
     if (!hasToken) {
-      setInitialized(true);
+      // Telegram Mini App ichida — initData orqali avtomatik kirishga urinamiz
+      if (isInTelegram() && !tgTried.current) {
+        tgTried.current = true;
+        void telegramAutoLogin<import("@workspace/api-client-react").AuthResult>().then((result) => {
+          if (result?.token) {
+            localStorage.setItem(TOKEN_KEY, result.token);
+            setLocalUser(result);
+          }
+          setInitialized(true);
+        });
+        return;
+      }
+      // Telegram so'rovi davom etayotgan bo'lsa — kutamiz
+      if (!isInTelegram()) setInitialized(true);
       return;
     }
 
@@ -67,6 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = (result: import("@workspace/api-client-react").AuthResult) => {
     if (result.token) {
       localStorage.setItem(TOKEN_KEY, result.token);
+      // Telegram ichida login/parol bilan kirildi — keyingi safar avtomatik kirsin
+      if (isInTelegram()) void linkTelegramAccount(result.token);
     }
     setLocalUser(result);
     setInitialized(true);
