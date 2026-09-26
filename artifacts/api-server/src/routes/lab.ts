@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS lab_computers (
   unlock_code  TEXT NOT NULL DEFAULT '',
   locked_by    TEXT NOT NULL DEFAULT '',
   locked_at    TIMESTAMPTZ,
-  current_user TEXT NOT NULL DEFAULT '',
+  active_user  TEXT NOT NULL DEFAULT '',
   last_seen    TIMESTAMPTZ,
   note         TEXT NOT NULL DEFAULT '',
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -148,7 +148,7 @@ interface ComputerRow {
   unlock_code: string;
   locked_by: string;
   locked_at: string | null;
-  current_user: string;
+  active_user: string;
   last_seen: string | null;
   note: string;
 }
@@ -166,7 +166,7 @@ function viewComputer(c: ComputerRow, manager: boolean) {
     locked: c.locked,
     locked_by: c.locked_by,
     locked_at: c.locked_at,
-    current_user: c.current_user,
+    current_user: c.active_user,
     last_seen: c.last_seen,
     note: c.note,
     unlock_code: manager ? c.unlock_code : undefined,
@@ -475,7 +475,7 @@ router.post("/lab/agent/report", async (req, res): Promise<void> => {
   }
   for (const s of statuses ?? []) {
     await query(
-      `UPDATE lab_computers SET status = $2, current_user = COALESCE($3, current_user), last_seen = NOW(), updated_at = NOW()
+      `UPDATE lab_computers SET status = $2, active_user = COALESCE($3, active_user), last_seen = NOW(), updated_at = NOW()
         WHERE host = $1`,
       [s.host, s.online ? "online" : "offline", s.current_user ?? null]
     ).catch(() => {});

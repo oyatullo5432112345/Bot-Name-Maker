@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS lab_computers (
   unlock_code  TEXT NOT NULL DEFAULT '',      -- joriy ochish kodi (bloklanganda yangi beriladi)
   locked_by    TEXT NOT NULL DEFAULT '',
   locked_at    TIMESTAMPTZ,
-  current_user TEXT NOT NULL DEFAULT '',      -- kompyuterda kim tizimga kirgan (bridge yuboradi)
+  active_user  TEXT NOT NULL DEFAULT '',      -- kompyuterda kim tizimga kirgan (bridge yuboradi) — "current_user" reserved so'z
   last_seen    TIMESTAMPTZ,
   note         TEXT NOT NULL DEFAULT '',
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
