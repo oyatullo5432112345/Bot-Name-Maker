@@ -12,6 +12,7 @@ import {
   DeleteStudentParams,
 } from "@workspace/api-zod";
 import { requireAuth } from "./auth.js";
+import { genUniqueLoginId } from "./auth-login.js";
 
 const router: IRouter = Router();
 
@@ -41,7 +42,7 @@ router.post("/students/bulk", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const created: { full_name: string; login: string; password: string; class_name: string }[] = [];
+  const created: { full_name: string; login: string; password: string; login_id: string; class_name: string }[] = [];
   const errors: { full_name: string; error: string }[] = [];
 
   for (const s of students) {
@@ -51,11 +52,12 @@ router.post("/students/bulk", requireAuth, async (req, res): Promise<void> => {
     const password = Math.floor(10000 + Math.random() * 90000).toString();
     const telegram_id = Date.now() + Math.floor(Math.random() * 10000);
     try {
+      const login_id = await genUniqueLoginId();
       await query(
-        "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-        [telegram_id, s.full_name, s.phone_number || "", s.class_name, login, password, new Date().toISOString()]
+        "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, login_id, registration_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        [telegram_id, s.full_name, s.phone_number || "", s.class_name, login, password, login_id, new Date().toISOString()]
       );
-      created.push({ full_name: s.full_name, login, password, class_name: s.class_name });
+      created.push({ full_name: s.full_name, login, password, login_id, class_name: s.class_name });
     } catch {
       errors.push({ full_name: s.full_name, error: "Qo'shishda xatolik" });
     }
@@ -80,17 +82,18 @@ router.post("/students", requireAuth, async (req, res): Promise<void> => {
   const telegram_id = Date.now();
 
   try {
+    const login_id = await genUniqueLoginId();
     const data = await queryOne(
-      `INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, registration_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING ${SELECT}`,
-      [telegram_id, full_name, phone_number, class_name, login, password, new Date().toISOString()]
+      `INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, login_id, registration_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ${SELECT}, login_id`,
+      [telegram_id, full_name, phone_number, class_name, login, password, login_id, new Date().toISOString()]
     );
 
     if (!data) {
       res.status(500).json({ error: "O'quvchi qo'shishda xatolik" });
       return;
     }
-    res.status(201).json(GetStudentResponse.parse(data));
+    res.status(201).json({ ...GetStudentResponse.parse(data), login_id });
   } catch (err) {
     const msg = (err as Error).message ?? "";
     if (msg.includes("unique") || msg.includes("duplicate")) {

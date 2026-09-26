@@ -9,6 +9,7 @@ import {
   DeleteStaffParams,
 } from "@workspace/api-zod";
 import { requireAuth } from "./auth.js";
+import { genUniqueLoginId } from "./auth-login.js";
 
 const router: IRouter = Router();
 
@@ -60,7 +61,7 @@ router.post("/staff/bulk", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const created: { full_name: string; login: string; password: string; role: string }[] = [];
+  const created: { full_name: string; login: string; password: string; login_id: string; role: string }[] = [];
   const errors: { full_name: string; error: string }[] = [];
 
   for (const s of items) {
@@ -70,11 +71,12 @@ router.post("/staff/bulk", requireAuth, async (req, res): Promise<void> => {
     const password = Math.floor(10000 + Math.random() * 90000).toString();
     const can_teach = s.can_teach ?? (s.role === "teacher" || s.role === "sinf_rahbari");
     try {
+      const login_id = await genUniqueLoginId();
       await query(
-        "INSERT INTO staff (full_name, role, login, password, telegram_id, subjects, can_teach) VALUES ($1,$2,$3,$4,NULL,$5,$6)",
-        [s.full_name, s.role, login, password, JSON.stringify(s.subjects ?? []), can_teach]
+        "INSERT INTO staff (full_name, role, login, password, login_id, telegram_id, subjects, can_teach) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7)",
+        [s.full_name, s.role, login, password, login_id, JSON.stringify(s.subjects ?? []), can_teach]
       );
-      created.push({ full_name: s.full_name, login, password, role: s.role });
+      created.push({ full_name: s.full_name, login, password, login_id, role: s.role });
     } catch (err) {
       errors.push({ full_name: s.full_name, error: (err as Error).message });
     }
@@ -97,10 +99,11 @@ router.post("/staff", requireAuth, async (req, res): Promise<void> => {
   const password = Math.floor(100000 + Math.random() * 900000).toString();
 
   try {
+    const login_id = await genUniqueLoginId();
     const data = await queryOne<Parameters<typeof enrichStaff>[0]>(
-      `INSERT INTO staff (full_name, role, class_id, login, password, telegram_id, subjects, can_teach)
-       VALUES ($1,$2,$3,$4,$5,NULL,'{}',false) RETURNING ${SELECT}`,
-      [parsed.data.full_name, parsed.data.role, parsed.data.class_id ?? null, login, password]
+      `INSERT INTO staff (full_name, role, class_id, login, password, login_id, telegram_id, subjects, can_teach)
+       VALUES ($1,$2,$3,$4,$5,$6,NULL,'{}',false) RETURNING ${SELECT}`,
+      [parsed.data.full_name, parsed.data.role, parsed.data.class_id ?? null, login, password, login_id]
     );
 
     if (!data) {
@@ -108,7 +111,7 @@ router.post("/staff", requireAuth, async (req, res): Promise<void> => {
       return;
     }
     const enriched = await enrichStaff(data);
-    res.status(201).json(enriched);
+    res.status(201).json({ ...enriched, login_id });
   } catch (err) {
     const msg = (err as Error).message ?? "";
     if (msg.includes("unique") || msg.includes("duplicate")) {

@@ -31,6 +31,7 @@ interface CreatedStudent {
   full_name: string;
   login: string;
   password: string;
+  login_id: string;
   class_name: string;
 }
 
@@ -92,7 +93,7 @@ export default function BulkNewStudents() {
   const handleCopyAll = () => {
     if (!result) return;
     const text = result.created
-      .map((s) => `${s.full_name} | Login: ${s.login} | Mahfiy kod: ${s.password} | Sinf: ${s.class_name}`)
+      .map((s) => `${s.full_name} | Kirish ID: ${s.login_id} | Sinf: ${s.class_name}`)
       .join("\n");
     void navigator.clipboard.writeText(text);
     setCopied(true);
@@ -145,7 +146,7 @@ export default function BulkNewStudents() {
           </div>
 
           <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
-            💡 Har bir o'quvchiga avtomatik ravishda <strong>5 xonali mahfiy kod</strong> va <strong>login</strong> beriladi.
+            💡 Har bir o'quvchiga avtomatik ravishda <strong>5 xonali kirish ID</strong> beriladi. O'quvchi Face ID yoki shu ID bilan kiradi.
           </div>
 
           <div className="flex justify-end gap-3 pt-2 border-t">
@@ -186,8 +187,7 @@ export default function BulkNewStudents() {
                     <TableHead>#</TableHead>
                     <TableHead>F.I.O</TableHead>
                     <TableHead>Sinf</TableHead>
-                    <TableHead>Login</TableHead>
-                    <TableHead>Mahfiy kod (5 xonali)</TableHead>
+                    <TableHead>Kirish ID (5 xonali)</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -197,10 +197,9 @@ export default function BulkNewStudents() {
                       <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                       <TableCell className="font-medium">{s.full_name}</TableCell>
                       <TableCell>{s.class_name}</TableCell>
-                      <TableCell className="font-mono">{s.login}</TableCell>
                       <TableCell>
                         <span className="font-mono font-bold text-primary text-lg tracking-widest">
-                          {s.password}
+                          {s.login_id}
                         </span>
                       </TableCell>
                       <TableCell>
@@ -209,7 +208,7 @@ export default function BulkNewStudents() {
                           size="icon"
                           onClick={() => {
                             void navigator.clipboard.writeText(
-                              `${s.full_name} | Login: ${s.login} | Mahfiy kod: ${s.password}`
+                              `${s.full_name} | Kirish ID: ${s.login_id}`
                             );
                             toast({ title: "Nusxalandi", description: s.full_name });
                           }}

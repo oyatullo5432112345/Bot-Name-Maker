@@ -1,7 +1,12 @@
 # Kirish (login) — Face ID va 5 xonali ID
 
-Mahfiy kod bilan ro'yxatdan o'tish **bekor qilindi**. Endi hisobni maktab ma'muriyati ochadi,
-foydalanuvchi esa quyidagicha kiradi:
+**Mahfiy kod butunlay olib tashlandi** (registratsiya kodlari, "Mahfiy kodlar" sahifasi ham).
+Endi:
+- Admin **familiya + ism** yozib o'quvchi/xodim qo'shadi → tizim o'sha kishiga avtomatik **5 xonali kirish ID** beradi.
+- Platformada oddiy "ro'yxatdan o'tish" yo'q. Faqat **Face ID (yuzni ro'yxatga olish)** qoladi.
+- "Mahfiy kodlar" menyusi o'rnini **"Kirish IDlari"** egalladi.
+
+Foydalanuvchi quyidagicha kiradi:
 
 | Kim | Asosiy usul | Zaxira |
 |-----|-------------|--------|

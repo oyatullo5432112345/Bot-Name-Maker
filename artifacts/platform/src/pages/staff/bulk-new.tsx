@@ -56,6 +56,7 @@ interface CreatedStaff {
   full_name: string;
   login: string;
   password: string;
+  login_id: string;
   role: string;
 }
 interface BulkResult {
@@ -198,7 +199,7 @@ export default function BulkNewStaff() {
   const handleCopyAll = () => {
     if (!result) return;
     const text = result.created
-      .map((s) => `${s.full_name} | Login: ${s.login} | Mahfiy kod: ${s.password} | Lavozim: ${roleLabels[s.role] ?? s.role}`)
+      .map((s) => `${s.full_name} | Kirish ID: ${s.login_id} | Lavozim: ${roleLabels[s.role] ?? s.role}`)
       .join("\n");
     void navigator.clipboard.writeText(text);
     setCopied(true);
@@ -230,8 +231,7 @@ export default function BulkNewStaff() {
                   <TableHead>#</TableHead>
                   <TableHead>F.I.O</TableHead>
                   <TableHead>Lavozim</TableHead>
-                  <TableHead>Login</TableHead>
-                  <TableHead>Mahfiy kod</TableHead>
+                  <TableHead>Kirish ID</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
@@ -241,13 +241,12 @@ export default function BulkNewStaff() {
                     <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                     <TableCell className="font-medium">{s.full_name}</TableCell>
                     <TableCell>{roleLabels[s.role] ?? s.role}</TableCell>
-                    <TableCell className="font-mono">{s.login}</TableCell>
                     <TableCell>
-                      <span className="font-mono font-bold text-primary text-lg tracking-widest">{s.password}</span>
+                      <span className="font-mono font-bold text-primary text-lg tracking-widest">{s.login_id}</span>
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => {
-                        void navigator.clipboard.writeText(`${s.full_name} | Login: ${s.login} | Mahfiy kod: ${s.password}`);
+                        void navigator.clipboard.writeText(`${s.full_name} | Kirish ID: ${s.login_id}`);
                         toast({ title: "Nusxalandi", description: s.full_name });
                       }}>
                         <Copy className="w-3.5 h-3.5" />
@@ -410,7 +409,7 @@ export default function BulkNewStaff() {
         </div>
 
         <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
-          💡 Har bir xodimga avtomatik ravishda <strong>5 xonali mahfiy kod</strong> va <strong>login</strong> beriladi.
+          💡 Har bir xodimga avtomatik ravishda <strong>5 xonali kirish ID</strong> beriladi. Xodim shu ID bilan kiradi.
         </div>
 
         <div className="flex justify-end gap-3 pt-2 border-t">

@@ -427,12 +427,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {!isMudir && <NavLink href="/chat" icon={MessageSquare} label="Qo'llab-quvvatlash" badge={supportUnread} active={isActive("/chat")} />}
         </NavSection>
 
-        {!isMudir && ["admin","director"].includes(user.role) && (
+        {!isMudir && user.role === "admin" && (
           <NavSection label="Sozlamalar">
-            <NavLink href="/admin/codes" icon={KeyRound} label="Mahfiy kodlar" active={isActive("/admin/codes")} />
-            {user.role === "admin" && (
-              <NavLink href="/admin/reset" icon={AlertTriangle} label="Xavfli zona" active={isActive("/admin/reset")} />
-            )}
+            <NavLink href="/admin/reset" icon={AlertTriangle} label="Xavfli zona" active={isActive("/admin/reset")} />
           </NavSection>
         )}
 

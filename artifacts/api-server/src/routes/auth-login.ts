@@ -69,7 +69,7 @@ async function idTaken(code: string): Promise<boolean> {
   const s = await getAuthSettings();
   return !!a || !!b || s.admin_login_id === code;
 }
-async function genUniqueLoginId(): Promise<string> {
+export async function genUniqueLoginId(): Promise<string> {
   for (let i = 0; i < 60; i++) {
     const code = String(crypto.randomInt(10000, 100000)); // 10000..99999
     if (!(await idTaken(code))) return code;
@@ -77,7 +77,7 @@ async function genUniqueLoginId(): Promise<string> {
   throw new Error("Bo'sh ID topilmadi");
 }
 /** users/staff qatoriga login_id yo'q bo'lsa — beradi va qaytaradi */
-async function ensureLoginId(table: "users" | "staff", id: string): Promise<string> {
+export async function ensureLoginId(table: "users" | "staff", id: string): Promise<string> {
   const row = await queryOne<{ login_id: string }>(`SELECT login_id FROM ${table} WHERE id = $1`, [id]);
   if (row?.login_id) return row.login_id;
   const code = await genUniqueLoginId();
