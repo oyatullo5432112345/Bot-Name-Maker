@@ -46,18 +46,18 @@ export default function FaceTodayPage() {
     refetchInterval: 30_000,
   });
 
-  const act = (login: string, action: "in" | "out" | "out_excused" | "clear", name: string) =>
-    (async () => {
-      setBusy(`${login}:${action}`);
-      try {
-        await api("/faceid/manual", { method: "POST", body: JSON.stringify({ student_login: login, action, time: time || undefined }) });
-        const msg = action === "in" ? "keldi" : action === "out" ? "ketdi" : action === "out_excused" ? "ruxsat bilan ketdi" : "tozalandi";
-        toast({ title: `${name}: ${msg}` });
-        void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
-      } catch (e) {
-        toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
-      } finally { setBusy(""); }
-    })();
+  // MUHIM: bu funksiya bosilganda ishlashi uchun FUNKSIYA qaytaradi (darhol ishga tushmaydi)
+  const act = (login: string, action: "in" | "out" | "out_excused" | "clear", name: string) => async () => {
+    setBusy(`${login}:${action}`);
+    try {
+      await api("/faceid/manual", { method: "POST", body: JSON.stringify({ student_login: login, action, time: time || undefined }) });
+      const msg = action === "in" ? "keldi" : action === "out" ? "ketdi" : action === "out_excused" ? "ruxsat bilan ketdi" : "tozalandi";
+      toast({ title: `${name}: ${msg}` });
+      void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
+    } finally { setBusy(""); }
+  };
 
   const rows = (list.data ?? []).filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase()));
 
