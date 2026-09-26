@@ -571,7 +571,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-36 lg:pb-20">
-          <div className="mx-auto max-w-6xl">
+          <div key={location} className="mx-auto max-w-6xl page-fade">
             {children}
           </div>
         </main>

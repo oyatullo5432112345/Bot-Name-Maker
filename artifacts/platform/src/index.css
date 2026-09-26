@@ -468,3 +468,26 @@
     filter: drop-shadow(0 0 8px rgba(236, 72, 153, 0.8));
   }
 }
+
+/* ── Butun platforma uchun yumshoq effektlar (qo'shimcha, xavfsiz) ── */
+@keyframes talim-page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes talim-pop-in {
+  0%   { opacity: 0; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+/* Sahifa almashganda silliq paydo bo'lish */
+.page-fade { animation: talim-page-in 0.28s ease both; }
+.pop-in { animation: talim-pop-in 0.2s ease both; }
+
+/* Kartochka/tugmalarga yumshoq o'tish va ko'tarilish (ixtiyoriy) */
+.hover-lift { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.hover-lift:hover { transform: translateY(-2px); box-shadow: 0 10px 30px -12px rgba(0,0,0,0.25); }
+
+/* Harakatni kamaytirish sozlamasi yoqilgan bo'lsa — animatsiyalarni o'chiramiz */
+@media (prefers-reduced-motion: reduce) {
+  .page-fade, .pop-in { animation: none; }
+  .hover-lift { transition: none; }
+}

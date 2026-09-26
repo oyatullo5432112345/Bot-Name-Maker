@@ -46,7 +46,7 @@ function Stat({ icon: Icon, label, value, sub, accent }: {
   icon: typeof Users; label: string; value: string | number; sub?: string; accent: keyof typeof STAT_ACCENT;
 }) {
   return (
-    <div className={`rounded-2xl border bg-gradient-to-br ${STAT_ACCENT[accent]} p-4`}>
+    <div className={`rounded-2xl border bg-gradient-to-br ${STAT_ACCENT[accent]} p-4 hover-lift`}>
       <div className="flex items-center gap-2 text-sm font-medium opacity-90"><Icon className="w-4 h-4" />{label}</div>
       <div className="mt-1 text-3xl sm:text-4xl font-bold text-foreground tabular-nums">{value}</div>
       {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
