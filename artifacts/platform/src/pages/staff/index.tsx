@@ -232,13 +232,13 @@ function EditStaffDialog({
   const updateMutation = useUpdateStaff();
   const [fullName, setFullName] = useState(member.full_name);
   const [login, setLogin] = useState(member.login);
-  const [password, setPassword] = useState(member.password);
+  const [password, setPassword] = useState(""); // bo'sh — o'zgarmaydi
   const [birthday, setBirthday] = useState((member as StaffMember & { birthday?: string }).birthday ?? "");
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSave = async () => {
-    if (!fullName.trim() || !login.trim() || !password.trim()) {
-      toast({ variant: "destructive", title: "Xatolik", description: "Barcha maydonlarni to'ldiring" });
+    if (!fullName.trim() || !login.trim()) {
+      toast({ variant: "destructive", title: "Xatolik", description: "Ism va login to'ldirilsin" });
       return;
     }
     setIsLoading(true);
@@ -249,7 +249,7 @@ function EditStaffDialog({
         body: JSON.stringify({
           full_name: fullName.trim(),
           login: login.trim(),
-          password: password.trim(),
+          ...(password.trim() ? { password: password.trim() } : {}), // faqat kiritilsa o'zgaradi
           birthday: birthday || null,
         }),
       });
@@ -283,8 +283,8 @@ function EditStaffDialog({
             <Input value={login} onChange={e => setLogin(e.target.value)} placeholder="login123" />
           </div>
           <div className="space-y-1.5">
-            <Label>Parol</Label>
-            <Input value={password} onChange={e => setPassword(e.target.value)} placeholder="Parol" />
+            <Label>Yangi parol <span className="text-xs text-muted-foreground font-normal">(bo'sh qoldirsangiz — o'zgarmaydi)</span></Label>
+            <Input value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••" />
           </div>
           <div className="space-y-1.5">
             <Label>Tug'ilgan sana</Label>
@@ -496,7 +496,7 @@ export default function StaffList() {
                     )}
                   </TableCell>
                   <TableCell className="font-mono text-sm">{member.login}</TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">{member.password}</TableCell>
+                  <TableCell className="font-mono text-sm text-muted-foreground">••••••</TableCell>
                   {isAdmin && (
                     <TableCell>
                       {(member.role as string) !== "admin" && (

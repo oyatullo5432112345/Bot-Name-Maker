@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { KeyRound, X, Delete, Loader2, ScanFace } from "lucide-react";
+import { API_BASE } from "@/lib/face";
 
 export function IdLoginDialog({
   onSuccess, onClose, onUseFace,
@@ -18,7 +19,7 @@ export function IdLoginDialog({
     setLoading(true);
     setError("");
     try {
-      const r = await fetch("/api/auth/id-login", {
+      const r = await fetch(`${API_BASE}/auth/id-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ login_id: value }),

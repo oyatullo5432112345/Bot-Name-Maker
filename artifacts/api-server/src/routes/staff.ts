@@ -8,12 +8,14 @@ import {
   UpdateStaffResponse,
   DeleteStaffParams,
 } from "@workspace/api-zod";
-import { requireAuth } from "./auth.js";
+import { requireAuth, hashPassword } from "./auth.js";
 import { genUniqueLoginId } from "./auth-login.js";
 
 const router: IRouter = Router();
 
 const SELECT = "id, full_name, role, class_id, login, password, telegram_id::float8 AS telegram_id, subjects, can_teach";
+// Ro'yxatda parol JO'NATILMAYDI (xavfsizlik) — '' bilan almashtiriladi
+const LIST_SELECT = "id, full_name, role, class_id, login, '' AS password, telegram_id::float8 AS telegram_id, subjects, can_teach";
 
 async function enrichStaff(staff: {
   id: string; full_name: string; role: string; class_id?: string | null;
@@ -40,10 +42,10 @@ router.get("/staff/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(enriched);
 });
 
-// GET /api/staff
-router.get("/staff", async (_req, res): Promise<void> => {
+// GET /api/staff — faqat tizimga kirganlar (avval autentifikatsiyasiz login+parol ochiq edi!)
+router.get("/staff", requireAuth, async (_req, res): Promise<void> => {
   try {
-    const rows = await query<Parameters<typeof enrichStaff>[0]>(`SELECT ${SELECT} FROM staff ORDER BY full_name`);
+    const rows = await query<Parameters<typeof enrichStaff>[0]>(`SELECT ${LIST_SELECT} FROM staff ORDER BY full_name`);
     const enriched = await Promise.all(rows.map(d => enrichStaff(d)));
     res.json(ListStaffResponse.parse(enriched));
   } catch {
@@ -72,9 +74,10 @@ router.post("/staff/bulk", requireAuth, async (req, res): Promise<void> => {
     const can_teach = s.can_teach ?? (s.role === "teacher" || s.role === "sinf_rahbari");
     try {
       const login_id = await genUniqueLoginId();
+      const passwordHash = await hashPassword(password);
       await query(
         "INSERT INTO staff (full_name, role, login, password, login_id, telegram_id, subjects, can_teach) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7)",
-        [s.full_name, s.role, login, password, login_id, JSON.stringify(s.subjects ?? []), can_teach]
+        [s.full_name, s.role, login, passwordHash, login_id, JSON.stringify(s.subjects ?? []), can_teach]
       );
       created.push({ full_name: s.full_name, login, password, login_id, role: s.role });
     } catch (err) {
@@ -100,10 +103,11 @@ router.post("/staff", requireAuth, async (req, res): Promise<void> => {
 
   try {
     const login_id = await genUniqueLoginId();
+    const passwordHash = await hashPassword(password);
     const data = await queryOne<Parameters<typeof enrichStaff>[0]>(
       `INSERT INTO staff (full_name, role, class_id, login, password, login_id, telegram_id, subjects, can_teach)
        VALUES ($1,$2,$3,$4,$5,$6,NULL,'{}',false) RETURNING ${SELECT}`,
-      [parsed.data.full_name, parsed.data.role, parsed.data.class_id ?? null, login, password, login_id]
+      [parsed.data.full_name, parsed.data.role, parsed.data.class_id ?? null, login, passwordHash, login_id]
     );
 
     if (!data) {
@@ -111,7 +115,8 @@ router.post("/staff", requireAuth, async (req, res): Promise<void> => {
       return;
     }
     const enriched = await enrichStaff(data);
-    res.status(201).json({ ...enriched, login_id });
+    // parolning ASL (ochiq) ko'rinishini bir marta qaytaramiz — bazada esa xeshlangan
+    res.status(201).json({ ...enriched, password, login_id });
   } catch (err) {
     const msg = (err as Error).message ?? "";
     if (msg.includes("unique") || msg.includes("duplicate")) {
@@ -145,7 +150,10 @@ router.patch("/staff/:id", requireAuth, async (req, res): Promise<void> => {
   if (raw["role"] != null) { setClauses.push(`role = $${idx++}`); values.push(raw["role"]); }
   if (raw["class_id"] !== undefined) { setClauses.push(`class_id = $${idx++}`); values.push(raw["class_id"]); }
   if (raw["login"] != null) { setClauses.push(`login = $${idx++}`); values.push(raw["login"]); }
-  if (raw["password"] != null) { setClauses.push(`password = $${idx++}`); values.push(raw["password"]); }
+  if (raw["password"] != null && String(raw["password"]).trim()) {
+    setClauses.push(`password = $${idx++}`);
+    values.push(await hashPassword(String(raw["password"]).trim())); // xeshlab saqlaymiz
+  }
   if (raw["can_teach"] !== undefined) { setClauses.push(`can_teach = $${idx++}`); values.push(raw["can_teach"]); }
   if (raw["subjects"] !== undefined) { setClauses.push(`subjects = $${idx++}`); values.push(JSON.stringify(raw["subjects"])); }
   if (raw["birthday"] !== undefined) { setClauses.push(`birthday = $${idx++}`); values.push(raw["birthday"] || null); }
@@ -168,7 +176,7 @@ router.patch("/staff/:id", requireAuth, async (req, res): Promise<void> => {
     }
 
     const enriched = await enrichStaff(data);
-    res.json(UpdateStaffResponse.parse(enriched));
+    res.json(UpdateStaffResponse.parse({ ...enriched, password: "" })); // xeshni qaytarmaymiz
   } catch (err) {
     res.status(500).json({ error: "Xodimni yangilashda xatolik: " + (err as Error).message });
   }

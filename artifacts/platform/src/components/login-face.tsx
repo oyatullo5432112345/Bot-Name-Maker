@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ScanFace, Loader2, X, KeyRound, CheckCircle2 } from "lucide-react";
-import { loadFaceApi, startCamera, stopCamera, detectFaces, distance } from "@/lib/face";
+import { API_BASE, loadFaceApi, startCamera, stopCamera, detectFaces, distance } from "@/lib/face";
 
 type Stage = "loading" | "frontal" | "turn" | "verify" | "error";
 const TURN_TIMEOUT_MS = 6000; // burilishni shuncha kutamiz, keyin faqat to'g'ri kadr bilan davom etamiz
@@ -57,7 +57,7 @@ export function FaceLoginDialog({
     stopCamera(streamRef.current);
     setStage("verify");
     try {
-      const r = await fetch("/api/auth/face-login", {
+      const r = await fetch(`${API_BASE}/auth/face-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ descriptors }),

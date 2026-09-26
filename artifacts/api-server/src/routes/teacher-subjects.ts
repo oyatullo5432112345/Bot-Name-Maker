@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
+import { requireAuth } from "./auth.js";
 
 const router: IRouter = Router();
 
 // GET /api/teacher-subjects
-router.get("/teacher-subjects", async (req, res): Promise<void> => {
+router.get("/teacher-subjects", requireAuth, async (req, res): Promise<void> => {
   const class_id = req.query["class_id"] as string | undefined;
   const teacher_id = req.query["teacher_id"] as string | undefined;
 
@@ -47,7 +48,7 @@ router.get("/teacher-subjects", async (req, res): Promise<void> => {
 });
 
 // POST /api/teacher-subjects
-router.post("/teacher-subjects", async (req, res): Promise<void> => {
+router.post("/teacher-subjects", requireAuth, async (req, res): Promise<void> => {
   const { teacher_id, class_id, subject } = req.body as {
     teacher_id?: string; class_id?: string; subject?: string;
   };
@@ -75,7 +76,7 @@ router.post("/teacher-subjects", async (req, res): Promise<void> => {
 });
 
 // DELETE /api/teacher-subjects/:id
-router.delete("/teacher-subjects/:id", async (req, res): Promise<void> => {
+router.delete("/teacher-subjects/:id", requireAuth, async (req, res): Promise<void> => {
   const { id } = req.params;
   try {
     await query("DELETE FROM teacher_subjects WHERE id = $1", [id]);

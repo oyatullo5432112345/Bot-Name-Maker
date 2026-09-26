@@ -337,7 +337,7 @@ function AdminDashboard() {
     <div className="space-y-6">
       <div className="grid gap-4 grid-cols-2">
         {statCards.map(({ title, value, icon: Icon, color, bg, trend, trendUp, progress, daysTotal: dt }) => (
-          <Card key={title} className="relative overflow-hidden">
+          <Card key={title} className="relative overflow-hidden hover-lift">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
               <CardTitle className="text-xs font-medium text-muted-foreground leading-tight">{title}</CardTitle>
               <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
