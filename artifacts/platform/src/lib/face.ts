@@ -324,6 +324,40 @@ export function stopCamera(stream: MediaStream | null): void {
 
 // ─── Ovoz (fayl kerak emas) ─────────────────────────────────────────────────
 
+// ─── Ovoz (ismini aytish) — brauzerning o'zida, model kerak emas ─────────────
+let voiceList: SpeechSynthesisVoice[] = [];
+function refreshVoices(): void {
+  try { voiceList = window.speechSynthesis?.getVoices() ?? []; } catch { /* yo'q */ }
+}
+try {
+  refreshVoices();
+  if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.onvoiceschanged = refreshVoices;
+} catch { /* qo'llab-quvvatlanmasa — jim */ }
+
+/** Ismni ovoz bilan aytadi. Navbat to'lib ketmasligi uchun band bo'lsa o'tkazib yuboriladi. */
+export function speak(text: string): void {
+  try {
+    const s = window.speechSynthesis;
+    if (!s) return;
+    if (s.speaking || s.pending) return; // band — bu safar o'tkazamiz (tez qolishi uchun)
+    const u = new SpeechSynthesisUtterance(text);
+    if (!voiceList.length) refreshVoices();
+    const v =
+      voiceList.find((x) => /uz/i.test(x.lang)) ||
+      voiceList.find((x) => /ru/i.test(x.lang)) ||
+      voiceList[0];
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = "ru-RU";
+    u.rate = 1.06;
+    u.pitch = 1.0;
+    s.speak(u);
+  } catch {
+    /* ovozsiz davom etamiz */
+  }
+}
+export function stopSpeak(): void {
+  try { window.speechSynthesis?.cancel(); } catch { /* yo'q */ }
+}
+
 let audioCtx: AudioContext | null = null;
 let lastBeep = 0;
 export function beep(kind: "ok" | "late" | "error" | "again"): void {

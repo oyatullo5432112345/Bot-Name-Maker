@@ -9,10 +9,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import {
   ScanFace, CheckCircle2, Clock, XCircle, LogOut, SwitchCamera, WifiOff, Loader2,
-  LogIn, DoorOpen, ArrowDownLeft, ArrowUpRight, Users, Zap, UserX,
+  LogIn, DoorOpen, ArrowDownLeft, ArrowUpRight, Users, Zap, UserX, Volume2, VolumeX,
 } from "lucide-react";
 import {
-  api, beep, buildIndex, detectFaces, hasSsd, loadFaceApi, startCamera, stopCamera, warmup,
+  api, beep, speak, stopSpeak, buildIndex, detectFaces, hasSsd, loadFaceApi, startCamera, stopCamera, warmup,
   type Box, type Detector, type FaceIndex, type FaceResult, type Person,
 } from "@/lib/face";
 import { associate, matchFrame, VoteBook, type Track } from "@/lib/face-track";
@@ -70,6 +70,7 @@ interface DrawItem {
 const QUEUE_KEY = "faceid_queue_v2";
 const MODE_KEY = "faceid_mode";
 const DET_KEY = "faceid_detector"; // qo'lda tanlangan: "ssd" | "tiny"
+const VOICE_KEY = "faceid_voice"; // ovoz yoqilgan/o'chirilgan
 const LOOP_GAP_MS = 10; // kadrlar orasidagi pauza (tezlikni aniqlashning o'zi belgilaydi)
 const MARGIN = 0.06; // 1- va 2-eng yaqin odam orasidagi minimal farq
 const VOTE_WINDOW_MS = 1500; // tasdiqlash uchun ovozlar shu oraliqda yig'iladi
@@ -128,6 +129,13 @@ function readDetector(): Detector | null {
     return d === "ssd" || d === "tiny" ? d : null;
   } catch {
     return null;
+  }
+}
+function readVoice(): boolean {
+  try {
+    return localStorage.getItem(VOICE_KEY) !== "0"; // standart — yoqilgan
+  } catch {
+    return true;
   }
 }
 function shortName(n: string): string {
@@ -236,6 +244,8 @@ export default function FaceKioskPage() {
   const votesRef = useRef(new VoteBook(VOTE_WINDOW_MS));
   const shownUntilRef = useRef(new Map<string, number>()); // login → shu vaqtgacha qayta ko'rsatilmaydi
   const lastUnknownRef = useRef(0);
+  const lastFastRef = useRef(0); // "tez o'tib ketdi" ogohlantirishi (throttle)
+  const voiceRef = useRef(readVoice());
   const hintRef = useRef<"idle" | "closer" | "scan">("idle");
   const runningRef = useRef(false);
   const facingRef = useRef<"user" | "environment">("user");
@@ -257,6 +267,7 @@ export default function FaceKioskPage() {
   const [pending, setPending] = useState(readQueue().length);
   const [clock, setClock] = useState(uzClock(true));
   const [online, setOnline] = useState(navigator.onLine);
+  const [voice, setVoiceState] = useState(voiceRef.current);
   const [perf, setPerf] = useState<{ det: Detector; fps: number; faces: number; auto: boolean }>({
     det: detRef.current,
     fps: 0,
@@ -481,18 +492,21 @@ export default function FaceKioskPage() {
     }
     shownUntilRef.current.set(p.login, now + QUIET_MS);
 
+    const first = p.name.split(" ").slice(-1)[0] || p.name.split(" ")[0] || p.name; // ism (odatda oxirgi so'z)
     if (action === "in") {
       const late = time > (startsRef.current[p.class_name] ?? settingsRef.current.late_after);
       p.arrived = time;
       p.arrived_ms = now + skewRef.current;
       addToast({ kind: late ? "late" : "in", ...base, time }, 2800);
       beep(late ? "late" : "ok");
+      if (voiceRef.current) speak(late ? `${first}, kechikdingiz` : `${first}, xush kelibsiz`);
       pushEvent({ name: p.name, class_name: p.class_name, time, kind: late ? "late" : "in" });
     } else {
       p.left = time;
       p.left_ms = now + skewRef.current;
       addToast({ kind: "out", ...base, time }, 2800);
       beep("again");
+      if (voiceRef.current) speak(`${first}, xayr`);
       pushEvent({ name: p.name, class_name: p.class_name, time, kind: "out" });
     }
     recount();
@@ -537,10 +551,18 @@ export default function FaceKioskPage() {
     const minFace = Math.max(56, Math.min(video.videoWidth, video.videoHeight) * 0.08);
     const usable = faces.filter((f) => f.box.width >= minFace);
     const small = faces.filter((f) => f.box.width < minFace);
-    const { tracks, pairs } = associate(tracksRef.current, usable, now, TRACK_TTL_MS);
+    const { tracks, pairs, expired } = associate(tracksRef.current, usable, now, TRACK_TTL_MS);
     tracksRef.current = tracks;
     votesRef.current.prune(now);
     perfRef.current.faces = faces.length;
+
+    // "Tez o'tib ketdi": yuz ko'rindi-yu, tanishga ulgurmay yo'qoldi → ogohlantirish
+    const missed = expired.some((t) => !t.matched && t.frames >= 3);
+    if (missed && now - lastFastRef.current > 4000) {
+      lastFastRef.current = now;
+      beep("error");
+      if (voiceRef.current) speak("Sekinroq, qaytadan qarang");
+    }
 
     const th = settingsRef.current.threshold;
     const matches = matchFrame(usable, indexRef.current, th, MARGIN);
@@ -658,6 +680,7 @@ export default function FaceKioskPage() {
       await document.documentElement.requestFullscreen?.().catch(() => {});
       await requestWake();
       beep("again"); // iOS: ovozni foydalanuvchi bosishi bilan "uyg'otamiz"
+      if (voiceRef.current) speak("Face ID tayyor"); // iOS: nutqni ham foydalanuvchi bosishi bilan uyg'otamiz
       setPhase("running");
       if (!runningRef.current) {
         runningRef.current = true;
@@ -680,6 +703,14 @@ export default function FaceKioskPage() {
   const toggleDetector = () => {
     if (!hasSsd(faceapiRef.current)) return;
     setDetector(detRef.current === "ssd" ? "tiny" : "ssd", true);
+  };
+
+  const toggleVoice = () => {
+    const next = !voiceRef.current;
+    voiceRef.current = next;
+    setVoiceState(next);
+    try { localStorage.setItem(VOICE_KEY, next ? "1" : "0"); } catch { /* e'tiborsiz */ }
+    if (next) speak("Ovoz yoqildi"); else stopSpeak();
   };
 
   const exit = () => {
@@ -738,6 +769,9 @@ export default function FaceKioskPage() {
                 <span className="text-slate-400">/ {counts.enrolled}</span>
               </div>
             </div>
+            <button onClick={toggleVoice} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center" title={voice ? "Ovozni o'chirish" : "Ovozni yoqish"}>
+              {voice ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5 text-slate-400" />}
+            </button>
             {phase === "running" && (
               <button onClick={() => void switchCamera()} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center" title="Kamerani almashtirish">
                 <SwitchCamera className="w-5 h-5" />

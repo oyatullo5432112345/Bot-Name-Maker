@@ -27,8 +27,9 @@ function centerDist(a: Box, b: Box): number {
  * Asosiy belgi — yuz izining o'xshashligi (tez harakatda joy keskin o'zgarsa ham ishlaydi),
  * yordamchi belgi — kadrdagi joylashuv (bosh burilib iz o'zgarsa).
  */
-export function associate(prev: Track[], faces: FaceResult[], now: number, ttlMs = 1000): { tracks: Track[]; pairs: [FaceResult, Track][] } {
+export function associate(prev: Track[], faces: FaceResult[], now: number, ttlMs = 1000): { tracks: Track[]; pairs: [FaceResult, Track][]; expired: Track[] } {
   const alive = prev.filter((t) => now - t.last <= ttlMs);
+  const expired = prev.filter((t) => now - t.last > ttlMs);
   const cands: { fi: number; ti: number; cost: number }[] = [];
   faces.forEach((f, fi) =>
     alive.forEach((t, ti) => {
@@ -69,7 +70,7 @@ export function associate(prev: Track[], faces: FaceResult[], now: number, ttlMs
     alive.push(t);
     pairs.push([f, t]);
   });
-  return { tracks: alive, pairs };
+  return { tracks: alive, pairs, expired };
 }
 
 export interface FrameMatch<P extends Person> {
