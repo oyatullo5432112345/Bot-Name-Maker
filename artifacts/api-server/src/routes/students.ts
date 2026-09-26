@@ -11,12 +11,14 @@ import {
   UpdateStudentResponse,
   DeleteStudentParams,
 } from "@workspace/api-zod";
-import { requireAuth } from "./auth.js";
+import { requireAuth, hashPassword } from "./auth.js";
 import { genUniqueLoginId } from "./auth-login.js";
 
 const router: IRouter = Router();
 
 const SELECT = "telegram_id::float8 AS telegram_id, full_name, phone_number, class_name, login, password, registration_date::text AS registration_date";
+// Ro'yxatda parol JO'NATILMAYDI (xavfsizlik) — '' bilan almashtiriladi
+const LIST_SELECT = "telegram_id::float8 AS telegram_id, full_name, phone_number, class_name, login, '' AS password, registration_date::text AS registration_date";
 
 // GET /api/students
 router.get("/students", requireAuth, async (req, res): Promise<void> => {
@@ -24,9 +26,9 @@ router.get("/students", requireAuth, async (req, res): Promise<void> => {
   try {
     let rows;
     if (qp.success && qp.data.class_name) {
-      rows = await query(`SELECT ${SELECT} FROM users WHERE class_name = $1 ORDER BY registration_date DESC`, [qp.data.class_name]);
+      rows = await query(`SELECT ${LIST_SELECT} FROM users WHERE class_name = $1 ORDER BY registration_date DESC`, [qp.data.class_name]);
     } else {
-      rows = await query(`SELECT ${SELECT} FROM users ORDER BY registration_date DESC`);
+      rows = await query(`SELECT ${LIST_SELECT} FROM users ORDER BY registration_date DESC`);
     }
     res.json(ListStudentsResponse.parse(rows));
   } catch {
@@ -53,9 +55,10 @@ router.post("/students/bulk", requireAuth, async (req, res): Promise<void> => {
     const telegram_id = Date.now() + Math.floor(Math.random() * 10000);
     try {
       const login_id = await genUniqueLoginId();
+      const passwordHash = await hashPassword(password);
       await query(
         "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, login_id, registration_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
-        [telegram_id, s.full_name, s.phone_number || "", s.class_name, login, password, login_id, new Date().toISOString()]
+        [telegram_id, s.full_name, s.phone_number || "", s.class_name, login, passwordHash, login_id, new Date().toISOString()]
       );
       created.push({ full_name: s.full_name, login, password, login_id, class_name: s.class_name });
     } catch {
@@ -83,10 +86,11 @@ router.post("/students", requireAuth, async (req, res): Promise<void> => {
 
   try {
     const login_id = await genUniqueLoginId();
+    const passwordHash = await hashPassword(password);
     const data = await queryOne(
       `INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, login_id, registration_date)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ${SELECT}, login_id`,
-      [telegram_id, full_name, phone_number, class_name, login, password, login_id, new Date().toISOString()]
+      [telegram_id, full_name, phone_number, class_name, login, passwordHash, login_id, new Date().toISOString()]
     );
 
     if (!data) {
@@ -141,7 +145,7 @@ router.patch("/students/:id", requireAuth, async (req, res): Promise<void> => {
   if (body.data.full_name != null) { setClauses.push(`full_name = $${idx++}`); values.push(body.data.full_name); }
   if (body.data.phone_number != null) { setClauses.push(`phone_number = $${idx++}`); values.push(body.data.phone_number); }
   if (body.data.class_name != null) { setClauses.push(`class_name = $${idx++}`); values.push(body.data.class_name); }
-  if (body.data.password != null) { setClauses.push(`password = $${idx++}`); values.push(body.data.password); }
+  if (body.data.password != null && String(body.data.password).trim()) { setClauses.push(`password = $${idx++}`); values.push(await hashPassword(String(body.data.password).trim())); }
   const raw = body.data as Record<string, unknown>;
   if (raw["birthday"] !== undefined) { setClauses.push(`birthday = $${idx++}`); values.push(raw["birthday"] || null); }
 

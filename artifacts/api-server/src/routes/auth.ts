@@ -174,7 +174,8 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   const trimmedLogin = login.trim();
   const trimmedPassword = password.trim();
 
-  if (trimmedLogin === "admin" && trimmedPassword === ADMIN_PASSWORD.trim()) {
+  // Admin paroli bo'sh bo'lsa (env sozlanmagan) — admin login qabul qilinmaydi (xavfsizlik)
+  if (trimmedLogin === "admin" && ADMIN_PASSWORD.trim() !== "" && trimmedPassword === ADMIN_PASSWORD.trim()) {
     const payload = {
       id: "admin",
       role: "admin",

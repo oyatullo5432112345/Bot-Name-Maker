@@ -193,7 +193,7 @@ export default function StudentsList() {
                   </TableCell>
                   <TableCell>{student.phone_number}</TableCell>
                   <TableCell className="font-mono text-sm">{student.login}</TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">{student.password}</TableCell>
+                  <TableCell className="font-mono text-sm text-muted-foreground">••••••</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Button variant="ghost" size="icon" title="ID Karta" asChild>
