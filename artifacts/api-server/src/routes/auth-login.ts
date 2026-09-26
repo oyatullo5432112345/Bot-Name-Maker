@@ -262,18 +262,38 @@ router.get("/auth/login-ids", async (req, res): Promise<void> => {
   const className = String(req.query["class_name"] ?? "").trim();
   // Sinf rahbari / o'qituvchi faqat o'z sinfini ko'radi
   const scoped = ["sinf_rahbari", "teacher"].includes(String(u.role));
-  const cls = scoped ? (u.class_name ?? "") : className;
-  if (!cls) { res.status(400).json({ error: "Sinf tanlanmagan" }); return; }
 
-  const rows = await query<{ id: string; full_name: string; login: string; login_id: string }>(
-    "SELECT id, full_name, login, login_id FROM users WHERE class_name = $1 ORDER BY full_name",
-    [cls]
-  );
+  // Rahbariyat: "Xodimlar" guruhi — o'qituvchi/xodimlar IDlari
+  if (!scoped && className === "Xodimlar") {
+    const staff = await query<{ id: string; full_name: string; login: string; login_id: string }>(
+      "SELECT id, full_name, login, login_id FROM staff ORDER BY full_name"
+    );
+    const out: { full_name: string; login: string; login_id: string; class_name: string }[] = [];
+    for (const r of staff) {
+      const code = r.login_id || (await ensureLoginId("staff", r.id));
+      out.push({ full_name: r.full_name, login: r.login, login_id: code, class_name: "Xodimlar" });
+    }
+    res.json(out);
+    return;
+  }
+
+  // Rahbariyat: "Hamma sinflar" — barcha o'quvchilar
+  const wantAll = !scoped && (className === "" || className === "__all__");
+  const rows = wantAll
+    ? await query<{ id: string; full_name: string; login: string; login_id: string; class_name: string }>(
+        "SELECT id, full_name, login, login_id, class_name FROM users WHERE class_name <> '' ORDER BY class_name, full_name"
+      )
+    : await query<{ id: string; full_name: string; login: string; login_id: string; class_name: string }>(
+        "SELECT id, full_name, login, login_id, class_name FROM users WHERE class_name = $1 ORDER BY full_name",
+        [scoped ? (u.class_name ?? "") : className]
+      );
+  if (!wantAll && !(scoped ? u.class_name : className)) { res.status(400).json({ error: "Sinf tanlanmagan" }); return; }
+
   // Bo'sh IDlarni to'ldiramiz
-  const out: { full_name: string; login: string; login_id: string }[] = [];
+  const out: { full_name: string; login: string; login_id: string; class_name: string }[] = [];
   for (const r of rows) {
     const code = r.login_id || (await ensureLoginId("users", r.id));
-    out.push({ full_name: r.full_name, login: r.login, login_id: code });
+    out.push({ full_name: r.full_name, login: r.login, login_id: code, class_name: r.class_name });
   }
   res.json(out);
 });

@@ -46,6 +46,13 @@ keldi / ketdi · internet uzilsa ham ishlaydi.
 - ~45° gacha burilgan yuz ishonchli taniladi (7 burchakli ro'yxatga olish bilan). **To'liq profil (90°) — ishonchsiz**:
   bunday kadrda yuzning yarmi ko'rinmaydi. Shu sabab kamera o'quvchilar yuradigan yo'lga **qaratib** qo'yilishi kerak
 
+## O'qituvchilar (xodimlar)
+- Admin xodimni **familiya + ism** bilan qo'shgan zahoti, u Face ID ro'yxatga olishda **"Xodimlar"** guruhida ko'rinadi (platformaga kirmagan bo'lsa ham).
+- Xodimlar ham eshikda Face ID orqali **keldi/ketdi** qiladi (davomat), o'quvchilar kabi.
+- Login baribir **5 xonali ID** bilan (yuz bilan kirish faqat o'quvchilarga).
+- Xodim davomati sinf jurnaliga yozilmaydi — faqat eshik davomati (keldi/ketdi) sifatida saqlanadi.
+- Faqat rahbariyat (admin/direktor/zavuch) xodimlarni ro'yxatga oladi.
+
 ## Aniqlik
 - Eng yaqin 2 ta odam orasidagi farq ham tekshiriladi (adashmaslik uchun)
 - Yon (profil) kadr hech qachon yolg'iz o'zi tasdiqlamaydi — kamida 2 ta mos kadr kerak

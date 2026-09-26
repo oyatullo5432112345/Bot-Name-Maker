@@ -111,6 +111,27 @@ function canTouchClass(u: AuthUser, className: string): boolean {
   return !!u.class_name && u.class_name === className;
 }
 
+// ── O'qituvchi/xodimlar Face ID uchun "Xodimlar" guruhi sifatida ko'rinadi ──
+// (login baribir ID bilan; bu faqat eshikdagi davomat — keldi/ketdi uchun)
+const STAFF_GROUP = "Xodimlar";
+
+interface FacePerson { full_name: string; class_name: string; telegram_id: number | null; kind: "student" | "staff" }
+
+/** Loginni avval o'quvchilardan (users), keyin xodimlardan (staff) qidiradi */
+async function findPerson(login: string): Promise<FacePerson | null> {
+  const u = await queryOne<{ full_name: string; class_name: string; telegram_id: number | null }>(
+    "SELECT full_name, class_name, telegram_id FROM users WHERE login = $1",
+    [login]
+  );
+  if (u) return { full_name: u.full_name, class_name: u.class_name, telegram_id: u.telegram_id, kind: "student" };
+  const s = await queryOne<{ full_name: string; telegram_id: number | null }>(
+    "SELECT full_name, telegram_id FROM staff WHERE login = $1",
+    [login]
+  );
+  if (s) return { full_name: s.full_name, class_name: STAFF_GROUP, telegram_id: s.telegram_id, kind: "staff" };
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  BOSHQARUV SAHIFASI
 // ═══════════════════════════════════════════════════════════════════════════
@@ -155,6 +176,20 @@ router.get("/faceid/overview", async (req, res): Promise<void> => {
       ),
     ]);
     classes.sort((x, y) => x.class_name.localeCompare(y.class_name, "uz", { numeric: true }));
+    // Xodimlar (o'qituvchilar) — eshik davomati bo'yicha alohida qator
+    const staffAgg = await queryOne<{ total: number; enrolled: number; arrived: number; late: number; left: number; early: number }>(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled,
+              COUNT(fc.checked_at)::int AS arrived,
+              COUNT(fc.checked_at) FILTER (WHERE fc.status = 'late')::int AS late,
+              COUNT(fc.left_at)::int AS left,
+              COUNT(fc.left_at) FILTER (WHERE fc.left_early)::int AS early
+         FROM staff st
+         LEFT JOIN face_profiles fp ON fp.student_login = st.login AND fp.consent
+         LEFT JOIN face_checkins fc ON fc.student_login = st.login AND fc.date = $1::date`,
+      [today]
+    ).catch(() => null);
+    if (staffAgg && staffAgg.total > 0) classes.push({ class_name: STAFF_GROUP, ...staffAgg });
     const sum = (k: "arrived" | "late" | "left" | "early") => classes.reduce((acc, c) => acc + c[k], 0);
     res.json({
       date: today,
@@ -229,6 +264,19 @@ router.post("/faceid/notify-absent", async (req, res): Promise<void> => {
         `\n\n<i>Face ID'da ro'yxatdan o'tmaganlar ham shu ro'yxatda bo'lishi mumkin.</i>`;
       for (const h of heads) if (await sendToChat(h.telegram_id, text)) sent++;
     }
+
+    // Direktorga va adminga umumiy xulosa (Face ID direktorga ham "ulangan")
+    const summary =
+      `🚪 <b>Face ID — bugungi umumiy holat</b> (${today.split("-").reverse().join(".")}, ${uzTime()})\n\n` +
+      `Hali kelmaganlar: <b>${rows.length}</b> ta (${byClass.size} sinf)\n` +
+      `Sinf rahbarlariga xabar yuborildi: ${sent} ta`;
+    const dirs = await query<{ telegram_id: number }>(
+      "SELECT telegram_id FROM staff WHERE role = 'director' AND telegram_id IS NOT NULL"
+    ).catch(() => [] as { telegram_id: number }[]);
+    for (const dd of dirs) await sendToChat(dd.telegram_id, summary);
+    const adminId = Number(process.env["ADMIN_ID"] ?? 0);
+    if (isRealTelegramId(adminId)) await sendToChat(adminId, summary);
+
     res.json({ ok: true, classes: byClass.size, sent });
   } catch (err) {
     logger.error({ err }, "faceid/notify-absent");
@@ -247,6 +295,19 @@ router.get("/faceid/students", async (req, res): Promise<void> => {
   const className = String(req.query["class_name"] ?? "");
   if (!className) { res.status(400).json({ error: "class_name kerak" }); return; }
   if (!canTouchClass(u, className)) { res.status(403).json({ error: "Bu sinf sizga biriktirilmagan" }); return; }
+  // Xodimlar (o'qituvchilar) guruhi — faqat rahbariyat
+  if (className === STAFF_GROUP) {
+    const staffRows = await query<{ login: string; full_name: string; enrolled: boolean; samples: number; updated_at: string | null }>(
+      `SELECT s.login, s.full_name,
+              (fp.student_login IS NOT NULL AND fp.consent) AS enrolled,
+              COALESCE(jsonb_array_length(fp.descriptors), 0)::int AS samples,
+              fp.updated_at::text AS updated_at
+         FROM staff s LEFT JOIN face_profiles fp ON fp.student_login = s.login
+        ORDER BY s.full_name`
+    );
+    res.json(staffRows);
+    return;
+  }
   const rows = await query<{ login: string; full_name: string; enrolled: boolean; samples: number; updated_at: string | null }>(
     `SELECT u.login, u.full_name,
             (fp.student_login IS NOT NULL AND fp.consent) AS enrolled,
@@ -271,6 +332,15 @@ router.get("/faceid/classes", async (req, res): Promise<void> => {
   const list = rows
     .filter((r) => canTouchClass(u, r.class_name))
     .sort((a, b) => a.class_name.localeCompare(b.class_name, "uz", { numeric: true }));
+  // Xodimlar (o'qituvchilar) guruhini oxiriga qo'shamiz — faqat rahbariyat uchun
+  if (MANAGE.includes(u.role)) {
+    const s = await queryOne<{ total: number; enrolled: number }>(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled
+         FROM staff st LEFT JOIN face_profiles fp ON fp.student_login = st.login`
+    );
+    if (s && s.total > 0) list.push({ class_name: STAFF_GROUP, total: s.total, enrolled: s.enrolled });
+  }
   res.json(list);
 });
 
@@ -290,12 +360,9 @@ router.post("/faceid/enroll", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Yuz namunalari noto'g'ri (1–8 ta, har biri 128 son)" });
     return;
   }
-  const student = await queryOne<{ full_name: string; class_name: string }>(
-    "SELECT full_name, class_name FROM users WHERE login = $1",
-    [student_login]
-  );
-  if (!student) { res.status(404).json({ error: "O'quvchi topilmadi" }); return; }
-  if (!canTouchClass(u, student.class_name)) { res.status(403).json({ error: "Bu sinf sizga biriktirilmagan" }); return; }
+  const student = await findPerson(student_login);
+  if (!student) { res.status(404).json({ error: "Foydalanuvchi topilmadi" }); return; }
+  if (!canTouchClass(u, student.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
 
   // Namunalarning o'zi bir-biriga mosmi (kadrda boshqa odam bo'lib qolmaganmi).
   // Namunalar turli burchakdan (to'g'ri → yon) olinadi, shuning uchun "zanjir" tekshiruvi:
@@ -357,10 +424,19 @@ router.delete("/faceid/enroll/:login", async (req, res): Promise<void> => {
   const u = authAs(req, ENROLL);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const login = String(req.params["login"] ?? "");
-  const student = await queryOne<{ class_name: string }>("SELECT class_name FROM users WHERE login = $1", [login]);
-  if (student && !canTouchClass(u, student.class_name)) { res.status(403).json({ error: "Bu sinf sizga biriktirilmagan" }); return; }
+  const person = await findPerson(login);
+  if (person && !canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
   await query("DELETE FROM face_profiles WHERE student_login = $1", [login]);
   res.json({ ok: true });
+});
+
+// POST /api/faceid/reset — HAMMA yuz ma'lumotlarini o'chirish (faqat admin)
+// Eski (3 namunali) ro'yxatdan o'tganlarni tozalash uchun — keyin yangi 7 burchak bilan qayta olinadi.
+router.post("/faceid/reset", async (req, res): Promise<void> => {
+  if (!authAs(req, ["admin"])) { res.status(403).json({ error: "Faqat admin" }); return; }
+  const rows = await query<{ student_login: string }>("DELETE FROM face_profiles RETURNING student_login");
+  logger.info({ deleted: rows.length }, "Face ID: hamma yuz ma'lumoti o'chirildi");
+  res.json({ ok: true, deleted: rows.length });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -375,14 +451,18 @@ router.get("/faceid/descriptors", async (req, res): Promise<void> => {
     login: string; name: string; class_name: string; d: number[][];
     arrived: string | null; arrived_ms: number | null; left: string | null;
   }>(
-    `SELECT fp.student_login AS login, u.full_name AS name, u.class_name, fp.descriptors AS d,
+    `SELECT fp.student_login AS login,
+            COALESCE(u.full_name, s.full_name) AS name,
+            COALESCE(NULLIF(u.class_name, ''), '${STAFF_GROUP}') AS class_name,
+            fp.descriptors AS d,
             to_char(fc.checked_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS arrived,
             (EXTRACT(EPOCH FROM fc.checked_at) * 1000)::float8 AS arrived_ms,
             to_char(fc.left_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS left
        FROM face_profiles fp
-       JOIN users u ON u.login = fp.student_login
+       LEFT JOIN users u ON u.login = fp.student_login
+       LEFT JOIN staff s ON s.login = fp.student_login
        LEFT JOIN face_checkins fc ON fc.student_login = fp.student_login AND fc.date = $1::date
-      WHERE fp.consent`,
+      WHERE fp.consent AND (u.login IS NOT NULL OR s.login IS NOT NULL)`,
     [today]
   );
   const [settings, starts] = await Promise.all([getSettings(), classStarts()]);
@@ -438,10 +518,7 @@ async function handleScan(
   distance: number | null,
   device: string
 ): Promise<ScanResult | null> {
-  const st = await queryOne<{ full_name: string; class_name: string; telegram_id: number | null }>(
-    "SELECT full_name, class_name, telegram_id FROM users WHERE login = $1",
-    [login]
-  );
+  const st = await findPerson(login);
   if (!st) return null;
 
   const today = uzDateStr();
@@ -488,16 +565,19 @@ async function handleScan(
          status = CASE WHEN face_checkins.checked_at IS NULL THEN EXCLUDED.status ELSE face_checkins.status END`,
       [login, st.full_name, st.class_name, today, status, distance, device]
     );
-    // Davomat: o'qituvchi allaqachon belgilagan bo'lsa — faqat "kelmadi"ni to'g'rilaymiz
-    const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [st.class_name]);
-    await query(
-      `INSERT INTO attendance (class_id, class_name, student_login, student_name, date, status, note, teacher_login)
-       VALUES ($1, $2, $3, $4, $5::date, $6, $7, 'faceid')
-       ON CONFLICT (student_login, date) DO UPDATE
-         SET status = EXCLUDED.status, note = EXCLUDED.note, teacher_login = 'faceid'
-         WHERE attendance.status = 'absent'`,
-      [cls?.id ?? null, st.class_name, login, st.full_name, today, status, `Face ID: keldi ${time}`]
-    ).catch((err) => logger.warn({ err }, "Face ID: davomatga yozilmadi"));
+    // Davomat (sinf jurnali) faqat O'QUVCHILAR uchun. Xodimlar (o'qituvchi) —
+    // faqat eshik davomati (face_checkins), sinf jurnaliga yozilmaydi.
+    if (st.kind === "student") {
+      const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [st.class_name]);
+      await query(
+        `INSERT INTO attendance (class_id, class_name, student_login, student_name, date, status, note, teacher_login)
+         VALUES ($1, $2, $3, $4, $5::date, $6, $7, 'faceid')
+         ON CONFLICT (student_login, date) DO UPDATE
+           SET status = EXCLUDED.status, note = EXCLUDED.note, teacher_login = 'faceid'
+           WHERE attendance.status = 'absent'`,
+        [cls?.id ?? null, st.class_name, login, st.full_name, today, status, `Face ID: keldi ${time}`]
+      ).catch((err) => logger.warn({ err }, "Face ID: davomatga yozilmadi"));
+    }
 
     if (settings.notify && isRealTelegramId(st.telegram_id)) {
       void notifyUser(
@@ -519,11 +599,13 @@ async function handleScan(
      ON CONFLICT (student_login, date) DO UPDATE SET left_at = NOW(), left_early = EXCLUDED.left_early`,
     [login, st.full_name, st.class_name, today, distance, device, early]
   );
-  await query(
-    `UPDATE attendance SET note = CASE WHEN note = '' THEN $1 ELSE note || ' · ' || $1 END
-      WHERE student_login = $2 AND date = $3::date`,
-    [`ketdi ${time}${early ? " (erta)" : ""}`, login, today]
-  ).catch(() => {});
+  if (st.kind === "student") {
+    await query(
+      `UPDATE attendance SET note = CASE WHEN note = '' THEN $1 ELSE note || ' · ' || $1 END
+        WHERE student_login = $2 AND date = $3::date`,
+      [`ketdi ${time}${early ? " (erta)" : ""}`, login, today]
+    ).catch(() => {});
+  }
 
   if (settings.notify && isRealTelegramId(st.telegram_id)) {
     void notifyUser(st.telegram_id, `🏠 Maktabdan chiqdingiz: ${time}${early ? ` (darslar ${end} da tugaydi)` : ""}. Yaxshi dam oling!`);

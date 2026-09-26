@@ -22,12 +22,14 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 interface ClassRow { class_name: string }
-interface IdRow { full_name: string; login: string; login_id: string }
+interface IdRow { full_name: string; login: string; login_id: string; class_name?: string }
+
+const ALL = "__all__";
 
 export default function LoginIdsPage() {
   const { user } = useAuth();
   const scoped = !!user && ["teacher", "sinf_rahbari"].includes(user.role); // o'z sinfini ko'radi
-  const [cls, setCls] = useState<string>(scoped ? (user?.class_name ?? "") : "");
+  const [cls, setCls] = useState<string>(scoped ? (user?.class_name ?? "") : ALL);
   const [myId, setMyId] = useState<string | null>(null);
   useEffect(() => {
     api<{ login_id: string }>("/auth/my-id").then((d) => setMyId(d.login_id)).catch(() => {});
@@ -38,15 +40,12 @@ export default function LoginIdsPage() {
     queryFn: () => api<ClassRow[]>("/faceid/classes"),
     enabled: !scoped,
   });
-  useEffect(() => {
-    if (!scoped && !cls && classes.data?.length) setCls(classes.data[0]!.class_name);
-  }, [scoped, cls, classes.data]);
-
   const list = useQuery<IdRow[]>({
     queryKey: ["login-ids", cls],
-    queryFn: () => api<IdRow[]>(`/auth/login-ids${cls ? `?class_name=${encodeURIComponent(cls)}` : ""}`),
+    queryFn: () => api<IdRow[]>(`/auth/login-ids?class_name=${encodeURIComponent(cls)}`),
     enabled: scoped || !!cls,
   });
+  const showClassCol = cls === ALL;
 
   const print = () => window.print();
 
@@ -62,8 +61,9 @@ export default function LoginIdsPage() {
         <div className="flex-1" />
         {!scoped && (
           <Select value={cls} onValueChange={setCls}>
-            <SelectTrigger className="w-40"><SelectValue placeholder="Sinf" /></SelectTrigger>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Sinf" /></SelectTrigger>
             <SelectContent>
+              <SelectItem value={ALL}>Hamma sinflar</SelectItem>
               {(classes.data ?? []).map((c) => <SelectItem key={c.class_name} value={c.class_name}>{c.class_name}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -93,17 +93,21 @@ export default function LoginIdsPage() {
       {list.isError && <div className="text-destructive text-sm">{(list.error as Error).message}</div>}
 
       <div className="print-area">
-        <div className="text-lg font-bold mb-2 hidden print:block">{cls || user?.class_name} — kirish IDlari</div>
+        <div className="text-lg font-bold mb-2 hidden print:block">
+          {cls === ALL ? "Hamma sinflar" : (cls || user?.class_name)} — kirish IDlari
+        </div>
         <div className="rounded-xl border divide-y">
           {(list.data ?? []).map((r, i) => (
             <div key={r.login} className="flex items-center gap-3 px-4 py-2.5">
               <span className="w-6 text-right text-muted-foreground text-sm">{i + 1}.</span>
               <span className="flex-1 font-medium truncate">{r.full_name}</span>
-              <span className="font-mono font-bold text-lg tracking-widest">{r.login_id}</span>
+              {showClassCol && r.class_name && <span className="text-xs text-muted-foreground w-14 text-right shrink-0">{r.class_name}</span>}
+              <span className="font-mono font-bold text-lg tracking-widest w-20 text-right">{r.login_id}</span>
             </div>
           ))}
-          {list.data && list.data.length === 0 && <div className="px-4 py-6 text-center text-sm text-muted-foreground">O'quvchi topilmadi</div>}
+          {list.data && list.data.length === 0 && <div className="px-4 py-6 text-center text-sm text-muted-foreground">Topilmadi</div>}
         </div>
+        {list.data && list.data.length > 0 && <div className="mt-2 text-xs text-muted-foreground">Jami: {list.data.length} ta</div>}
       </div>
     </div>
   );
