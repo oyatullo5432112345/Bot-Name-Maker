@@ -43,6 +43,8 @@ const SQL_FILES = [
   "010_games_stats_ownership.sql",
   "011_telegram_integration.sql",
   "012_faceid.sql",
+  "013_lab.sql",
+  "014_auth_faceid_login.sql",
 ];
 
 // Qo'shimcha ustunlar (agar mavjud bo'lmasa qo'shiladi)

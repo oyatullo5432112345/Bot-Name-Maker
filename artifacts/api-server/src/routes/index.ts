@@ -29,11 +29,14 @@ import adminResetRouter from "./admin-reset.js";
 import riddlesRouter from "./riddles.js";
 import telegramWebappRouter from "./telegram-webapp.js";
 import faceidRouter from "./faceid.js";
+import labRouter from "./lab.js";
+import authLoginRouter from "./auth-login.js";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
+router.use(authLoginRouter);
 router.use(telegramWebappRouter);
 router.use(supportRouter);
 router.use(libraryRouter);
@@ -62,5 +65,6 @@ router.use(wheelGamesRouter);
 router.use(adminResetRouter);
 router.use(riddlesRouter);
 router.use(faceidRouter);
+router.use(labRouter);
 
 export default router;

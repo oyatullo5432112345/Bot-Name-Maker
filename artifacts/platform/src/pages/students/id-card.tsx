@@ -1,11 +1,35 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearch, useLocation } from "wouter";
 import { useListStudents } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/use-auth";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
-import { Printer, ArrowLeft, Download } from "lucide-react";
+import { Printer, ArrowLeft, Download, KeyRound } from "lucide-react";
 import { Link } from "wouter";
+
+// O'quvchining o'z 5 xonali kirish IDsi (Face ID ishlamasa shu bilan kiradi)
+function MyLoginId() {
+  const [id, setId] = useState<string | null>(null);
+  useEffect(() => {
+    const t = localStorage.getItem("talim_auth_token");
+    fetch("/api/auth/my-id", { headers: t ? { Authorization: `Bearer ${t}` } : {} })
+      .then((r) => r.json())
+      .then((d) => setId((d as { login_id?: string }).login_id ?? null))
+      .catch(() => {});
+  }, []);
+  if (!id) return null;
+  return (
+    <div className="no-print rounded-2xl border bg-card px-5 py-4 flex items-center gap-4 max-w-sm mx-auto">
+      <div className="w-11 h-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+        <KeyRound className="w-5 h-5" />
+      </div>
+      <div>
+        <div className="text-xs text-muted-foreground">Kirish ID (Face ID ishlamasa)</div>
+        <div className="text-2xl font-bold font-mono tracking-[0.3em]">{id}</div>
+      </div>
+    </div>
+  );
+}
 
 const SCHOOL_NAME = "Toshloq tumani 3-maktab";
 const SCHOOL_FULL = "Farg'ona viloyati Toshloq tumani\n3-umumta'lim maktabi";
@@ -300,6 +324,8 @@ export default function StudentIdCard() {
             </Button>
           </div>
         </div>
+
+        {isStudent && <MyLoginId />}
 
         {/* Cards */}
         <div className="print-area">

@@ -14,7 +14,6 @@ import { AppLayout } from "@/components/layout";
 import { SkeletonPage } from "@/components/skeleton-page";
 
 const Login = lazy(() => import("@/pages/login"));
-const Register = lazy(() => import("@/pages/register"));
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const StudentsList = lazy(() => import("@/pages/students/index"));
 const NewStudent = lazy(() => import("@/pages/students/new"));
@@ -59,6 +58,8 @@ const MonitoringAnalytics = lazy(() => import("@/pages/monitoring/analytics"));
 const FaceIdPage = lazy(() => import("@/pages/faceid/index"));
 const FaceEnrollPage = lazy(() => import("@/pages/faceid/enroll"));
 const FaceKioskPage = lazy(() => import("@/pages/faceid/kiosk"));
+const LabPage = lazy(() => import("@/pages/lab/index"));
+const LoginIdsPage = lazy(() => import("@/pages/admin/login-ids"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -115,10 +116,9 @@ function Router() {
           <Suspense fallback={<LoadingSpinner />}><Login /></Suspense>
         )}
       </Route>
+      {/* Mahfiy kod bilan ro'yxatdan o'tish bekor qilindi — kirish sahifasiga yo'naltiramiz */}
       <Route path="/register">
-        {user ? <Redirect to="/dashboard" /> : (
-          <Suspense fallback={<LoadingSpinner />}><Register /></Suspense>
-        )}
+        <Redirect to={user ? "/dashboard" : "/login"} />
       </Route>
       <Route path="/">
         {user
@@ -171,6 +171,8 @@ function Router() {
       <Route path="/faceid/kiosk"><KioskRoute component={FaceKioskPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/faceid/enroll"><ProtectedRoute component={FaceEnrollPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari"]} /></Route>
       <Route path="/faceid"><ProtectedRoute component={FaceIdPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
+      <Route path="/lab"><ProtectedRoute component={LabPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/admin/login-ids"><ProtectedRoute component={LoginIdsPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
       <Route path="/chat"><ProtectedRoute component={ChatPage} /></Route>
 
       <Route path="/games/board/new"><ProtectedRoute component={BoardGameNew} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>

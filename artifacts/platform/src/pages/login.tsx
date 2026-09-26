@@ -1,14 +1,16 @@
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useLogin } from "@workspace/api-client-react";
 import {
-  Loader2, LogIn, UserPlus, ArrowRight, MessageCircleQuestion,
+  Loader2, LogIn, ArrowRight, MessageCircleQuestion, ScanFace, KeyRound,
 } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { WelcomeAnimation } from "@/components/welcome-animation";
+import { FaceLoginDialog } from "@/components/login-face";
+import { IdLoginDialog } from "@/components/login-id";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -209,6 +211,8 @@ export default function Login() {
 
   const [stage, setStage] = useState<Stage>("landing");
   const [loginOpen, setLoginOpen] = useState(false);
+  const [faceOpen, setFaceOpen] = useState(false);
+  const [idOpen, setIdOpen] = useState(false);
   const [botLoginLoading, setBotLoginLoading] = useState(false);
   const [welcomeUser, setWelcomeUser] = useState<{ name: string; role: string } | null>(null);
   const [supportOpen, setSupportOpen] = useState(false);
@@ -255,6 +259,14 @@ export default function Login() {
     } catch {
       toast({ variant: "destructive", title: "Xabar yuborishda xatolik" });
     } finally { setSupportLoading(false); }
+  };
+
+  const handleAuthResult = (result: Record<string, unknown>) => {
+    authLogin(result as Parameters<typeof authLogin>[0]);
+    setFaceOpen(false);
+    setIdOpen(false);
+    setLoginOpen(false);
+    setWelcomeUser({ name: String(result.full_name ?? "Foydalanuvchi"), role: String(result.role ?? "") });
   };
 
   const onSubmit = (data: LoginFormValues) => {
@@ -338,24 +350,24 @@ export default function Login() {
           <div style={{ textAlign: "center", marginBottom: 32 }}>
             <div style={{ fontSize: 56, marginBottom: 14, filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.4))" }}>🏫</div>
             <div style={{ color: "white", fontWeight: 800, fontSize: 22, marginBottom: 4 }}>Toshloq tumani 3-maktab</div>
-            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Davom etish uchun tanlang</div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Kirish usulini tanlang</div>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <button
-              onClick={() => setLoginOpen(true)}
+              onClick={() => setFaceOpen(true)}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                background: "linear-gradient(135deg, #6366f1, #7c3aed)",
+                background: "linear-gradient(135deg, #06b6d4, #7c3aed)",
                 border: "none", borderRadius: 16, padding: "17px 24px",
                 color: "white", fontSize: 16, fontWeight: 700, cursor: "pointer",
                 boxShadow: "0 8px 32px rgba(99,102,241,0.4)",
               }}
             >
-              <LogIn size={19} /> Kirish
+              <ScanFace size={20} /> Yuz bilan kirish
             </button>
             <button
-              onClick={() => setLocation("/register")}
+              onClick={() => setIdOpen(true)}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
                 background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(255,255,255,0.15)",
@@ -363,14 +375,29 @@ export default function Login() {
                 color: "white", fontSize: 16, fontWeight: 700, cursor: "pointer",
               }}
             >
-              <UserPlus size={19} /> Ro'yxatdan o'tish
+              <KeyRound size={19} /> 5 xonali ID bilan kirish
             </button>
           </div>
 
           <button
+            onClick={() => setLoginOpen(true)}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              margin: "18px auto 0", background: "none", border: "none",
+              color: "rgba(255,255,255,0.5)", fontSize: 13, cursor: "pointer",
+            }}
+          >
+            <LogIn size={15} /> Parol bilan kirish (admin / xodim)
+          </button>
+
+          <p style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: 12, marginTop: 16, lineHeight: 1.5 }}>
+            Hisob maktab ma'muriyati tomonidan beriladi.<br />Yuz yoki 5 xonali ID bilan kiring.
+          </p>
+
+          <button
             onClick={() => setStage("landing")}
             style={{
-              display: "block", margin: "24px auto 0", background: "none", border: "none",
+              display: "block", margin: "18px auto 0", background: "none", border: "none",
               color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer",
             }}
           >
@@ -399,7 +426,24 @@ export default function Login() {
           onMsg={setSupportMsg} onName={setSupportName}
         />
 
-        {/* Login modal */}
+        {/* Yuz bilan kirish */}
+        {faceOpen && (
+          <FaceLoginDialog
+            onSuccess={handleAuthResult}
+            onClose={() => setFaceOpen(false)}
+            onUseId={() => { setFaceOpen(false); setIdOpen(true); }}
+          />
+        )}
+        {/* ID bilan kirish */}
+        {idOpen && (
+          <IdLoginDialog
+            onSuccess={handleAuthResult}
+            onClose={() => setIdOpen(false)}
+            onUseFace={() => { setIdOpen(false); setFaceOpen(true); }}
+          />
+        )}
+
+        {/* Parol modal (admin/xodim zaxira) */}
         <Dialog open={loginOpen} onOpenChange={o => { setLoginOpen(o); if (!o) form.reset(); }}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
@@ -443,16 +487,6 @@ export default function Login() {
                   {loginMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                   Kirish
                 </Button>
-                <p className="text-center text-sm text-muted-foreground">
-                  Akkauntingiz yo'qmi?{" "}
-                  <Link
-                    href="/register"
-                    className="font-medium text-primary hover:underline"
-                    onClick={() => setLoginOpen(false)}
-                  >
-                    Ro'yxatdan o'tish
-                  </Link>
-                </p>
               </form>
             </Form>
           </DialogContent>

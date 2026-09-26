@@ -308,7 +308,15 @@ function generateStudentPassword(className: string): string {
 }
 
 // POST /api/auth/register
-router.post("/auth/register", async (req, res): Promise<void> => {
+// MAHFIY KOD bilan ro'yxatdan o'tish BEKOR QILINDI.
+// Endi hisobni maktab ma'muriyati ochadi; o'quvchi Face ID yoki 5 xonali ID bilan kiradi.
+router.post("/auth/register", async (_req, res): Promise<void> => {
+  res.status(410).json({ error: "Ro'yxatdan o'tish yopilgan. Hisob maktab ma'muriyati tomonidan beriladi. Face ID yoki 5 xonali ID bilan kiring." });
+  return;
+});
+
+// (eski kod — endi ishlatilmaydi)
+router.post("/auth/_register_disabled", async (req, res): Promise<void> => {
   const { last_name, first_name, phone_number, class_name, code_id } = req.body as {
     last_name?: string;
     first_name?: string;
