@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS face_checkins (
 CREATE INDEX IF NOT EXISTS idx_face_checkins_date ON face_checkins(date, class_name);
 ALTER TABLE face_checkins ADD COLUMN IF NOT EXISTS left_at TIMESTAMPTZ;
 ALTER TABLE face_checkins ADD COLUMN IF NOT EXISTS left_early BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE face_checkins ADD COLUMN IF NOT EXISTS excused BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE face_checkins ALTER COLUMN checked_at DROP NOT NULL;
 CREATE TABLE IF NOT EXISTS face_settings (
   id         SMALLINT PRIMARY KEY,
@@ -68,9 +69,10 @@ export interface FaceSettings {
   notify: boolean; // o'quvchiga Telegram xabar
   threshold: number; // moslik chegarasi (kichik = qat'iyroq)
   min_stay: number; // kelganidan keyin necha daqiqadan so'ng skanerlash "ketdi" deb hisoblanadi
+  default_end: string; // "13:30" — dars jadvali yo'q bo'lsa, darslar tugash vaqti (shundan oldin ketsa "erta")
 }
 
-const DEFAULT_SETTINGS: FaceSettings = { late_after: "08:00", notify: true, threshold: 0.48, min_stay: 20 };
+const DEFAULT_SETTINGS: FaceSettings = { late_after: "08:00", notify: true, threshold: 0.48, min_stay: 20, default_end: "13:30" };
 
 async function getSettings(): Promise<FaceSettings> {
   const row = await queryOne<{ data: Partial<FaceSettings> }>("SELECT data FROM face_settings WHERE id = 1").catch(() => null);
@@ -164,7 +166,8 @@ router.get("/faceid/overview", async (req, res): Promise<void> => {
              SELECT student_name, class_name, 'in' AS kind, status, checked_at AS at
                FROM face_checkins WHERE date = $1::date AND checked_at IS NOT NULL
              UNION ALL
-             SELECT student_name, class_name, 'out' AS kind, CASE WHEN left_early THEN 'early' ELSE 'normal' END, left_at
+             SELECT student_name, class_name, 'out' AS kind,
+                    CASE WHEN excused THEN 'excused' WHEN left_early THEN 'early' ELSE 'normal' END, left_at
                FROM face_checkins WHERE date = $1::date AND left_at IS NOT NULL
            ) e
           ORDER BY at DESC LIMIT 25`,
@@ -225,6 +228,7 @@ router.post("/faceid/settings", async (req, res): Promise<void> => {
     notify: typeof b.notify === "boolean" ? b.notify : cur.notify,
     threshold: typeof b.threshold === "number" && b.threshold >= 0.3 && b.threshold <= 0.65 ? b.threshold : cur.threshold,
     min_stay: typeof b.min_stay === "number" && b.min_stay >= 1 && b.min_stay <= 480 ? Math.round(b.min_stay) : cur.min_stay,
+    default_end: typeof b.default_end === "string" && /^\d{2}:\d{2}$/.test(b.default_end) ? b.default_end : cur.default_end,
   };
   await query(
     `INSERT INTO face_settings (id, data, updated_at) VALUES (1, $1, NOW())
@@ -487,17 +491,19 @@ async function classStarts(): Promise<Record<string, string>> {
   return out;
 }
 
-/** Sinfning bugungi oxirgi darsi tugash vaqti (dars jadvalidan), masalan "13:30" */
-async function lessonsEnd(className: string): Promise<string | null> {
+/** Sinfning bugungi oxirgi darsi tugash vaqti (dars jadvalidan), masalan "13:30".
+ *  Jadval bo'lmasa — standart (default_end, odatda "13:30"). */
+async function lessonsEnd(className: string, fallback: string): Promise<string | null> {
   const day = uzDay();
-  if (day === 0) return null;
+  if (day === 0) return fallback; // yakshanba — jadval yo'q, standart
   const r = await queryOne<{ p: number | null }>(
     `SELECT MAX(t.period)::int AS p FROM timetable t JOIN classes c ON c.id = t.class_id
       WHERE c.name = $1 AND t.day_of_week = $2`,
     [className, day]
   ).catch(() => null);
   const range = r?.p ? PERIOD_TIMES[r.p] : undefined;
-  return range ? range.split("–")[1] ?? null : null;
+  const end = range ? range.split("–")[1] : undefined;
+  return end ?? fallback; // jadval topilmasa — standart vaqt
 }
 
 type ScanMode = "auto" | "in" | "out";
@@ -591,7 +597,7 @@ async function handleScan(
   }
 
   // action === "out"
-  const end = await lessonsEnd(st.class_name);
+  const end = await lessonsEnd(st.class_name, settings.default_end);
   const early = !!end && time < end;
   await query(
     `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, distance, device, left_at, left_early)
@@ -627,6 +633,86 @@ router.post("/faceid/scan", async (req, res): Promise<void> => {
     logger.error({ err }, "faceid/scan");
     res.status(500).json({ error: (err as Error).message });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  QO'LDA TO'G'RILASH (bugungi keldi/ketdi)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// GET /api/faceid/today?class_name= — bir sinf (yoki "Xodimlar") uchun bugungi holat
+router.get("/faceid/today", async (req, res): Promise<void> => {
+  const u = authAs(req, ENROLL);
+  if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const className = String(req.query["class_name"] ?? "");
+  if (!className) { res.status(400).json({ error: "class_name kerak" }); return; }
+  if (!canTouchClass(u, className)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
+  const today = uzDateStr();
+  const isStaff = className === STAFF_GROUP;
+  const sql =
+    `SELECT s.login, s.full_name,
+            to_char(fc.checked_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS arrived,
+            fc.status,
+            to_char(fc.left_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS "left",
+            COALESCE(fc.left_early, false) AS early,
+            COALESCE(fc.excused, false) AS excused
+       FROM ${isStaff ? "staff" : "users"} s
+       LEFT JOIN face_checkins fc ON fc.student_login = s.login AND fc.date = $1::date
+      ${isStaff ? "" : "WHERE s.class_name = $2"}
+      ORDER BY s.full_name`;
+  const rows = await query(sql, isStaff ? [today] : [today, className]);
+  res.json(rows);
+});
+
+// POST /api/faceid/manual { student_login, action: "in"|"out"|"out_excused"|"clear", time?: "HH:MM" }
+router.post("/faceid/manual", async (req, res): Promise<void> => {
+  const u = authAs(req, ENROLL);
+  if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const { student_login, action, time } = req.body as { student_login?: string; action?: string; time?: string };
+  if (!student_login || !["in", "out", "out_excused", "clear"].includes(String(action))) {
+    res.status(400).json({ error: "Noto'g'ri so'rov" }); return;
+  }
+  const person = await findPerson(student_login);
+  if (!person) { res.status(404).json({ error: "Topilmadi" }); return; }
+  if (!canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
+
+  const today = uzDateStr();
+  const settings = await getSettings();
+  const t = typeof time === "string" && /^\d{2}:\d{2}$/.test(time) ? time : null;
+  const ts = t ? `${today}T${t}:00+05:00` : null; // O'zbekiston = UTC+5
+  const shownTime = t ?? uzTime();
+
+  if (action === "clear") {
+    await query("DELETE FROM face_checkins WHERE student_login = $1 AND date = $2::date", [student_login, today]);
+    res.json({ ok: true });
+    return;
+  }
+
+  if (action === "in") {
+    const startsAt = person.kind === "student" ? ((await classStarts())[person.class_name] ?? settings.late_after) : settings.late_after;
+    const status = shownTime > startsAt ? "late" : "present";
+    await query(
+      `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device)
+       VALUES ($1, $2, $3, $4::date, COALESCE($5::timestamptz, NOW()), $6, 'manual')
+       ON CONFLICT (student_login, date) DO UPDATE SET
+         checked_at = COALESCE($5::timestamptz, NOW()), status = $6, student_name = EXCLUDED.student_name`,
+      [student_login, person.full_name, person.class_name, today, ts, status]
+    );
+    res.json({ ok: true, status });
+    return;
+  }
+
+  // out yoki out_excused
+  const excused = action === "out_excused";
+  const end = await lessonsEnd(person.class_name, settings.default_end);
+  const early = !!end && shownTime < end;
+  await query(
+    `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device, left_at, left_early, excused)
+     VALUES ($1, $2, $3, $4::date, NULL, 'present', 'manual', COALESCE($5::timestamptz, NOW()), $6, $7)
+     ON CONFLICT (student_login, date) DO UPDATE SET
+       left_at = COALESCE($5::timestamptz, NOW()), left_early = $6, excused = $7`,
+    [student_login, person.full_name, person.class_name, today, ts, early, excused]
+  );
+  res.json({ ok: true, early, excused, lessons_end: end });
 });
 
 // POST /api/faceid/checkin — eski versiya bilan moslik (faqat "keldi")

@@ -18,7 +18,7 @@ import { api } from "@/lib/face";
 interface Overview {
   date: string;
   time: string;
-  settings: { late_after: string; notify: boolean; threshold: number; min_stay: number };
+  settings: { late_after: string; notify: boolean; threshold: number; min_stay: number; default_end: string };
   students: number;
   enrolled: number;
   arrived: number;
@@ -67,6 +67,7 @@ export default function FaceIdPage() {
   const [notify, setNotify] = useState(true);
   const [threshold, setThreshold] = useState("0.48");
   const [minStay, setMinStay] = useState("20");
+  const [defaultEnd, setDefaultEnd] = useState("13:30");
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -77,12 +78,13 @@ export default function FaceIdPage() {
     setNotify(ov.data.settings.notify);
     setThreshold(String(ov.data.settings.threshold));
     setMinStay(String(ov.data.settings.min_stay ?? 20));
-  }, [ov.data?.settings.late_after, ov.data?.settings.notify, ov.data?.settings.threshold, ov.data?.settings.min_stay]); // eslint-disable-line react-hooks/exhaustive-deps
+    setDefaultEnd(ov.data.settings.default_end ?? "13:30");
+  }, [ov.data?.settings.late_after, ov.data?.settings.notify, ov.data?.settings.threshold, ov.data?.settings.min_stay, ov.data?.settings.default_end]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveSettings = async () => {
     setSaving(true);
     try {
-      await api("/faceid/settings", { method: "POST", body: JSON.stringify({ late_after: lateAfter, notify, threshold: Number(threshold), min_stay: Number(minStay) }) });
+      await api("/faceid/settings", { method: "POST", body: JSON.stringify({ late_after: lateAfter, notify, threshold: Number(threshold), min_stay: Number(minStay), default_end: defaultEnd }) });
       toast({ title: "✅ Sozlamalar saqlandi" });
       void qc.invalidateQueries({ queryKey: ["faceid-overview"] });
     } catch (e) {
@@ -138,6 +140,7 @@ export default function FaceIdPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link href="/faceid/today"><Button variant="outline"><Clock className="w-4 h-4 mr-2" />Qo'lda to'g'rilash</Button></Link>
             <Link href="/faceid/enroll"><Button variant="outline"><ScanFace className="w-4 h-4 mr-2" />Yuzlarni ro'yxatga olish</Button></Link>
             <Link href="/faceid/kiosk">
               <Button className="bg-gradient-to-r from-cyan-500 to-violet-500 text-white hover:opacity-90 shadow-md">
@@ -206,6 +209,7 @@ export default function FaceIdPage() {
               <CardContent className="space-y-1">
                 {d.recent.map((r, i) => {
                   const late = r.kind === "in" && r.status === "late";
+                  const excused = r.kind === "out" && r.status === "excused";
                   const early = r.kind === "out" && r.status === "early";
                   return (
                     <div key={i} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-muted/50">
@@ -217,7 +221,7 @@ export default function FaceIdPage() {
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium truncate">{r.student_name}</div>
                         <div className="text-[11px] text-muted-foreground">
-                          {r.kind === "in" ? (late ? "kech keldi" : "keldi") : early ? "erta ketdi" : "ketdi"} · {r.class_name}
+                          {r.kind === "in" ? (late ? "kech keldi" : "keldi") : excused ? "ruxsat bilan ketdi" : early ? "erta ketdi" : "ketdi"} · {r.class_name}
                         </div>
                       </div>
                       <div className="text-sm font-semibold tabular-nums shrink-0">{r.time}</div>
@@ -236,6 +240,8 @@ export default function FaceIdPage() {
                 <div className="grid grid-cols-2 gap-3 items-center">
                   <label className="text-sm">Kech qolish vaqti</label>
                   <Input type="time" value={lateAfter} onChange={(e) => setLateAfter(e.target.value)} />
+                  <label className="text-sm">Darslar tugashi (standart)<br /><span className="text-xs text-muted-foreground">jadval yo'q bo'lsa; shundan oldin ketsa "erta"</span></label>
+                  <Input type="time" value={defaultEnd} onChange={(e) => setDefaultEnd(e.target.value)} />
                   <label className="text-sm">Ketish hisoblanadi (kelgandan keyin)</label>
                   <Select value={minStay} onValueChange={setMinStay}>
                     <SelectTrigger><SelectValue /></SelectTrigger>

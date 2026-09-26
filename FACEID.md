@@ -53,6 +53,13 @@ keldi / ketdi · internet uzilsa ham ishlaydi.
 - Xodim davomati sinf jurnaliga yozilmaydi — faqat eshik davomati (keldi/ketdi) sifatida saqlanadi.
 - Faqat rahbariyat (admin/direktor/zavuch) xodimlarni ro'yxatga oladi.
 
+## Ketish (keldi/ketdi)
+- **Normal ketdi** — darslar tugagandan keyin chiqsa. Dars jadvalidan olinadi (masalan 5 dars bo'lsa — 12:35).
+- **Erta ketdi** — darslar tugashidan oldin. Jadval kiritilmagan bo'lsa — **standart vaqt** (sozlamada, default **13:30**).
+- **Qo'lda to'g'rilash** — `Face ID → Qo'lda to'g'rilash` (rahbariyat / sinf rahbari):
+  ruxsat bilan erta ketgan ("Ruxsat bilan ketdi"), yoki Face ID ishlamagan holatda "Keldi/Ketdi" ni qo'lda belgilash.
+  Vaqtni ham qo'lda kiritish mumkin (bo'sh bo'lsa — hozirgi vaqt).
+
 ## Aniqlik
 - Eng yaqin 2 ta odam orasidagi farq ham tekshiriladi (adashmaslik uchun)
 - Yon (profil) kadr hech qachon yolg'iz o'zi tasdiqlamaydi — kamida 2 ta mos kadr kerak
