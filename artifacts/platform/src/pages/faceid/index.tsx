@@ -70,6 +70,7 @@ export default function FaceIdPage() {
   const [defaultEnd, setDefaultEnd] = useState("13:30");
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [summing, setSumming] = useState(false);
   const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
@@ -104,6 +105,19 @@ export default function FaceIdPage() {
       toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
     } finally {
       setSending(false);
+    }
+  };
+
+  const sendSummary = async () => {
+    if (!confirm("Bugungi davomat xulosasi har bir sinf guruhiga (va maktab guruhiga) yuborilsinmi?")) return;
+    setSumming(true);
+    try {
+      const r = await api<{ classes: number; sent: number }>("/faceid/group-summary", { method: "POST" });
+      toast({ title: "Yuborildi", description: `${r.sent} ta guruhga xulosa yuborildi` });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
+    } finally {
+      setSumming(false);
     }
   };
 
@@ -271,9 +285,15 @@ export default function FaceIdPage() {
               <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Send className="w-4 h-4" />Kelmaganlar</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <p className="text-muted-foreground">Darslar boshlangach, hali kelmagan o'quvchilar ro'yxatini har bir sinf rahbariga va direktorga Telegramda yuboring.</p>
-                <Button variant="outline" onClick={() => void notifyAbsent()} disabled={sending}>
-                  {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}Yuborish
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => void notifyAbsent()} disabled={sending}>
+                    {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}Rahbarlarga
+                  </Button>
+                  <Button variant="outline" onClick={() => void sendSummary()} disabled={summing}>
+                    {summing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}Sinf guruhlariga xulosa
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">Sinf guruhlariga kunlik xulosa har kuni soat 9:00 da avtomatik ham yuboriladi (guruh ulangan bo'lsa).</p>
                 <div className="flex gap-2 rounded-xl bg-muted/60 p-3 text-xs text-muted-foreground">
                   <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
                   <span>Rasmlar saqlanmaydi — faqat yuzning raqamli izi. Ro'yxatga olish ota-ona roziligi bilan; istalgan o'quvchining ma'lumoti bir tugma bilan o'chiriladi.</span>

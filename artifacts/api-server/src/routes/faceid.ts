@@ -16,7 +16,7 @@ import { query, queryOne } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { getAuthUser } from "./auth.js";
 import { notifyUser } from "../lib/notify.js";
-import { isRealTelegramId, uzDateStr, uzHourMin, uzDay, sendToChat, esc, PERIOD_TIMES } from "../lib/tg-shared.js";
+import { isRealTelegramId, uzDateStr, uzHourMin, uzDay, sendToChat, esc, PERIOD_TIMES, getClassChats, getChatsByPurpose, sleep } from "../lib/tg-shared.js";
 
 const router: IRouter = Router();
 
@@ -725,6 +725,84 @@ router.post("/faceid/checkin", async (req, res): Promise<void> => {
     if (!r) { res.status(404).json({ error: "O'quvchi topilmadi" }); return; }
     res.json({ ...r, ok: r.event === "in", already: r.event === "already_in" });
   } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GURUHGA KUNLIK XULOSA (har bir sinf guruhiga + maktab kanaliga)
+//  Har bir o'quvchiga (ota-onasiga) alohida xabar handleScan ichida darhol boradi.
+//  Bu — kuniga bir marta guruhga umumiy xulosa (shovqin bo'lmasligi uchun).
+// ═══════════════════════════════════════════════════════════════════════════
+export async function faceidGroupSummary(): Promise<{ classes: number; sent: number }> {
+  const today = uzDateStr();
+  const dateStr = today.split("-").reverse().join(".");
+  const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' ORDER BY name");
+  let sent = 0;
+  let done = 0;
+  let schoolTotal = 0;
+  let schoolArrived = 0;
+
+  for (const c of classes) {
+    const agg = await queryOne<{ total: number; arrived: number; late: number }>(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(fc.checked_at)::int AS arrived,
+              COUNT(fc.checked_at) FILTER (WHERE fc.status = 'late')::int AS late
+         FROM users u LEFT JOIN face_checkins fc ON fc.student_login = u.login AND fc.date = $1::date
+        WHERE u.class_name = $2`,
+      [today, c.name]
+    );
+    schoolTotal += agg?.total ?? 0;
+    schoolArrived += agg?.arrived ?? 0;
+
+    const chats = await getClassChats(c.id);
+    if (chats.length === 0) continue;
+
+    const absent = await query<{ full_name: string }>(
+      `SELECT u.full_name FROM users u
+        WHERE u.class_name = $1
+          AND NOT EXISTS (SELECT 1 FROM face_checkins fc WHERE fc.student_login = u.login AND fc.date = $2::date AND fc.checked_at IS NOT NULL)
+        ORDER BY u.full_name`,
+      [c.name, today]
+    );
+    const text =
+      `🚪 <b>${esc(c.name)} — bugungi davomat</b> (${dateStr}, ${uzTime()})\n\n` +
+      `✅ Keldi: <b>${agg?.arrived ?? 0}</b>/${agg?.total ?? 0}` +
+      (agg?.late ? ` · ⏰ kech: ${agg.late}` : "") +
+      (absent.length
+        ? `\n\n❌ <b>Kelmaganlar (${absent.length}):</b>\n` + absent.slice(0, 60).map((a, i) => `${i + 1}. ${esc(a.full_name)}`).join("\n")
+        : `\n\n🎉 Hamma keldi!`);
+    for (const ch of chats) {
+      if (await sendToChat(ch.chat_id, text)) sent++;
+      done++;
+      await sleep(80);
+    }
+  }
+
+  // Maktab umumiy xulosasi — "school" guruhlariga
+  const schoolChats = await getChatsByPurpose("school");
+  if (schoolChats.length) {
+    const text =
+      `🏫 <b>Maktab — bugungi davomat (Face ID)</b> (${dateStr}, ${uzTime()})\n\n` +
+      `✅ Keldi: <b>${schoolArrived}</b>/${schoolTotal}\n` +
+      `❌ Kelmaganlar: <b>${Math.max(0, schoolTotal - schoolArrived)}</b>`;
+    for (const ch of schoolChats) {
+      if (await sendToChat(ch.chat_id, text)) sent++;
+      done++;
+      await sleep(80);
+    }
+  }
+  return { classes: done, sent };
+}
+
+// POST /api/faceid/group-summary — qo'lda yuborish (rahbariyat)
+router.post("/faceid/group-summary", async (req, res): Promise<void> => {
+  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  try {
+    const r = await faceidGroupSummary();
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    logger.error({ err }, "faceid/group-summary");
     res.status(500).json({ error: (err as Error).message });
   }
 });

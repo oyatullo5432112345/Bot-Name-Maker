@@ -21,6 +21,7 @@ import {
   type ChatPurpose, type LinkedChat,
 } from "../lib/tg-shared.js";
 import { createSessionStore } from "./session-store.js";
+import { faceidGroupSummary } from "../routes/faceid.js";
 import { registerGames, resetGameSetup } from "./games.js";
 
 // ─── Sozlamalar ──────────────────────────────────────────────────────────────
@@ -1514,6 +1515,10 @@ function startScheduler(): void {
       }
       if (schoolDay && inWindow(hour, min, 15, 30) && (await claimJob(`att-remind:${date}`))) {
         await jobAttendanceReminder(date);
+      }
+      // Face ID — kunlik davomat xulosasi sinf guruhlariga (soat 9:00)
+      if (schoolDay && inWindow(hour, min, 9, 0) && (await claimJob(`faceid-summary:${date}`))) {
+        await faceidGroupSummary().catch((err) => logger.warn({ err }, "faceid kunlik xulosa"));
       }
       if (day === 6 && inWindow(hour, min, 16, 0) && (await claimJob(`weekly:${date}`))) {
         await jobWeeklyTop();
