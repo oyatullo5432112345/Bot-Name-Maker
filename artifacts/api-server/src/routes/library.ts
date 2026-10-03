@@ -111,11 +111,19 @@ router.patch("/library/books/:id", async (req, res): Promise<void> => {
   const { id } = req.params as { id: string };
   const updates = req.body as Record<string, unknown>;
 
+  // Faqat ruxsat etilgan ustunlar yangilanadi (SQL-injection / ixtiyoriy ustunga
+  // yozishning oldini olish uchun — avval body kalitlari to'g'ridan-to'g'ri SQL'ga qo'yilardi).
+  const ALLOWED = new Set([
+    "title", "author", "category", "class_name", "subject",
+    "quantity", "available", "isbn", "published_year", "description",
+  ]);
+
   const setClauses: string[] = [];
   const values: unknown[] = [];
   let idx = 1;
 
   for (const [key, val] of Object.entries(updates)) {
+    if (!ALLOWED.has(key)) continue;
     setClauses.push(`${key} = $${idx++}`);
     values.push(val);
   }

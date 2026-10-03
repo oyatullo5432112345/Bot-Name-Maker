@@ -22,6 +22,7 @@ import {
 import { createMagicToken, verifyPassword } from "../routes/auth.js";
 import { registerTelegramFeatures, sendMainMenu } from "./features.js";
 import { generateCertificatePNG, todayUzDate } from "../lib/certificate-generator.js";
+import { claimJob, uzDateStr } from "../lib/tg-shared.js";
 import { createSessionStore } from "./session-store.js";
 import { initSettings } from "./settings.js";
 
@@ -1580,15 +1581,18 @@ export function createBot(): Bot {
   });
 
   // ─── Kundalik ertalab 7:00 (O'zbekiston UTC+5) jadval xabari ────────────────
-  // Har daqiqa soat tekshiriladi — soat 7:00 da barcha o'qituvchilarga xabar yuboriladi
-  let lastMorningNotifDay = -1;
+  // Har daqiqa soat tekshiriladi. OLDIN faqat min===0 da ishlardi — agar o'sha
+  // aniq daqiqada server band/uyquda bo'lsa, xabar umuman bormay qolardi. Endi
+  // 7:00–7:14 oynasi + claimJob (DB) ishlatiladi: kuniga aniq BIR marta yuboriladi,
+  // qayta ishga tushsa ham (restart/deploy) takrorlanmaydi.
   setInterval(async () => {
     try {
       const { hour, min } = getTodayUzHourMin();
       const day = getTodayUzDay();
-      // Faqat soat 7:00 da, dam olish kuni emas, va bugun hali yuborilmagan bo'lsa
-      if (hour === 7 && min === 0 && day >= 1 && day <= 6 && lastMorningNotifDay !== day) {
-        lastMorningNotifDay = day;
+      // 7:00–7:14 oynasi, dam olish kuni emas (1–6)
+      if (hour === 7 && min < 15 && day >= 1 && day <= 6) {
+        // Kun bo'yicha bitta marta — bir nechta instans/restart'da ham takrorlanmaydi
+        if (!(await claimJob(`teacher-morning:${uzDateStr()}`))) return;
         logger.info({ day }, "Kundalik jadval xabarlari yuborilmoqda...");
 
         const teachers = await query<{ id: string; full_name: string; telegram_id: number; role: string }>(

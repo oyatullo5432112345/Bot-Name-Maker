@@ -144,7 +144,7 @@ router.post("/attendance", requireAuth, async (req, res): Promise<void> => {
           await notifyUser(student.telegram_id, attendanceNotificationText(class_name, rec.status, date));
         }
       }
-    })();
+    })().catch(() => { /* orqa fon xabari — xato bo'lsa jim o'tadi, process yiqilmasin */ });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

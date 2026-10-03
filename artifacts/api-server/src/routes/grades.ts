@@ -114,7 +114,7 @@ router.post("/grades", async (req, res): Promise<void> => {
       if (student?.telegram_id) {
         await notifyUser(student.telegram_id, gradeNotificationText(subject, grade, user["full_name"] as string));
       }
-    })();
+    })().catch(() => { /* orqa fon xabari — xato bo'lsa jim o'tadi, process yiqilmasin */ });
   } catch (err) {
     res.status(500).json({ error: "Baho qo'shishda xatolik", details: (err as Error).message });
   }

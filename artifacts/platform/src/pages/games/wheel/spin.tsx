@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Sparkles, Clock, CheckCircle2, XCircle, Trophy, RotateCcw, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { playSound } from "@/lib/game-sounds";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -51,7 +52,7 @@ export default function WheelSpinPage() {
     if (timeLeft === null || phase !== "answering") return;
     if (timeLeft <= 0) return;
     const id = setTimeout(() => {
-      if (timeLeft <= 5) playWheelSound("tick");
+      if (timeLeft <= 5) playSound("tick");
       setTimeLeft((s) => (s !== null ? s - 1 : s));
     }, 1000);
     return () => clearTimeout(id);
@@ -71,7 +72,7 @@ export default function WheelSpinPage() {
     setTimeLeft(null);
 
     const audioInterval = setInterval(() => {
-      playWheelSound("tick");
+      playSound("tick");
     }, 120);
 
     setTimeout(() => {
@@ -94,7 +95,7 @@ export default function WheelSpinPage() {
         const w = json.winner as Segment;
         setWinner(w);
         setJudgePoints(w.points ?? 10);
-        playWheelSound("correct");
+        playSound("correct");
 
         if (w.question) {
           setPhase("revealed");
@@ -120,11 +121,11 @@ export default function WheelSpinPage() {
 
   const applyJudgement = async (outcome: "correct" | "incorrect" | "skip") => {
     if (outcome === "correct") {
-      playWheelSound("win");
+      playSound("win");
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 2500);
     } else if (outcome === "incorrect") {
-      playWheelSound("wrong");
+      playSound("wrong");
     }
 
     await fetch(`${API_BASE}/wheel-games/${params.id}/judge`, {
@@ -139,7 +140,7 @@ export default function WheelSpinPage() {
 
   const finishGame = async () => {
     await fetch(`${API_BASE}/wheel-games/${params.id}/session/finish`, { method: "POST", headers: authH() });
-    playWheelSound("win");
+    playSound("win");
     qc.invalidateQueries({ queryKey: ["wheel-game", params.id] });
   };
 

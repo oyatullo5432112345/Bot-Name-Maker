@@ -236,15 +236,22 @@ function TeacherView({ userId }: { userId: string }) {
 // ─── ADMIN/EDITOR VIEW ────────────────────────────────────────────────────────
 export default function DarsJadvaliPage() {
   const { user } = useAuth();
-  const { toast } = useToast();
-
   const isTeacher = ["teacher", "sinf_rahbari"].includes(user?.role ?? "");
-  const isEditor = ["admin", "director", "zam_direktor", "zavuch"].includes(user?.role ?? "");
-
-  // Teacher gets their own view
+  // O'qituvchi — o'z ko'rinishi; qolganlar — admin/muharrir ko'rinishi.
+  // MUHIM: har bir ko'rinish ALOHIDA komponent. Ilgari erta return'dan KEYIN
+  // yana ~20 ta hook chaqirilardi — bu "Rules of Hooks" buzilishi bo'lib,
+  // rol/user yuklanishi o'zgarganda sahifa "oq ekran" bo'lib ketishi mumkin edi.
   if (isTeacher && user?.id) {
     return <TeacherView userId={user.id} />;
   }
+  return <AdminScheduleView />;
+}
+
+// ─── ADMIN/MUHARRIR KO'RINISHI ─────────────────────────────────────────────────
+function AdminScheduleView() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const isEditor = ["admin", "director", "zam_direktor", "zavuch"].includes(user?.role ?? "");
 
   const { data: classes } = useListClasses({ query: { queryKey: getListClassesQueryKey() } });
 

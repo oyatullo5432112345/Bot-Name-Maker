@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCreateStudent, getListStudentsQueryKey } from "@workspace/api-client-react";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft, Loader2, CheckCircle2, Copy, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,10 +28,13 @@ const studentSchema = z.object({
 
 type StudentFormValues = z.infer<typeof studentSchema>;
 
+interface CreatedInfo { full_name: string; login: string; login_id: string; password: string }
+
 export default function NewStudent() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [created, setCreated] = useState<CreatedInfo | null>(null);
 
   const createMutation = useCreateStudent();
 
@@ -47,13 +51,17 @@ export default function NewStudent() {
     createMutation.mutate(
       { data },
       {
-        onSuccess: () => {
-          toast({
-            title: "Muvaffaqiyatli",
-            description: "Yangi o'quvchi qo'shildi",
-          });
+        onSuccess: (res) => {
+          // Server yangi o'quvchining login / Kirish ID / parolini bir marta qaytaradi
+          const r = res as unknown as { login?: string; login_id?: string; password?: string };
           queryClient.invalidateQueries({ queryKey: getListStudentsQueryKey({}) });
-          setLocation("/students");
+          setCreated({
+            full_name: data.full_name,
+            login: r.login ?? "—",
+            login_id: r.login_id ?? "—",
+            password: r.password ?? "—",
+          });
+          form.reset({ full_name: "", phone_number: "+998", class_name: "" });
         },
         onError: () => {
           toast({
@@ -65,6 +73,56 @@ export default function NewStudent() {
       }
     );
   };
+
+  const copy = (text: string, label: string) => {
+    navigator.clipboard?.writeText(text).then(
+      () => toast({ title: "Nusxalandi", description: label }),
+      () => toast({ variant: "destructive", title: "Nusxalab bo'lmadi" }),
+    );
+  };
+
+  // Muvaffaqiyatli qo'shilgach — login/ID/parolni ko'rsatamiz (admin o'quvchiga beradi)
+  if (created) {
+    const rows: { label: string; value: string }[] = [
+      { label: "Kirish ID", value: created.login_id },
+      { label: "Login", value: created.login },
+      { label: "Parol", value: created.password },
+    ];
+    return (
+      <div className="max-w-md mx-auto space-y-6">
+        <div className="rounded-2xl border bg-card p-6 text-center space-y-4 pop-in">
+          <div className="w-14 h-14 rounded-2xl mx-auto flex items-center justify-center" style={{ background: "#22c55e22" }}>
+            <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold">{created.full_name} qo'shildi</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">Quyidagi ma'lumotlarni o'quvchiga bering — keyin ko'rinmaydi.</p>
+          </div>
+          <div className="space-y-2 text-left">
+            {rows.map((r) => (
+              <div key={r.label} className="flex items-center justify-between gap-3 rounded-xl border bg-background px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-[11px] text-muted-foreground">{r.label}</p>
+                  <p className="font-mono font-bold truncate">{r.value}</p>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => copy(r.value, r.label)} title="Nusxalash">
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" className="flex-1" onClick={() => setCreated(null)}>
+              <Plus className="w-4 h-4 mr-1.5" /> Yana qo'shish
+            </Button>
+            <Button className="flex-1" onClick={() => setLocation("/students")}>
+              Ro'yxatga qaytish
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">

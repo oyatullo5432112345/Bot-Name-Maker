@@ -77,7 +77,9 @@ router.post("/staff/bulk", requireAuth, async (req, res): Promise<void> => {
       const passwordHash = await hashPassword(password);
       await query(
         "INSERT INTO staff (full_name, role, login, password, login_id, telegram_id, subjects, can_teach) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7)",
-        [s.full_name, s.role, login, passwordHash, login_id, JSON.stringify(s.subjects ?? []), can_teach]
+        // subjects — TEXT[] ustun: pg massivni o'zi to'g'ri yozadi. JSON.stringify QILMAYMIZ
+        // (aks holda "malformed array literal" xatosi va har bir qator xato bo'lib qoladi).
+        [s.full_name, s.role, login, passwordHash, login_id, Array.isArray(s.subjects) ? s.subjects : [], can_teach]
       );
       created.push({ full_name: s.full_name, login, password, login_id, role: s.role });
     } catch (err) {
@@ -155,7 +157,7 @@ router.patch("/staff/:id", requireAuth, async (req, res): Promise<void> => {
     values.push(await hashPassword(String(raw["password"]).trim())); // xeshlab saqlaymiz
   }
   if (raw["can_teach"] !== undefined) { setClauses.push(`can_teach = $${idx++}`); values.push(raw["can_teach"]); }
-  if (raw["subjects"] !== undefined) { setClauses.push(`subjects = $${idx++}`); values.push(JSON.stringify(raw["subjects"])); }
+  if (raw["subjects"] !== undefined) { setClauses.push(`subjects = $${idx++}`); values.push(Array.isArray(raw["subjects"]) ? raw["subjects"] : []); }
   if (raw["birthday"] !== undefined) { setClauses.push(`birthday = $${idx++}`); values.push(raw["birthday"] || null); }
 
   if (setClauses.length === 0) {

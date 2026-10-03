@@ -97,7 +97,9 @@ router.post("/students", requireAuth, async (req, res): Promise<void> => {
       res.status(500).json({ error: "O'quvchi qo'shishda xatolik" });
       return;
     }
-    res.status(201).json({ ...GetStudentResponse.parse(data), login_id });
+    // Parolning ASL (ochiq) ko'rinishini bir marta qaytaramiz — bazada esa xeshlangan.
+    // (Avval xeshni qaytarardi — admin yangi o'quvchi parolini ko'ra olmasdi.)
+    res.status(201).json({ ...GetStudentResponse.parse(data), password, login_id });
   } catch (err) {
     const msg = (err as Error).message ?? "";
     if (msg.includes("unique") || msg.includes("duplicate")) {
