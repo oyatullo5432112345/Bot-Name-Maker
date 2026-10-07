@@ -173,8 +173,8 @@ export default function NewStaff() {
                       <SelectContent>
                         <SelectItem value={StaffInputRole.director}>Direktor</SelectItem>
                         <SelectItem value={StaffInputRole.mudir}>Obidov Boburjon</SelectItem>
-                        <SelectItem value={StaffInputRole.zam_direktor}>Direktor o'rinbosari</SelectItem>
-                        <SelectItem value={StaffInputRole.zavuch}>Zavuch</SelectItem>
+                        <SelectItem value={StaffInputRole.zam_direktor}>MMTB</SelectItem>
+                        <SelectItem value={StaffInputRole.zavuch}>O'quv ishlari mudiri</SelectItem>
                         <SelectItem value={StaffInputRole.sinf_rahbari}>Sinf rahbari</SelectItem>
                         <SelectItem value={StaffInputRole.teacher}>Fan o'qituvchisi</SelectItem>
                         <SelectItem value={StaffInputRole.kutubxonachi}>Kutubxonachi</SelectItem>

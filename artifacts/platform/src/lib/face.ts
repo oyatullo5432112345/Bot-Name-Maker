@@ -296,20 +296,51 @@ export function matchIndex<P extends Person>(desc: ArrayLike<number>, idx: FaceI
  * hi = true (kiosk): 1280×720 va 60 kadr/s gacha — uzoqdagi yuzlar aniqroq,
  * tez harakatda surat kamroq "xiralashadi" (qisqa ekspozitsiya).
  */
-export async function startCamera(video: HTMLVideoElement, facing: "user" | "environment", hi = false): Promise<MediaStream> {
+/** Mavjud kameralar ro'yxati (USB veb-kamera, old/orqa va h.k.).
+ *  Nomlar faqat kameraga ruxsat berilgandan keyin to'liq ko'rinadi. */
+export async function listCameras(): Promise<{ deviceId: string; label: string }[]> {
+  try {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    return devs
+      .filter((d) => d.kind === "videoinput")
+      .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Kamera ${i + 1}` }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * hi = true (kiosk): 1280×720 va 60 kadr/s gacha.
+ * deviceId berilsa — AYNAN o'sha kamera ishlatiladi (kompyuter / USB veb-kamera uchun);
+ * aks holda old/orqa (telefon) bo'yicha tanlanadi. Hamma holatda ham oxirida
+ * "istalgan kamera"ga tushib qolamiz — shunda veb-kamerada ham ochiladi.
+ */
+export async function startCamera(
+  video: HTMLVideoElement,
+  facing: "user" | "environment",
+  hi = false,
+  deviceId?: string,
+): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error("Bu brauzer kamerani qo'llab-quvvatlamaydi. Chrome yoki Safari'da oching (https).");
   }
+  const pick: MediaTrackConstraints = deviceId ? { deviceId: { exact: deviceId } } : { facingMode: facing };
   const want: MediaTrackConstraints = hi
-    ? { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }
-    : { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } };
+    ? { ...pick, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }
+    : { ...pick, width: { ideal: 640 }, height: { ideal: 480 } };
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: want });
   } catch (e) {
     if ((e as Error).name === "NotAllowedError") throw e;
-    // Ba'zi eski qurilmalar talabni qabul qilmaydi — oddiy rejim
-    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: facing } });
+    try {
+      // Cheklovlar qo'llab-quvvatlanmasa — faqat tanlangan kamera/yo'nalish
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: pick });
+    } catch {
+      // Oxirgi chora: istalgan mavjud kamera (ko'pchilik veb-kameralar shu yerda ochiladi)
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+    }
   }
   video.srcObject = stream;
   video.muted = true;

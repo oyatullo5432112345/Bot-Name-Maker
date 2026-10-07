@@ -668,7 +668,7 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
   const u = authAs(req, ENROLL);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const { student_login, action, time } = req.body as { student_login?: string; action?: string; time?: string };
-  if (!student_login || !["in", "out", "out_excused", "clear"].includes(String(action))) {
+  if (!student_login || !["in", "out", "out_excused", "clear", "absent_excused"].includes(String(action))) {
     res.status(400).json({ error: "Noto'g'ri so'rov" }); return;
   }
   const person = await findPerson(student_login);
@@ -684,6 +684,18 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
   if (action === "clear") {
     await query("DELETE FROM face_checkins WHERE student_login = $1 AND date = $2::date", [student_login, today]);
     res.json({ ok: true });
+    return;
+  }
+
+  // Sababli kelmagan (ruxsat bilan yo'q) — "sababsizlar" ro'yxatidan chiqadi
+  if (action === "absent_excused") {
+    await query(
+      `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device, excused)
+       VALUES ($1, $2, $3, $4::date, NULL, 'excused', 'manual', TRUE)
+       ON CONFLICT (student_login, date) DO UPDATE SET excused = TRUE, status = 'excused', student_name = EXCLUDED.student_name`,
+      [student_login, person.full_name, person.class_name, today]
+    );
+    res.json({ ok: true, excused: true });
     return;
   }
 
@@ -803,6 +815,137 @@ router.post("/faceid/group-summary", async (req, res): Promise<void> => {
     res.json({ ok: true, ...r });
   } catch (err) {
     logger.error({ err }, "faceid/group-summary");
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  KUN OXIRI — KETGANLAR XULOSASI (sinf guruhlariga)
+// ═══════════════════════════════════════════════════════════════════════════
+export async function faceidDepartureSummary(): Promise<{ classes: number; sent: number }> {
+  const today = uzDateStr();
+  const dateStr = today.split("-").reverse().join(".");
+  const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' ORDER BY name");
+  let sent = 0, done = 0;
+  for (const c of classes) {
+    const chats = await getClassChats(c.id);
+    if (chats.length === 0) continue;
+    const left = await query<{ full_name: string; t: string; excused: boolean; early: boolean }>(
+      `SELECT u.full_name,
+              to_char(fc.left_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS t,
+              COALESCE(fc.excused, false) AS excused, COALESCE(fc.left_early, false) AS early
+         FROM face_checkins fc JOIN users u ON u.login = fc.student_login
+        WHERE fc.class_name = $1 AND fc.date = $2::date AND fc.left_at IS NOT NULL
+        ORDER BY fc.left_at`,
+      [c.name, today]
+    );
+    if (left.length === 0) continue;
+    const text =
+      `🏠 <b>${esc(c.name)} — bugun maktabdan ketganlar</b> (${dateStr})\n\n` +
+      left.slice(0, 80).map((r, i) => `${i + 1}. ${esc(r.full_name)} — ${r.t}${r.excused ? " (ruxsat bilan)" : r.early ? " (erta)" : ""}`).join("\n");
+    for (const ch of chats) {
+      if (await sendToChat(ch.chat_id, text)) sent++;
+      done++;
+      await sleep(80);
+    }
+  }
+  return { classes: done, sent };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SABABSIZ KELMAGANLAR — sinf rahbari, fan o'qituvchilari, direktor, MMTB, zavuch
+//  "Sababsiz" = bugun kelmagan VA "Sababli" deb belgilanmagan o'quvchilar.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Bitta sinf uchun xabar oluvchilar: sinf rahbari + fan o'qituvchilari (tartib bo'yicha). */
+async function classRecipients(className: string): Promise<number[]> {
+  const ids: number[] = [];
+  const seen = new Set<number>();
+  const add = (tid: number | null | undefined) => {
+    if (tid != null && isRealTelegramId(tid) && !seen.has(tid)) { seen.add(tid); ids.push(tid); }
+  };
+  // 1) Sinf rahbari
+  const rahbar = await query<{ telegram_id: number | null }>(
+    `SELECT s.telegram_id FROM classes c JOIN staff s ON s.id = c.teacher_id
+      WHERE c.name = $1 AND s.telegram_id IS NOT NULL`,
+    [className]
+  ).catch(() => [] as { telegram_id: number | null }[]);
+  for (const r of rahbar) add(r.telegram_id);
+  // 2) Fan o'qituvchilari (shu sinfga biriktirilgan)
+  const fan = await query<{ telegram_id: number | null }>(
+    `SELECT DISTINCT s.telegram_id FROM teacher_subjects ts
+       JOIN classes c ON c.id = ts.class_id JOIN staff s ON s.id = ts.teacher_id
+      WHERE c.name = $1 AND s.telegram_id IS NOT NULL`,
+    [className]
+  ).catch(() => [] as { telegram_id: number | null }[]);
+  for (const r of fan) add(r.telegram_id);
+  return ids;
+}
+
+/** Rahbariyat: direktor, MMTB (zam_direktor), zavuch. */
+async function mgmtRecipients(): Promise<number[]> {
+  const rows = await query<{ telegram_id: number | null }>(
+    `SELECT telegram_id FROM staff
+      WHERE role IN ('director', 'zam_direktor', 'zavuch') AND telegram_id IS NOT NULL`
+  ).catch(() => [] as { telegram_id: number | null }[]);
+  const out: number[] = [];
+  for (const r of rows) if (r.telegram_id != null && isRealTelegramId(r.telegram_id)) out.push(r.telegram_id);
+  return out;
+}
+
+export async function faceidUnexcusedNotify(): Promise<{ classes: number; recipients: number }> {
+  const today = uzDateStr();
+  const dateStr = today.split("-").reverse().join(".");
+  const classes = await query<{ name: string }>(
+    "SELECT DISTINCT class_name AS name FROM users WHERE class_name <> '' ORDER BY class_name"
+  );
+  let recipients = 0;
+  let affected = 0;
+  const schoolLines: string[] = [];
+
+  for (const c of classes) {
+    const absent = await query<{ full_name: string }>(
+      `SELECT u.full_name FROM users u
+        WHERE u.class_name = $1
+          AND NOT EXISTS (
+            SELECT 1 FROM face_checkins fc
+             WHERE fc.student_login = u.login AND fc.date = $2::date
+               AND (fc.checked_at IS NOT NULL OR fc.excused = TRUE)
+          )
+        ORDER BY u.full_name`,
+      [c.name, today]
+    );
+    if (absent.length === 0) continue;
+    affected++;
+    schoolLines.push(`• <b>${esc(c.name)}</b>: ${absent.length} ta`);
+    const text =
+      `⛔️ <b>${esc(c.name)} — sababsiz kelmaganlar</b> (${dateStr}, ${uzTime()})\n\n` +
+      absent.slice(0, 80).map((a, i) => `${i + 1}. ${esc(a.full_name)}`).join("\n") +
+      `\n\n<i>Sababli bo'lsa — platformada "Sababli" deb belgilang, ro'yxatdan chiqadi.</i>`;
+    const to = await classRecipients(c.name);
+    for (const id of to) { if (await sendToChat(id, text)) recipients++; await sleep(60); }
+  }
+
+  // Rahbariyatga (direktor, MMTB, zavuch) — umumiy xulosa
+  if (schoolLines.length) {
+    const total = schoolLines.length;
+    const text =
+      `⛔️ <b>Maktab — bugungi sababsiz kelmaganlar</b> (${dateStr}, ${uzTime()})\n\n` +
+      schoolLines.join("\n") +
+      `\n\n<b>Jami:</b> ${total} sinfda sababsiz kelmaganlar bor.`;
+    for (const id of await mgmtRecipients()) { if (await sendToChat(id, text)) recipients++; await sleep(60); }
+  }
+  return { classes: affected, recipients };
+}
+
+// POST /api/faceid/notify-unexcused — qo'lda yuborish (rahbariyat)
+router.post("/faceid/notify-unexcused", async (req, res): Promise<void> => {
+  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  try {
+    const r = await faceidUnexcusedNotify();
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    logger.error({ err }, "faceid/notify-unexcused");
     res.status(500).json({ error: (err as Error).message });
   }
 });

@@ -38,15 +38,15 @@ const TEACHER_ROLES = [
 ];
 const MANAGER_ROLES = [
   { value: "director", label: "Direktor" },
-  { value: "zam_direktor", label: "Direktor o'rinbosari" },
-  { value: "zavuch", label: "Zavuch" },
+  { value: "zam_direktor", label: "MMTB" },
+  { value: "zavuch", label: "O'quv ishlari mudiri" },
   { value: "kutubxonachi", label: "Kutubxonachi" },
 ];
 
 const roleLabels: Record<string, string> = {
   director: "Direktor",
-  zam_direktor: "Direktor o'rinbosari",
-  zavuch: "Zavuch",
+  zam_direktor: "MMTB",
+  zavuch: "O'quv ishlari mudiri",
   sinf_rahbari: "Sinf rahbari",
   teacher: "Fan o'qituvchisi",
   kutubxonachi: "Kutubxonachi",

@@ -29,8 +29,8 @@ interface ChatUser {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin", director: "Direktor", zam_direktor: "Direktor o'rinbosari",
-  zavuch: "Zavuch", teacher: "O'qituvchi", sinf_rahbari: "Sinf rahbari",
+  admin: "Admin", director: "Direktor", zam_direktor: "MMTB",
+  zavuch: "O'quv ishlari mudiri", teacher: "O'qituvchi", sinf_rahbari: "Sinf rahbari",
   student: "O'quvchi", kutubxonachi: "Kutubxonachi", mudir: "Obidov Boburjon",
 };
 

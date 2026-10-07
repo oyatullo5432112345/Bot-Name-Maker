@@ -5,8 +5,8 @@ export type Role = "admin" | "director" | "zam_direktor" | "zavuch" | "teacher";
 export const ROLE_NAMES: Record<Role, string> = {
   admin: "👑 Admin",
   director: "🏛️ Direktor",
-  zam_direktor: "📋 Zam. Direktor",
-  zavuch: "📚 Zavuch",
+  zam_direktor: "📋 MMTB",
+  zavuch: "📚 O'quv ishlari mudiri",
   teacher: "👨‍🏫 O'qituvchi",
 };
 
@@ -82,7 +82,7 @@ export function getPermissions(role: Role): Permissions {
 // Rol tugmalari (admin uchun xodim qo'shishda)
 export const ROLE_BUTTONS: { label: string; value: Role }[] = [
   { label: "🏛️ Direktor", value: "director" },
-  { label: "📋 Zam. Direktor", value: "zam_direktor" },
-  { label: "📚 Zavuch", value: "zavuch" },
+  { label: "📋 MMTB", value: "zam_direktor" },
+  { label: "📚 O'quv ishlari mudiri", value: "zavuch" },
   { label: "👨‍🏫 O'qituvchi", value: "teacher" },
 ];

@@ -14,7 +14,7 @@ interface BirthdayPerson {
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Admin", director: "Direktor", teacher: "O'qituvchi",
-  sinf_rahbari: "Sinf rahbari", zavuch: "Zavuch", zam_direktor: "Direktor o'rinbosari",
+  sinf_rahbari: "Sinf rahbari", zavuch: "O'quv ishlari mudiri", zam_direktor: "MMTB",
   kutubxonachi: "Kutubxonachi", mudir: "Mudir",
 };
 

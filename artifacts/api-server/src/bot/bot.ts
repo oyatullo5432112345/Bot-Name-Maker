@@ -160,8 +160,8 @@ function buildRegCodesMenu(): InlineKeyboard {
     .text(`👨‍🏫 O'qituvchi: ${fmt(codes.teacher)}`, "admin_set_code:teacher").row()
     .text(`👩‍🏫 Sinf rahbari: ${fmt(codes.sinfRahbari)}`, "admin_set_code:sinfRahbari").row()
     .text(`🏛 Direktor: ${fmt(codes.director)}`, "admin_set_code:director").row()
-    .text(`📚 Zavuch: ${fmt(codes.zavuch)}`, "admin_set_code:zavuch").row()
-    .text(`👔 Zam.direktor: ${fmt(codes.zamDirector)}`, "admin_set_code:zamDirector").row()
+    .text(`📚 O'quv ishlari mudiri: ${fmt(codes.zavuch)}`, "admin_set_code:zavuch").row()
+    .text(`👔 MMTB: ${fmt(codes.zamDirector)}`, "admin_set_code:zamDirector").row()
     .text(`📖 Kutubxonachi: ${fmt(codes.kutubxonachi)}`, "admin_set_code:kutubxonachi").row()
     .text("🔙 Orqaga", "admin_panel");
 }
@@ -248,8 +248,8 @@ const STAFF_ROLE_LABELS: Record<string, string> = {
   sinf_rahbari: "Sinf rahbari",
   director: "Direktor",
   mudir: "Obidov Boburjon",
-  zam_direktor: "Direktor o'rinbosari",
-  zavuch: "Zavuch",
+  zam_direktor: "MMTB",
+  zavuch: "O'quv ishlari mudiri",
   kutubxonachi: "Kutubxonachi",
   admin: "Administrator",
 };
@@ -412,7 +412,7 @@ function buildRoleSelectionKb(): InlineKeyboard {
     .text("👨‍🎓 O'quvchi", "reg_role:student").row()
     .text("👨‍🏫 O'qituvchi", "reg_role:teacher").row()
     .text("👩‍🏫 Sinf rahbari + O'qituvchi", "reg_role:sinf_rahbari").row()
-    .text("👔 Rahbar (Direktor / Zavuch / Zam.dir)", "reg_role:management");
+    .text("👔 Rahbar (Direktor / O'quv ishlari mudiri / MMTB)", "reg_role:management");
 }
 
 export function createBot(): Bot {
@@ -908,8 +908,8 @@ export function createBot(): Bot {
       teacher: "O'qituvchi",
       sinfRahbari: "Sinf rahbari",
       director: "Direktor",
-      zavuch: "Zavuch",
-      zamDirector: "Zam.direktor",
+      zavuch: "O'quv ishlari mudiri",
+      zamDirector: "MMTB",
       kutubxonachi: "Kutubxonachi",
     };
     const codes = getRoleRegCodes();
@@ -1068,8 +1068,8 @@ export function createBot(): Bot {
       sinf_rahbari: "Sinf rahbarlari",
       management: "Rahbarlar",
       director: "Direktorlar",
-      zavuch: "Zavuchlar",
-      zam_direktor: "Zam.direktorlar",
+      zavuch: "O'quv ishlari mudirlari",
+      zam_direktor: "MMTB",
     };
     await ctx.editMessageText(
       `👤 *${labels[roleGroup] ?? roleGroup} ro'yxati*\n\nRo'yxatdan o'z ismingizni toping va tanlang:`,
@@ -1471,8 +1471,8 @@ export function createBot(): Bot {
         teacher: "O'qituvchi",
         sinfRahbari: "Sinf rahbari",
         director: "Direktor",
-        zavuch: "Zavuch",
-        zamDirector: "Zam.direktor",
+        zavuch: "O'quv ishlari mudiri",
+        zamDirector: "MMTB",
         kutubxonachi: "Kutubxonachi",
       };
       if (newCode === "-") {

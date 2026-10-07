@@ -5,8 +5,8 @@ const ROLE_TEXTS: Record<string, string> = {
   teacher: "O'qituvchi",
   sinf_rahbari: "Sinf rahbari",
   director: "Direktor",
-  zam_direktor: "Direktor o'rinbosari",
-  zavuch: "Zavuch",
+  zam_direktor: "MMTB",
+  zavuch: "O'quv ishlari mudiri",
   kutubxonachi: "Kutubxonachi",
   admin: "Administrator",
 };

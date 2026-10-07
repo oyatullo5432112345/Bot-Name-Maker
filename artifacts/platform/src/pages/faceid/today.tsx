@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock } from "lucide-react";
+import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
 import { api } from "@/lib/face";
@@ -47,11 +47,11 @@ export default function FaceTodayPage() {
   });
 
   // MUHIM: bu funksiya bosilganda ishlashi uchun FUNKSIYA qaytaradi (darhol ishga tushmaydi)
-  const act = (login: string, action: "in" | "out" | "out_excused" | "clear", name: string) => async () => {
+  const act = (login: string, action: "in" | "out" | "out_excused" | "clear" | "absent_excused", name: string) => async () => {
     setBusy(`${login}:${action}`);
     try {
       await api("/faceid/manual", { method: "POST", body: JSON.stringify({ student_login: login, action, time: time || undefined }) });
-      const msg = action === "in" ? "keldi" : action === "out" ? "ketdi" : action === "out_excused" ? "ruxsat bilan ketdi" : "tozalandi";
+      const msg = action === "in" ? "keldi" : action === "out" ? "ketdi" : action === "out_excused" ? "ruxsat bilan ketdi" : action === "absent_excused" ? "sababli (kelmadi)" : "tozalandi";
       toast({ title: `${name}: ${msg}` });
       void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
     } catch (e) {
@@ -109,6 +109,8 @@ export default function FaceTodayPage() {
                       <span className={r.status === "late" ? "text-amber-500" : "text-emerald-600 dark:text-emerald-400"}>
                         {r.status === "late" ? "Kech keldi" : "Keldi"}: {r.arrived}
                       </span>
+                    ) : r.excused && !r.left ? (
+                      <span className="text-indigo-500">Sababli (kelmadi)</span>
                     ) : <span className="text-muted-foreground">Kelmagan</span>}
                     {r.left && (
                       <span className={r.excused ? "text-violet-500" : r.early ? "text-amber-500" : "text-sky-500"}>
@@ -127,6 +129,9 @@ export default function FaceTodayPage() {
                 </Button>
                 <Button size="sm" variant="outline" className="text-violet-600" disabled={b} onClick={act(r.login, "out_excused", r.full_name)}>
                   <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Ruxsat bilan ketdi
+                </Button>
+                <Button size="sm" variant="outline" className="text-indigo-600" disabled={b} onClick={act(r.login, "absent_excused", r.full_name)}>
+                  <UserX className="w-3.5 h-3.5 mr-1" /> Sababli (kelmadi)
                 </Button>
                 {(r.arrived || r.left) && (
                   <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={b} onClick={act(r.login, "clear", r.full_name)}>

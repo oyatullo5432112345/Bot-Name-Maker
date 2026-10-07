@@ -422,7 +422,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     if (existingRole) {
       const roleNames: Record<string, string> = {
         director: "Direktor", mudir: "Obidov Boburjon",
-        zam_direktor: "Direktor o'rinbosari", zavuch: "Zavuch", kutubxonachi: "Kutubxonachi",
+        zam_direktor: "MMTB", zavuch: "O'quv ishlari mudiri", kutubxonachi: "Kutubxonachi",
       };
       res.status(400).json({ error: `${roleNames[role] ?? role} allaqachon ro'yxatdan o'tgan` });
       return;

@@ -12,7 +12,7 @@ import {
   LogIn, DoorOpen, ArrowDownLeft, ArrowUpRight, Users, Zap, UserX, Volume2, VolumeX,
 } from "lucide-react";
 import {
-  api, beep, speak, stopSpeak, buildIndex, detectFaces, hasSsd, loadFaceApi, startCamera, stopCamera, warmup,
+  api, beep, speak, stopSpeak, buildIndex, detectFaces, hasSsd, loadFaceApi, startCamera, stopCamera, warmup, listCameras,
   type Box, type Detector, type FaceIndex, type FaceResult, type Person,
 } from "@/lib/face";
 import { associate, matchFrame, VoteBook, type Track } from "@/lib/face-track";
@@ -249,6 +249,7 @@ export default function FaceKioskPage() {
   const hintRef = useRef<"idle" | "closer" | "scan">("idle");
   const runningRef = useRef(false);
   const facingRef = useRef<"user" | "environment">("user");
+  const camIdRef = useRef<string | null>(null); // tanlangan kamera (veb-kamera uchun)
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
   const [manualDet] = useState(readDetector);
   const detRef = useRef<Detector>(manualDet ?? "ssd");
@@ -260,6 +261,8 @@ export default function FaceKioskPage() {
   const [error, setError] = useState("");
   const [mode, setModeState] = useState<Mode>(modeRef.current);
   const [facing, setFacing] = useState<"user" | "environment">("user");
+  const [cameras, setCameras] = useState<{ deviceId: string; label: string }[]>([]);
+  const [camId, setCamId] = useState<string>("");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [hint, setHint] = useState<"idle" | "closer" | "scan">("idle");
   const [events, setEvents] = useState<Event[]>([]);
@@ -675,8 +678,15 @@ export default function FaceKioskPage() {
     setFacing(face);
     try {
       stopCamera(streamRef.current);
-      streamRef.current = await startCamera(videoRef.current!, face, true);
+      streamRef.current = await startCamera(videoRef.current!, face, true, camIdRef.current ?? undefined);
       tracksRef.current = [];
+      // Kameralar ro'yxatini yangilaymiz (nomlar ruxsatdan keyin ko'rinadi — veb-kamera tanlash uchun)
+      try {
+        const cams = await listCameras();
+        setCameras(cams);
+        const active = streamRef.current.getVideoTracks()[0]?.getSettings?.().deviceId;
+        if (active) { camIdRef.current = active; setCamId(active); }
+      } catch { /* e'tiborsiz */ }
       await document.documentElement.requestFullscreen?.().catch(() => {});
       await requestWake();
       beep("again"); // iOS: ovozni foydalanuvchi bosishi bilan "uyg'otamiz"
@@ -697,7 +707,17 @@ export default function FaceKioskPage() {
   };
 
   const switchCamera = async () => {
+    // Old/orqa (telefon) almashtirish — tanlangan deviceId'ni bo'shatamiz
+    camIdRef.current = null;
+    setCamId("");
     await start(facingRef.current === "user" ? "environment" : "user");
+  };
+
+  // Aniq kamerani tanlash (kompyuter / USB veb-kamera)
+  const pickCamera = async (id: string) => {
+    camIdRef.current = id || null;
+    setCamId(id);
+    await start(facingRef.current);
   };
 
   const toggleDetector = () => {
@@ -772,8 +792,20 @@ export default function FaceKioskPage() {
             <button onClick={toggleVoice} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center" title={voice ? "Ovozni o'chirish" : "Ovozni yoqish"}>
               {voice ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5 text-slate-400" />}
             </button>
+            {phase === "running" && cameras.length > 1 && (
+              <select
+                value={camId}
+                onChange={(e: { target: { value: string } }) => void pickCamera(e.target.value)}
+                title="Kamerani tanlash (veb-kamera)"
+                className="h-10 max-w-[9rem] rounded-full bg-white/10 hover:bg-white/20 text-white text-xs px-3 border border-white/10 outline-none cursor-pointer"
+              >
+                {cameras.map((c) => (
+                  <option key={c.deviceId} value={c.deviceId} className="bg-[#05070F] text-white">{c.label}</option>
+                ))}
+              </select>
+            )}
             {phase === "running" && (
-              <button onClick={() => void switchCamera()} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center" title="Kamerani almashtirish">
+              <button onClick={() => void switchCamera()} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center" title="Old/orqa kamera">
                 <SwitchCamera className="w-5 h-5" />
               </button>
             )}
