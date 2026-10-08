@@ -15,8 +15,16 @@ papkalarining O'ZINI sudrang (zip nomini emas).
 6. Baza tuzatmasi: 016 migratsiya (yangi rolga ruxsat)
 7. Majburiy kanal: endi HAR amaldan oldin tekshiradi (bot kanalda ADMIN bo'lishi shart)
 8. Davomat: Face ID avtomatik bog'langan; fan o'qituvchisi sinf tanlab "Sababli" qo'yadi; "Ruxsat bilan ketdi"
+9. **YANGI: Bot — kanalga a'zo bo'lgach "ro'yxatdan o'tish" EMAS, "🚀 Platformaga kirish" tugmasi chiqadi** (/login ga)
+10. **YANGI: DOIMIY KIRISH — bir marta yuz yoki 5 xonali ID bilan kirgach, sessiya 30 kun saqlanadi.**
+    Chiqib-kirgan foydalanuvchidan kod QAYTA so'ralmaydi — avtomatik kiraveradi.
+    (Avval yuz = 1 soat, ID = 12 soat edi; endi ikkalasi ham 30 kun.)
 
 ## Deploy
 1. `artifacts/`, `lib/`, `migrations/` papkalarini GitHub'ga joylang (ustiga yoziladi).
 2. Render avtomatik build qiladi; migratsiyalar (015, 016) o'zi ishga tushadi.
 3. Build YASHIL bo'lsin.
+
+## Eslatma (xavfsizlik)
+- Bot token va baza parollari YANGI (oldin ochilganlarini ishlatmang).
+- API kalitlar faqat Render > Environment da turadi, kodda emas.

@@ -986,10 +986,15 @@ export function createBot(): Bot {
         reply_markup: buildWelcomeKeyboard(),
       });
     } else {
+      // Bog'lanmagan → ro'yxatdan o'tish EMAS, to'g'ridan platformaga KIRISH
+      const kb = new InlineKeyboard()
+        .url("🚀 Platformaga kirish", `${WEBSITE_URL}/login`);
       await ctx.reply(
+        "✅ A'zo bo'ldingiz!\n\n" +
         "🎓 *Toshloq tumani 3-maktab — TALIM PLATFORM*\n\n" +
-        "Platformaga kirish uchun avval o'z toifangizni tanlang 👇",
-        { parse_mode: "Markdown", reply_markup: buildRoleSelectionKb() }
+        "Platformaga kirish uchun maktab bergan *Kirish ID* dan foydalaning.\n" +
+        "Kirish ID ni sinf rahbari yoki admindan olib, quyidagi tugma orqali kiring 👇",
+        { parse_mode: "Markdown", reply_markup: kb }
       );
     }
   });

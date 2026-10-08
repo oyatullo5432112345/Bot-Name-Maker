@@ -5,7 +5,8 @@
 //    boshqa o'quvchilarning yuz ma'lumoti brauzerga YUBORILMAYDI). Imkoni
 //    bo'lmasa 5 xonali ID bilan ham kira oladi.
 //  • O'qituvchi / admin: 5 xonali ID bilan (admin uchun parol ham zaxira — /auth/login).
-//  • Yuz bilan kirilgach sessiya 1 soat; keyin qayta so'raladi.
+//  • Bir marta yuz yoki ID bilan kirgach sessiya 30 kun saqlanadi —
+//    chiqib-kirgan foydalanuvchidan kod QAYTA so'ralmaydi (avto kiradi).
 //  • Yuzda "tiriklik" tekshiruvi: 2 ta kadr (to'g'ri + burilgan) — rasm bilan aldashni qiyinlashtiradi.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -18,8 +19,13 @@ import { getAuthUser } from "./auth.js";
 const router: IRouter = Router();
 
 const SECRET = process.env["TOKEN_SECRET"] ?? process.env["JWT_SECRET"] ?? "insecure-dev-secret-o-zgartiring";
-const FACE_SESSION_MS = Number(process.env["FACE_SESSION_MIN"] ?? 60) * 60_000; // yuz: 1 soat
-const ID_SESSION_MS = Number(process.env["ID_SESSION_MIN"] ?? 720) * 60_000; // ID: 12 soat
+// DOIMIY KIRISH: bir marta yuz yoki 5 xonali ID bilan kirgach, sessiya 30 kun
+// saqlanadi. Shu sababli chiqib-kirgan foydalanuvchidan kod QAYTA so'ralmaydi —
+// brauzerda token turguncha avtomatik kiraveradi. (auth.ts bilan bir xil 30 kun.)
+// Kerak bo'lsa env orqali qisqartirish mumkin (FACE_SESSION_MIN / ID_SESSION_MIN).
+const DAYS_30_MIN = 30 * 24 * 60; // 43200 daqiqa = 30 kun
+const FACE_SESSION_MS = Number(process.env["FACE_SESSION_MIN"] ?? DAYS_30_MIN) * 60_000; // yuz: 30 kun
+const ID_SESSION_MS = Number(process.env["ID_SESSION_MIN"] ?? DAYS_30_MIN) * 60_000; // ID: 30 kun
 
 const MANAGE = ["admin", "director", "zam_direktor", "zavuch"];
 const LIST_ROLES = [...MANAGE, "sinf_rahbari", "teacher", "boshlangich_oqituvchi"];
