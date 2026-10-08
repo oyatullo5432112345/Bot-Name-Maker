@@ -72,8 +72,27 @@ const MODE_KEY = "faceid_mode";
 const DET_KEY = "faceid_detector"; // qo'lda tanlangan: "ssd" | "tiny"
 const VOICE_KEY = "faceid_voice"; // ovoz yoqilgan/o'chirilgan
 const LOOP_GAP_MS = 10; // kadrlar orasidagi pauza (tezlikni aniqlashning o'zi belgilaydi)
-const MARGIN = 0.06; // 1- va 2-eng yaqin odam orasidagi minimal farq
 const VOTE_WINDOW_MS = 1500; // tasdiqlash uchun ovozlar shu oraliqda yig'iladi
+
+// ── Aniqlik darajasi (butun maktab miqyosida xato taniyishni kamaytirish) ──
+// O'quvchilar soni oshgani sari ikki odamning yuz izi bir-biriga yaqinlashadi.
+// Shuning uchun: masofa chegarasi (threshold), 1- va 2-o'rin orasidagi farq (margin)
+// va tasdiq uchun kerakli ovozlar (votes) — qanchalik qat'iy bo'lsa, xato shunchalik kam.
+type Precision = "yumshoq" | "standart" | "qattiq";
+interface PrecisionProfile { threshold: number; margin: number; votes: number; label: string; note: string }
+const PRECISION: Record<Precision, PrecisionProfile> = {
+  yumshoq:  { threshold: 0.50, margin: 0.06, votes: 2, label: "Yumshoq",  note: "Tez taniydi — kam o'quvchi yoki bitta sinf eshigi uchun" },
+  standart: { threshold: 0.47, margin: 0.10, votes: 3, label: "Standart", note: "Maktab uchun tavsiya — aniqlik va tezlik muvozanati" },
+  qattiq:   { threshold: 0.44, margin: 0.13, votes: 4, label: "Qattiq",   note: "Eng aniq — ko'p o'quvchi, xato taniyishni minimal qiladi" },
+};
+const PRECISION_KEY = "faceid_precision";
+function readPrecision(): Precision {
+  try {
+    const v = localStorage.getItem(PRECISION_KEY);
+    if (v === "yumshoq" || v === "standart" || v === "qattiq") return v;
+  } catch { /* localStorage yo'q */ }
+  return "standart";
+}
 const TRACK_TTL_MS = 1000; // yuz 1 soniya ko'rinmasa — kuzatuv tugaydi
 const QUIET_MS = 8000; // tanilgan o'quvchi 8 soniya qayta ko'rsatilmaydi
 const QUIET_ALREADY_MS = 15000; // "bugun keldi" kabi eslatmalar — 15 soniya
@@ -255,7 +274,9 @@ export default function FaceKioskPage() {
   const detRef = useRef<Detector>(manualDet ?? "ssd");
   const manualDetRef = useRef<boolean>(manualDet !== null);
   const perfRef = useRef({ ema: 0, frames: 0, shownAt: 0, faces: 0 });
+  const precisionRef = useRef<PrecisionProfile>(PRECISION[readPrecision()]);
 
+  const [precision, setPrecisionState] = useState<Precision>(readPrecision);
   const [phase, setPhase] = useState<"loading" | "ready" | "running" | "error">("loading");
   const [progress, setProgress] = useState("Tayyorlanmoqda…");
   const [error, setError] = useState("");
@@ -281,6 +302,12 @@ export default function FaceKioskPage() {
   const recount = () => {
     const ps = peopleRef.current;
     setCounts({ arrived: ps.filter((p) => p.arrived).length, left: ps.filter((p) => p.left).length, enrolled: ps.length });
+  };
+
+  const changePrecision = (k: Precision) => {
+    setPrecisionState(k);
+    precisionRef.current = PRECISION[k];
+    try { localStorage.setItem(PRECISION_KEY, k); } catch { /* localStorage yo'q */ }
   };
 
   const setMode = (m: Mode) => {
@@ -567,8 +594,9 @@ export default function FaceKioskPage() {
       if (voiceRef.current) speak("Sekinroq, qaytadan qarang");
     }
 
-    const th = settingsRef.current.threshold;
-    const matches = matchFrame(usable, indexRef.current, th, MARGIN);
+    // Chegara: server sozlamasi va aniqlik profilidan — qaysi qat'iyroq bo'lsa (kichikroq)
+    const th = Math.min(settingsRef.current.threshold, precisionRef.current.threshold);
+    const matches = matchFrame(usable, indexRef.current, th, precisionRef.current.margin);
     const items: DrawItem[] = small.map((f) => ({ box: f.box, color: COLORS.small, text: "" }));
 
     for (const [face, track] of pairs) {
@@ -589,7 +617,7 @@ export default function FaceKioskPage() {
           continue;
         }
         const total = votesRef.current.add(p.login, m.strong ? 2 : 1, now);
-        if (total >= 2) {
+        if (total >= precisionRef.current.votes) {
           votesRef.current.clear(p.login);
           onRecognized(p, m.d);
           items.push({ box: face.box, color: COLORS.ok, text: shortName(p.name) });
@@ -865,6 +893,28 @@ export default function FaceKioskPage() {
                   <div>• Telefonni o'quvchilar <b className="text-slate-200">yuradigan yo'lga qaratib</b>, 1–3 m oldinga, yuz balandligiga qo'ying</div>
                   <div>• Yorug' joy, orqada deraza bo'lmasin; quvvatga ulang</div>
                 </div>
+
+                {/* Aniqlik darajasi — maktab miqyosida xatoni kamaytirish */}
+                <div className="mt-5 text-left">
+                  <div className="text-xs font-semibold text-slate-400 mb-1.5">Aniqlik darajasi</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["yumshoq", "standart", "qattiq"] as Precision[]).map((k) => (
+                      <button
+                        key={k}
+                        onClick={() => changePrecision(k)}
+                        className={`rounded-xl border px-2 py-2 text-xs font-bold transition-colors ${
+                          precision === k
+                            ? "border-cyan-400 bg-cyan-400/15 text-cyan-200"
+                            : "border-white/10 bg-white/5 text-slate-300"
+                        }`}
+                      >
+                        {PRECISION[k].label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1.5">{PRECISION[precision].note}</div>
+                </div>
+
                 <button
                   onClick={() => void start()}
                   className="mt-6 w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-500 py-4 text-lg font-bold text-[#05070F]"

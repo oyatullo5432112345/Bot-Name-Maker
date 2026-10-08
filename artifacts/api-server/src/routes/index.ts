@@ -31,6 +31,7 @@ import telegramWebappRouter from "./telegram-webapp.js";
 import faceidRouter from "./faceid.js";
 import labRouter from "./lab.js";
 import authLoginRouter from "./auth-login.js";
+import sayohatRouter from "./sayohat.js";
 
 const router: IRouter = Router();
 
@@ -66,5 +67,6 @@ router.use(adminResetRouter);
 router.use(riddlesRouter);
 router.use(faceidRouter);
 router.use(labRouter);
+router.use(sayohatRouter);
 
 export default router;

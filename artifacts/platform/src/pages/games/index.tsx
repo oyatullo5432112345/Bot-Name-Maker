@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Users, Grid3x3, PlayCircle, Trophy, Zap, Gamepad2, ArrowRight, Play, Star } from "lucide-react";
+import { Users, Grid3x3, PlayCircle, Trophy, Zap, Gamepad2, ArrowRight, Play, Star, Compass, Sparkles } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
 
 const STAFF_ROLES = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"];
@@ -41,6 +41,40 @@ export default function GamesPage() {
         <p className="text-[11px] font-bold text-primary/80 uppercase tracking-widest mb-1">Interaktiv dars vositalari</p>
         <h1 className="text-2xl font-extrabold tracking-tight">O'yinlar</h1>
         <p className="text-muted-foreground text-xs mt-0.5 max-w-md">Bilim va zavq bir joyda — o'zingiz yoki sinf bilan birga</p>
+      </div>
+
+      {/* 0. BEK VA LOLA: SAYOHAT (yangi) */}
+      <div className="space-y-2">
+        <p className="text-[11px] font-bold text-fuchsia-400/80 uppercase tracking-wider flex items-center gap-1">
+          <Sparkles className="w-3 h-3" /> Yangi — ta'limiy sarguzasht
+        </p>
+
+        <div className="relative rounded-2xl border border-fuchsia-500/30 bg-gradient-to-r from-violet-950/50 via-fuchsia-950/40 to-card p-4 sm:p-5 overflow-hidden shadow-md">
+          <div className="absolute -top-12 -right-8 w-32 h-32 rounded-full bg-fuchsia-500/15 blur-2xl pointer-events-none" />
+
+          <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-fuchsia-600 via-violet-600 to-purple-500 border border-fuchsia-300/30 flex items-center justify-center shrink-0 shadow-md">
+                <Compass className="w-6 h-6 text-white" strokeWidth={2} />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-extrabold text-lg tracking-tight text-white">Bek va Lola: Sayohat</h3>
+                <p className="text-xs text-slate-300/90 mt-1 leading-relaxed max-w-sm">
+                  O'zbekiston bo'ylab sayohat qiling — bosh qotirmalarni yeching, esdalik yig'ing va tanga yutib oling!
+                </p>
+              </div>
+            </div>
+
+            <div className="w-full sm:w-auto shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-border/40">
+              <Link href="/sayohat" className="block">
+                <button className="btn-pulse-rose w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-600 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all cursor-pointer">
+                  <span>SAYOHATNI BOSHLASH</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </Link>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* 1. ZUKKO O'YINI */}

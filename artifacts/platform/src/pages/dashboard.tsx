@@ -8,10 +8,11 @@ import {
   getGetDashboardStatsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User, Megaphone, Pin, ChevronRight, Trophy } from "lucide-react";
+import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, User, Megaphone, Pin, ChevronRight, Trophy, ScanFace, Compass } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { OnboardingTour } from "@/components/onboarding-tour";
 
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
@@ -262,16 +263,33 @@ function TangaHeaderWidget() {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const [showTour, setShowTour] = useState(false);
+  useEffect(() => {
+    try { if (!localStorage.getItem("talim_onboarding_v1")) setShowTour(true); } catch { /* localStorage yo'q */ }
+  }, []);
   if (!user) return null;
 
   const isAdminOrDir = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
   const isTeacher = ["teacher", "sinf_rahbari"].includes(user.role);
   const isStudent = user.role === "student";
 
+  const canUseFaceId = ["admin", "director", "zam_direktor", "zavuch", "sinf_rahbari"].includes(user.role);
+  const faceIdHref = user.role === "sinf_rahbari" ? "/faceid/enroll" : "/faceid";
+  const faceIdSub = user.role === "sinf_rahbari"
+    ? "O'z sinfingiz o'quvchilarini ro'yxatdan o'tkazing"
+    : "Kirish-chiqish davomati va hisobotlar";
+
   const motivation = UZ_MOTIVATIONAL[new Date().getDate() % UZ_MOTIVATIONAL.length]!;
+
+  const closeTour = () => {
+    setShowTour(false);
+    try { localStorage.setItem("talim_onboarding_v1", "1"); } catch { /* localStorage yo'q */ }
+  };
 
   return (
     <div className="space-y-6">
+      <OnboardingTour open={showTour} role={user.role} onClose={closeTour} />
+
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="mb-1.5"><DateWidget /></div>
@@ -279,8 +297,53 @@ export default function Dashboard() {
           <p className="text-muted-foreground mt-1">{getMorningGreeting(user.full_name ?? "")}</p>
           <p className="text-xs text-muted-foreground/70 mt-0.5 italic">{motivation}</p>
         </div>
-        {isStudent && <TangaHeaderWidget />}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setShowTour(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary text-xs font-bold cursor-pointer active:scale-95 transition-all"
+            title="Ilovadan foydalanish yo'riqnomasi"
+          >
+            <BookOpen className="w-4 h-4" /> <span className="hidden sm:inline">Yo'riqnoma</span>
+          </button>
+          {isStudent && <TangaHeaderWidget />}
+        </div>
       </div>
+
+      {/* Tezkor tugmalar — Face ID va Bek va Lola o'yini */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {canUseFaceId && (
+          <Link href={faceIdHref}>
+            <div className="h-full rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 via-sky-950/30 to-card p-4 cursor-pointer hover:scale-[1.01] transition-transform shadow-md">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shrink-0 shadow">
+                  <ScanFace className="w-6 h-6 text-white" strokeWidth={2} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-extrabold text-base text-foreground">Face ID</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{faceIdSub}</p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
+              </div>
+            </div>
+          </Link>
+        )}
+
+        <Link href="/sayohat" className={canUseFaceId ? "" : "sm:col-span-2"}>
+          <div className="h-full rounded-2xl border border-fuchsia-500/30 bg-gradient-to-br from-violet-950/40 via-fuchsia-950/30 to-card p-4 cursor-pointer hover:scale-[1.01] transition-transform shadow-md">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-fuchsia-500 to-violet-600 flex items-center justify-center shrink-0 shadow">
+                <Compass className="w-6 h-6 text-white" strokeWidth={2} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-extrabold text-base text-foreground">Bek va Lola: Sayohat</h3>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">O'zbekiston bo'ylab ta'limiy sayohat o'yini</p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
+            </div>
+          </div>
+        </Link>
+      </div>
+
       <OlimpiyadaBanner />
       <AnnouncementsBanner />
       {isAdminOrDir && <AdminDashboard />}

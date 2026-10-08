@@ -9,7 +9,7 @@ import {
   Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays,
   MessageSquare, Library, Award,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
-  Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace, Monitor,
+  Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace, Monitor, Compass,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -395,6 +395,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {canViewClasses && <NavLink href="/classes" icon={School} label="Sinflar" active={isActive("/classes")} />}
           {canViewStaff && <NavLink href="/staff" icon={Users} label="Xodimlar" active={isActive("/staff")} />}
           <NavLink href="/games" icon={Gamepad2} label="O'yinlar" active={isActive("/games")} />
+          <NavLink href="/sayohat" icon={Compass} label="Sayohat 🧭" active={isActive("/sayohat")} />
         </NavSection>
 
         {!isMudir && (
