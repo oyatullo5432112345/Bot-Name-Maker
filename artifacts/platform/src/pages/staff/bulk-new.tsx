@@ -34,6 +34,7 @@ const COMMON_SUBJECTS = [
 
 const TEACHER_ROLES = [
   { value: "teacher", label: "Fan o'qituvchisi" },
+  { value: "boshlangich_oqituvchi", label: "Boshlang'ich sinf o'qituvchisi" },
   { value: "sinf_rahbari", label: "Sinf rahbari" },
 ];
 const MANAGER_ROLES = [
@@ -49,6 +50,7 @@ const roleLabels: Record<string, string> = {
   zavuch: "O'quv ishlari mudiri",
   sinf_rahbari: "Sinf rahbari",
   teacher: "Fan o'qituvchisi",
+  boshlangich_oqituvchi: "Boshlang'ich sinf o'qituvchisi",
   kutubxonachi: "Kutubxonachi",
 };
 
@@ -154,7 +156,9 @@ export default function BulkNewStaff() {
   const [copied, setCopied] = useState(false);
 
   const isTeacherTab = tab === "teacher";
-  const showSubjects = isTeacherTab || canTeach;
+  // O'qituvchilar uchun faqat F.I.O so'raladi — fanlarni admin keyin dars jadvalidan biriktiradi.
+  // Fanlar faqat "dars o'tadigan rahbar" uchun ko'rinadi.
+  const showSubjects = !isTeacherTab && canTeach;
 
   const switchTab = (t: TabType) => {
     setTab(t);

@@ -22,7 +22,7 @@ const FACE_SESSION_MS = Number(process.env["FACE_SESSION_MIN"] ?? 60) * 60_000; 
 const ID_SESSION_MS = Number(process.env["ID_SESSION_MIN"] ?? 720) * 60_000; // ID: 12 soat
 
 const MANAGE = ["admin", "director", "zam_direktor", "zavuch"];
-const LIST_ROLES = [...MANAGE, "sinf_rahbari", "teacher"];
+const LIST_ROLES = [...MANAGE, "sinf_rahbari", "teacher", "boshlangich_oqituvchi"];
 
 // ─── Sxema (server ishga tushganda, idempotent — Render free'da preDeploy yo'q) ──
 const AUTH_SCHEMA_SQL = `
@@ -136,7 +136,7 @@ async function staffPayload(s: { id: string; full_name: string; login: string; r
     const c = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [s.class_id]).catch(() => null);
     class_name = c?.name ?? null;
   }
-  const teaching = ["teacher", "sinf_rahbari"].includes(s.role);
+  const teaching = ["teacher", "sinf_rahbari", "boshlangich_oqituvchi"].includes(s.role);
   return {
     id: s.id, role: s.role, full_name: s.full_name, login: s.login, class_name, class_id: s.class_id,
     telegram_id: s.telegram_id, subjects: teaching ? (s.subjects ?? []) : undefined,
@@ -261,7 +261,7 @@ router.get("/auth/login-ids", async (req, res): Promise<void> => {
   if (!u || !LIST_ROLES.includes(String(u.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const className = String(req.query["class_name"] ?? "").trim();
   // Sinf rahbari / o'qituvchi faqat o'z sinfini ko'radi
-  const scoped = ["sinf_rahbari", "teacher"].includes(String(u.role));
+  const scoped = ["sinf_rahbari", "teacher", "boshlangich_oqituvchi"].includes(String(u.role));
 
   // Rahbariyat: "Xodimlar" guruhi — o'qituvchi/xodimlar IDlari
   if (!scoped && className === "Xodimlar") {

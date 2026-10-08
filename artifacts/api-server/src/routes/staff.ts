@@ -71,7 +71,7 @@ router.post("/staff/bulk", requireAuth, async (req, res): Promise<void> => {
     const base = parts[0] ?? "staff";
     const login = `${base}${Math.floor(100 + Math.random() * 900)}`;
     const password = Math.floor(10000 + Math.random() * 90000).toString();
-    const can_teach = s.can_teach ?? (s.role === "teacher" || s.role === "sinf_rahbari");
+    const can_teach = s.can_teach ?? (s.role === "teacher" || s.role === "sinf_rahbari" || s.role === "boshlangich_oqituvchi");
     try {
       const login_id = await genUniqueLoginId();
       const passwordHash = await hashPassword(password);

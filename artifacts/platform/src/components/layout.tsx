@@ -20,7 +20,8 @@ const getToken = () => localStorage.getItem("talim_auth_token");
 const roleDisplay: Record<string, string> = {
   admin: "Admin", director: "Direktor", mudir: "Obidov Boburjon",
   zam_direktor: "MMTB", zavuch: "O'quv ishlari mudiri",
-  teacher: "O'qituvchi", sinf_rahbari: "Sinf rahbari",
+  teacher: "Fan o'qituvchisi", sinf_rahbari: "Sinf rahbari",
+  boshlangich_oqituvchi: "Boshlang'ich sinf o'qituvchisi",
   student: "O'quvchi", kutubxonachi: "Kutubxonachi",
 };
 
@@ -344,11 +345,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isMudir = user.role === "mudir";
   const canViewStaff = !isMudir && ["admin","director","zam_direktor","zavuch"].includes(user.role);
   const canViewClasses = !isMudir && ["admin","director","zam_direktor","zavuch"].includes(user.role);
-  const canViewStudents = !isMudir && ["admin","director","zam_direktor","zavuch","sinf_rahbari"].includes(user.role);
-  const canViewDavomat = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"].includes(user.role);
-  const canUseFaceId = !isMudir && ["admin","director","zam_direktor","zavuch","sinf_rahbari"].includes(user.role);
-  const canUseLab = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"].includes(user.role);
-  const canSeeLoginIds = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"].includes(user.role);
+  const canViewStudents = !isMudir && ["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
+  const canViewDavomat = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
+  const canUseFaceId = !isMudir && ["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
+  const canUseLab = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
+  const canSeeLoginIds = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
   const sayohatOpen = isSayohatOpen(user.role);
   const canManageLibrary = !isMudir && ["admin","kutubxonachi"].includes(user.role);
   const initials = user.full_name?.[0]?.toUpperCase() ?? "U";
@@ -405,7 +406,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <NavLink href="/darslik" icon={BookOpen} label="Darslik" active={isActive("/darslik")} />
             <NavLink href="/baholash" icon={ClipboardList} label="Baholash" active={isActive("/baholash")} />
             {canViewDavomat && <NavLink href="/davomat" icon={CalendarCheck} label="Davomat" active={isActive("/davomat")} />}
-            {canUseFaceId && <NavLink href={user.role === "sinf_rahbari" ? "/faceid/enroll" : "/faceid"} icon={ScanFace} label="Face ID" active={isActive("/faceid")} />}
+            {canUseFaceId && <NavLink href={(user.role === "sinf_rahbari" || user.role === "boshlangich_oqituvchi") ? "/faceid/enroll" : "/faceid"} icon={ScanFace} label="Face ID" active={isActive("/faceid")} />}
             {canUseLab && <NavLink href="/lab" icon={Monitor} label="Kompyuterlar" active={isActive("/lab")} />}
             {canSeeLoginIds && <NavLink href="/admin/login-ids" icon={KeyRound} label="Kirish IDlari" active={isActive("/admin/login-ids")} />}
             <NavLink href="/dars-jadvali" icon={CalendarDays} label="Dars jadvali" active={isActive("/dars-jadvali")} />

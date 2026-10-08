@@ -37,7 +37,7 @@ router.get("/lessons", async (req, res): Promise<void> => {
     let rows;
     if (role === "student" && class_name) {
       rows = await query("SELECT * FROM lessons WHERE class_name = $1 ORDER BY created_at DESC", [class_name]);
-    } else if (role === "teacher" || role === "sinf_rahbari") {
+    } else if (role === "teacher" || role === "sinf_rahbari" || role === "boshlangich_oqituvchi") {
       rows = await query("SELECT * FROM lessons WHERE teacher_login = $1 ORDER BY created_at DESC", [login]);
     } else {
       rows = await query("SELECT * FROM lessons ORDER BY created_at DESC");
@@ -57,7 +57,7 @@ router.post("/lessons", async (req, res): Promise<void> => {
   }
 
   const role = user["role"] as string;
-  const allowedRoles = ["admin", "director", "zavuch", "zam_direktor", "teacher", "sinf_rahbari"];
+  const allowedRoles = ["admin", "director", "zavuch", "zam_direktor", "teacher", "sinf_rahbari", "boshlangich_oqituvchi"];
   if (!allowedRoles.includes(role)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
@@ -93,7 +93,7 @@ router.put("/lessons/:id", async (req, res): Promise<void> => {
   }
 
   const role = user["role"] as string;
-  const allowedRoles = ["admin", "director", "zavuch", "zam_direktor", "teacher", "sinf_rahbari"];
+  const allowedRoles = ["admin", "director", "zavuch", "zam_direktor", "teacher", "sinf_rahbari", "boshlangich_oqituvchi"];
   if (!allowedRoles.includes(role)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
@@ -153,7 +153,7 @@ router.delete("/lessons/:id", async (req, res): Promise<void> => {
   }
 
   const role = user["role"] as string;
-  const allowedRoles = ["admin", "director", "teacher", "sinf_rahbari"];
+  const allowedRoles = ["admin", "director", "teacher", "sinf_rahbari", "boshlangich_oqituvchi"];
   if (!allowedRoles.includes(role)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;

@@ -21,7 +21,7 @@ import { isRealTelegramId, uzDateStr, uzHourMin, uzDay, sendToChat, esc, PERIOD_
 const router: IRouter = Router();
 
 const MANAGE = ["admin", "director", "zam_direktor", "zavuch"];
-const ENROLL = [...MANAGE, "sinf_rahbari"];
+const ENROLL = [...MANAGE, "sinf_rahbari", "boshlangich_oqituvchi"];
 const DESCRIPTOR_LEN = 128;
 
 // ─── Sxema (server ishga tushganda, idempotent) ─────────────────────────────

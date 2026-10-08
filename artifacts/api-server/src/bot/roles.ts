@@ -1,5 +1,5 @@
 // Tizimda mavjud rollar
-export type Role = "admin" | "director" | "zam_direktor" | "zavuch" | "teacher";
+export type Role = "admin" | "director" | "zam_direktor" | "zavuch" | "teacher" | "boshlangich_oqituvchi";
 
 // Rol nomlari (o'zbek tilida)
 export const ROLE_NAMES: Record<Role, string> = {
@@ -7,7 +7,8 @@ export const ROLE_NAMES: Record<Role, string> = {
   director: "🏛️ Direktor",
   zam_direktor: "📋 MMTB",
   zavuch: "📚 O'quv ishlari mudiri",
-  teacher: "👨‍🏫 O'qituvchi",
+  teacher: "👨‍🏫 Fan o'qituvchisi",
+  boshlangich_oqituvchi: "🎒 Boshlang'ich sinf o'qituvchisi",
 };
 
 // Har bir rolning ruxsatlari
@@ -73,6 +74,16 @@ export const ROLE_PERMISSIONS: Record<Role, Permissions> = {
     canViewAllStaff: false,
     canEditUsers: false,
   },
+  boshlangich_oqituvchi: {
+    canManageStaff: false,
+    canManageClasses: false,
+    canAssignTeacher: false,
+    canViewAllStudents: false,
+    canViewOwnStudents: true,
+    canBroadcast: false,
+    canViewAllStaff: false,
+    canEditUsers: false,
+  },
 };
 
 export function getPermissions(role: Role): Permissions {
@@ -84,5 +95,6 @@ export const ROLE_BUTTONS: { label: string; value: Role }[] = [
   { label: "🏛️ Direktor", value: "director" },
   { label: "📋 MMTB", value: "zam_direktor" },
   { label: "📚 O'quv ishlari mudiri", value: "zavuch" },
-  { label: "👨‍🏫 O'qituvchi", value: "teacher" },
+  { label: "👨‍🏫 Fan o'qituvchisi", value: "teacher" },
+  { label: "🎒 Boshlang'ich sinf o'qituvchisi", value: "boshlangich_oqituvchi" },
 ];

@@ -5,7 +5,7 @@ import { z } from "zod";
 
 const router: IRouter = Router();
 
-const STAFF_MANAGE_ROLES = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"];
+const STAFF_MANAGE_ROLES = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari", "boshlangich_oqituvchi"];
 // Tahlil (reyting/foiz) ko'rish huquqi — masul shaxslar
 const ANALYTICS_ROLES = ["admin", "director", "zam_direktor", "zavuch"];
 

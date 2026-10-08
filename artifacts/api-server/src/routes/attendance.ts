@@ -101,7 +101,7 @@ router.post("/attendance", requireAuth, async (req, res): Promise<void> => {
     const user = getAuthUser(req.headers.authorization);
     if (!user) { res.status(401).json({ error: "Autentifikatsiya talab qilinadi" }); return; }
 
-    const allowed = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"];
+    const allowed = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari", "boshlangich_oqituvchi"];
     if (!allowed.includes(user.role)) {
       res.status(403).json({ error: "Davomat kiritish uchun ruxsat yo'q" });
       return;

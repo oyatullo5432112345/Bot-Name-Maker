@@ -7,5 +7,6 @@ export const StaffMemberRole = {
   zavuch: 'zavuch',
   teacher: 'teacher',
   sinf_rahbari: 'sinf_rahbari',
+  boshlangich_oqituvchi: 'boshlangich_oqituvchi',
   kutubxonachi: 'kutubxonachi',
 } as const;

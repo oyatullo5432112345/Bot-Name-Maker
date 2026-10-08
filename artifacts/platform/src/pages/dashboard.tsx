@@ -271,12 +271,13 @@ export default function Dashboard() {
   if (!user) return null;
 
   const isAdminOrDir = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
-  const isTeacher = ["teacher", "sinf_rahbari"].includes(user.role);
+  const isTeacher = ["teacher", "sinf_rahbari", "boshlangich_oqituvchi"].includes(user.role);
   const isStudent = user.role === "student";
+  const isClassTeacher = user.role === "sinf_rahbari" || user.role === "boshlangich_oqituvchi";
 
-  const canUseFaceId = ["admin", "director", "zam_direktor", "zavuch", "sinf_rahbari"].includes(user.role);
-  const faceIdHref = user.role === "sinf_rahbari" ? "/faceid/enroll" : "/faceid";
-  const faceIdSub = user.role === "sinf_rahbari"
+  const canUseFaceId = ["admin", "director", "zam_direktor", "zavuch", "sinf_rahbari", "boshlangich_oqituvchi"].includes(user.role);
+  const faceIdHref = isClassTeacher ? "/faceid/enroll" : "/faceid";
+  const faceIdSub = isClassTeacher
     ? "O'z sinfingiz o'quvchilarini ro'yxatdan o'tkazing"
     : "Kirish-chiqish davomati va hisobotlar";
   const gameOpen = isSayohatOpen(user.role);
