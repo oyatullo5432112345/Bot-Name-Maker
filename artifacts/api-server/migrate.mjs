@@ -46,6 +46,7 @@ const SQL_FILES = [
   "013_lab.sql",
   "014_auth_faceid_login.sql",
   "015_sayohat.sql",
+  "016_boshlangich_role.sql",
 ];
 
 // Qo'shimcha ustunlar (agar mavjud bo'lmasa qo'shiladi)
