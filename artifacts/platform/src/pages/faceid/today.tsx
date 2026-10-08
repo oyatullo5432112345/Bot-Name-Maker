@@ -23,7 +23,7 @@ interface TodayRow {
 export default function FaceTodayPage() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const scoped = !!user && ["sinf_rahbari"].includes(user.role);
+  const scoped = !!user && ["sinf_rahbari", "boshlangich_oqituvchi"].includes(user.role);
   const isManager = !!user && ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
   const [cls, setCls] = useState<string>(scoped ? (user?.class_name ?? "") : "");
   const [time, setTime] = useState("");

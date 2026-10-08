@@ -62,8 +62,12 @@ export default function DavomatPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const isTeacher = ["teacher", "sinf_rahbari"].includes(user?.role ?? "");
-  const isAdmin = ["admin", "director", "zam_direktor", "zavuch"].includes(user?.role ?? "");
+  const role = user?.role ?? "";
+  const isAdmin = ["admin", "director", "zam_direktor", "zavuch"].includes(role);
+  const isClassTeacher = ["sinf_rahbari", "boshlangich_oqituvchi"].includes(role); // o'z sinfi bor
+  const isSubjectTeacher = role === "teacher"; // fan o'qituvchisi — sinf tanlaydi
+  const isTeacher = isClassTeacher || isSubjectTeacher;
+  const canPick = isAdmin || isSubjectTeacher; // sinf tanlab, davomat/sababli qo'ya oladi
 
   const { data: classes = [] } = useQuery<ClassInfo[]>({
     queryKey: ["classes-attendance"],
@@ -72,7 +76,7 @@ export default function DavomatPage() {
       if (!r.ok) return [];
       return r.json() as Promise<ClassInfo[]>;
     },
-    enabled: isAdmin,
+    enabled: canPick,
   });
 
   const { data: myClass } = useQuery<{ class_name: string; class_id?: string; students: Student[] }>({
@@ -82,7 +86,7 @@ export default function DavomatPage() {
       if (!r.ok) return null;
       return r.json();
     },
-    enabled: isTeacher && !!user?.class_id,
+    enabled: isClassTeacher && !!user?.class_id,
   });
 
   const { data: allStudents = [] } = useQuery<Student[]>({
@@ -93,7 +97,7 @@ export default function DavomatPage() {
       if (!r.ok) return [];
       return r.json() as Promise<Student[]>;
     },
-    enabled: isAdmin && !!selectedClass,
+    enabled: canPick && !!selectedClass,
   });
 
   const { data: existingAttendance = [] } = useQuery<AttendanceRecord[]>({
@@ -108,7 +112,7 @@ export default function DavomatPage() {
     enabled: !!(selectedClass?.id || (myClass as any)?.class_id),
   });
 
-  const students: Student[] = isTeacher
+  const students: Student[] = isClassTeacher
     ? (myClass?.students ?? [])
     : allStudents;
 
@@ -128,7 +132,7 @@ export default function DavomatPage() {
   }, [students, existingAttendance]);
 
   useEffect(() => {
-    if (isTeacher && myClass) {
+    if (isClassTeacher && myClass) {
       setSelectedClass({ id: (myClass as any).class_id ?? "", name: myClass.class_name });
     }
   }, [isTeacher, myClass]);
@@ -201,7 +205,7 @@ export default function DavomatPage() {
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">
-        {isAdmin && (
+        {canPick && (
           <Select value={selectedClass?.id ?? ""} onValueChange={id => {
             const cls = classes.find(c => c.id === id);
             setSelectedClass(cls ?? null);
@@ -226,7 +230,7 @@ export default function DavomatPage() {
         />
       </div>
 
-      {!currentClass && isAdmin && (
+      {!currentClass && canPick && (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
             <Users className="w-12 h-12 opacity-30" />
@@ -235,7 +239,7 @@ export default function DavomatPage() {
         </Card>
       )}
 
-      {isTeacher && !myClass && (
+      {isClassTeacher && !myClass && (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
             <Users className="w-12 h-12 opacity-30" />
