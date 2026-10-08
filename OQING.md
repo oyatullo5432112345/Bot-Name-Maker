@@ -1,48 +1,33 @@
-# Bek va Lola: Sayohat v2 — TO'LIQ (server baholaydi, savollar bazada)
+# Faza 1A — Ko'p maktabli POYDEVOR (tuman platformasi, 1-qadam)
 
-Bu zip o'yinni **to'liq v2** ga o'tkazadi. Ichidagi `artifacts/` va `migrations/` papkalarining
-O'ZINI GitHub'ga joylang (o'rovchi papka YO'Q).
+Bu tuman platformasiga aylantirishning BIRINCHI qadami. **Xavfsiz va non-breaking** —
+hozirgi hamma narsa avvalgidek ishlaydi, chunki mavjud ma'lumot avtomatik 3-maktabga tegishli bo'ladi.
 
-## ⚠️ Eng muhim 2 narsa
-1. **Sizning eski "v2" `015_sayohat.sql` ni ISHLATMANG.** U chala edi (faqat SQL, kod yo'q, eski
-   jadvallar bilan to'qnashardi). Bu zipdagi `015_sayohat.sql` — ASLIDAGI (v1) versiya, uni saqlang.
-   Barcha v2 jadvallari YANGI `017_sayohat_v2.sql` da — eski bazangizni buzmaydi.
-2. Shundan keyin **savollar admin paneldan qo'shiladi** (kodda emas): «Sayohat → Boshqaruv → Savollarni boshqarish».
+## Nima qo'shildi
+- `maktablar` jadvali (migration 018) — har maktab: raqam(id), nom, tuman, manzil, direktor, faollik.
+- HAMMA asosiy jadvalga `maktab_id` ustuni (default 3) — o'quvchi, xodim, sinf, davomat, baho, Face ID,
+  tanga, kutubxona, monitoring, lab... Mavjud satrlar 3-maktabga biriktirildi (hech narsa yo'qolmadi).
+- `classes.name` endi HAR MAKTAB ichida yagona (tumanda emas) — turli maktabda "5-A" bo'laveradi.
+- Admin uchun yangi sahifa: **Tuman boshqaruvi → Maktablar** — maktab qo'shish/tahrir/faollik/o'chirish.
+- API: `/api/maktablar` (faqat admin).
 
-## v2 da nima o'zgardi (haqiqatan ishlaydi)
-- **Savollar bazada** (`sayohat_questions`) — kodga tegmasdan admin paneldan qo'shasiz/tahrirlaysiz/o'chirasiz.
-- **Serverda baholash + anti-cheat:** to'g'ri javob o'quvchiga HECH QACHON yuborilmaydi. O'quvchi variant
-  tanlaydi → server tekshiradi → natija va tushuntirish qaytadi. Tanga har viloyatdan FAQAT bir marta beriladi.
-- **Admin savol boshqaruvi:** `/sayohat/admin/savollar` — viloyat tanlanadi, daraja (oson/o'rta/qiyin),
-  2–6 variant, to'g'risini belgilash, ball, maslahat, tushuntirish.
-- **Statistika:** `/sayohat/admin` — o'yinchilar soni, savollar soni, tanga, har viloyat bo'yicha
-  tugatganlar, eng faol o'yinchilar.
-- **Ochilish vaqti + ko'rinish:** har viloyatni admin vaqt bilan ochadi yoki butunlay yashiradi.
-- **Offline:** holat localStorage'da zaxira, internet qaytganda sinxron.
-- Xarita ko'rinishi, qahramon tanlash, daraja, qulf (SAYOHAT_LOCKED) — avvalgidek.
+## Nimani hali O'ZGARTIRMADI (keyingi qadamlar)
+- Kirish kodi hali maktab raqamsiz (3-maktab kabi). → Faza 1B.
+- Ma'lumot filtrlash (izolyatsiya) hali kodda yoqilmagan — hozir hammasi 3-maktab, shuning uchun muammosiz.
+  → Faza 1C da har so'rov maktab bo'yicha filtrlanadi.
+- "Toshloq tumani N-maktab" yozuvi kirishda → Faza 1B.
 
-## Ichidagi fayllar
-Yangi:
-- `migrations/017_sayohat_v2.sql` — v2 jadvallari (regions, questions, user_progress, awards) + 14 viloyat + namuna savollar
-- `artifacts/platform/src/pages/sayohat/admin-questions.tsx` — savol boshqaruvi sahifasi
-
-O'zgargan:
-- `migrations/015_sayohat.sql` — ASLIGA qaytarilgan (v1) — sizdagi noto'g'ri v2 ni bosib yozadi
-- `artifacts/api-server/migrate.mjs` — 017 ro'yxatga qo'shildi
-- `artifacts/api-server/src/routes/sayohat.ts` — v2 API (server baholash + admin CRUD + stats)
-- `artifacts/platform/src/lib/sayohat-progress.ts` — yangi API chaqiruvlari + offline
-- `artifacts/platform/src/pages/sayohat/sayohatData.ts` — faqat xarita metasi (savollar bazadan)
-- `artifacts/platform/src/pages/sayohat/index.tsx` — serverdagi viloyat/vaqt/savol sonidan foydalanadi
-- `artifacts/platform/src/pages/sayohat/play.tsx` — serverdan savol, serverga javob, natija+tahlil
-- `artifacts/platform/src/pages/sayohat/admin.tsx` — vaqt + ko'rinish + statistika
-- `artifacts/platform/src/App.tsx` — `/sayohat/admin/savollar` route
+## Fayllar
+Yangi: `migrations/018_multi_maktab.sql`, `artifacts/api-server/src/routes/maktablar.ts`,
+`artifacts/platform/src/pages/admin/maktablar.tsx`
+O'zgargan: `artifacts/api-server/migrate.mjs`, `artifacts/api-server/src/routes/index.ts`,
+`artifacts/platform/src/App.tsx`, `artifacts/platform/src/components/layout.tsx`
 
 ## Deploy
-1. `artifacts/` va `migrations/` papkalarini GitHub'ga joylang (ustiga yoziladi).
-2. Render build qiladi; migratsiyalar (015, 016, 017) o'zi ishga tushadi.
-3. Admin bo'lib kiring → «Sayohat → Boshqaruv → Savollarni boshqarish» → savollar qo'shing.
-4. O'yinni ochish: `sayohatData.ts` dagi `SAYOHAT_LOCKED = true` → `false`, qayta deploy.
+1. `artifacts/` va `migrations/` ni GitHub'ga joylang (ustiga).
+2. Render build + migration 018 avtomatik ishlaydi (xavfsiz, qo'shimcha).
+3. Admin bo'lib kiring → chap menyu → "Tuman boshqaruvi → Maktablar" → maktab qo'shib ko'ring.
 
-## Eslatma
-- Namuna savollar (Farg'ona, Andijon) 017 da bor — sinab ko'rish uchun. Qolganini o'zingiz qo'shasiz.
-- Bot token / baza parollari YANGI bo'lsin (oldin ochilganlarini ishlatmang).
+## Keyingi: Faza 1B
+Kirish kodini maktab raqami bilan (1-maktab → 1xxxxx), 3-maktab eski 5 xonali qoladi;
+kirgach "Toshloq tumani N-maktab" ko'rinadi; token maktab_id ni oladi.

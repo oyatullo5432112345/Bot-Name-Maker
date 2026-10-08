@@ -9,7 +9,7 @@ import {
   Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays,
   MessageSquare, Library, Award,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
-  Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace, Monitor, Compass,
+  Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace, Monitor, Compass, Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isSayohatOpen } from "@/pages/sayohat/sayohatData";
@@ -432,7 +432,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </NavSection>
 
         {!isMudir && user.role === "admin" && (
-          <NavSection label="Sozlamalar">
+          <NavSection label="Tuman boshqaruvi">
+            <NavLink href="/admin/maktablar" icon={Building2} label="Maktablar" active={isActive("/admin/maktablar")} />
             <NavLink href="/admin/reset" icon={AlertTriangle} label="Xavfli zona" active={isActive("/admin/reset")} />
           </NavSection>
         )}

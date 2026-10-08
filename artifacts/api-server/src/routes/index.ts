@@ -32,6 +32,7 @@ import faceidRouter from "./faceid.js";
 import labRouter from "./lab.js";
 import authLoginRouter from "./auth-login.js";
 import sayohatRouter from "./sayohat.js";
+import maktablarRouter from "./maktablar.js";
 
 const router: IRouter = Router();
 
@@ -68,5 +69,6 @@ router.use(riddlesRouter);
 router.use(faceidRouter);
 router.use(labRouter);
 router.use(sayohatRouter);
+router.use(maktablarRouter);
 
 export default router;

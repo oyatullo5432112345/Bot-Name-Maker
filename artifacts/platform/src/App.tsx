@@ -46,6 +46,7 @@ const LibraryLoansPage = lazy(() => import("@/pages/library/loans"));
 const CertificatePage = lazy(() => import("@/pages/certificate"));
 
 const AdminResetPage = lazy(() => import("@/pages/admin/reset"));
+const MaktablarPage = lazy(() => import("@/pages/admin/maktablar"));
 const ReytingPage = lazy(() => import("@/pages/reyting/index"));
 const QollanmalarPage = lazy(() => import("@/pages/qollanmalar"));
 const OlimpiyadaPage = lazy(() => import("@/pages/olimpiada/index"));
@@ -163,6 +164,7 @@ function Router() {
       {/* Mahfiy kodlar bekor qilindi — Kirish IDlari sahifasiga yo'naltiramiz */}
       <Route path="/admin/codes"><Redirect to="/admin/login-ids" /></Route>
       <Route path="/admin/reset"><ProtectedRoute component={AdminResetPage} roles={["admin"]} /></Route>
+      <Route path="/admin/maktablar"><ProtectedRoute component={MaktablarPage} roles={["admin"]} /></Route>
       <Route path="/reyting"><ProtectedRoute component={ReytingPage} /></Route>
       <Route path="/tanga"><ProtectedRoute component={TangaPage} /></Route>
 
