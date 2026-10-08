@@ -345,3 +345,21 @@ export function normalizeAnswer(s: string): string {
     .replace(/ʼ|'|`|ʻ/g, "'")   // turli apostroflar → bitta ko'rinish
     .replace(/\s+/g, " ");
 }
+
+// ============================================================
+//  O'YINNI QULFLASH (butun Sayohat o'yini)
+// ------------------------------------------------------------
+//  true  = o'yin qulflangan (o'quvchilar kira olmaydi, "tez kunda" ko'rinadi)
+//  false = o'yin ochiq (hamma o'ynaydi)
+//  Ochish uchun: shu qiymatni false qiling va qayta deploy qiling.
+// ============================================================
+export const SAYOHAT_LOCKED = true;
+
+// Qulf bo'lsa ham kira oladiganlar (sinab ko'rish / demo uchun — rahbariyat)
+const SAYOHAT_BYPASS = ["admin", "director", "zam_direktor", "zavuch"];
+
+/** Shu rol uchun o'yin ochiqmi? */
+export function isSayohatOpen(role: string | undefined | null): boolean {
+  if (!SAYOHAT_LOCKED) return true;
+  return !!role && SAYOHAT_BYPASS.includes(role);
+}

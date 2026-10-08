@@ -5,15 +5,16 @@ import {
   Coins, Lightbulb, MapPin,
 } from "lucide-react";
 import {
-  getRegion, tasksForLevel, normalizeAnswer, isPlayable,
+  getRegion, tasksForLevel, normalizeAnswer, isPlayable, isSayohatOpen,
   REGIONS, type Task, type Difficulty,
 } from "./sayohatData";
 import {
   loadState, saveState, sendReward, loadUnlocks,
   type SayohatState, type UnlockMap,
 } from "@/lib/sayohat-progress";
-import { Avatar, SceneBg, StarRow, sayohatStyles } from "./_shared";
+import { Avatar, SceneBg, StarRow, sayohatStyles, LockedScreen } from "./_shared";
 import { playSound } from "@/lib/game-sounds";
+import { useAuth } from "@/lib/use-auth";
 
 const SORTED = [...REGIONS].sort((a, b) => a.order - b.order);
 
@@ -35,6 +36,7 @@ function calcStars(correct: number, total: number): number {
 export default function SayohatPlay() {
   const params = useParams<{ region: string }>();
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const region = getRegion(params.region ?? "");
 
   const [state, setState] = useState<SayohatState | null>(null);
@@ -74,6 +76,9 @@ export default function SayohatPlay() {
         <Link href="/sayohat"><button className="px-4 py-2 rounded-xl bg-secondary text-xs font-bold">Xaritaga qaytish</button></Link>
       </div>
     );
+  }
+  if (!isSayohatOpen(user?.role)) {
+    return <LockedScreen />;
   }
   if (!state) {
     return (

@@ -1,6 +1,7 @@
 import { Link } from "wouter";
-import { Users, Grid3x3, PlayCircle, Trophy, Zap, Gamepad2, ArrowRight, Play, Star, Compass, Sparkles } from "lucide-react";
+import { Users, Grid3x3, PlayCircle, Trophy, Zap, Gamepad2, ArrowRight, Play, Star, Compass, Sparkles, Lock } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
+import { isSayohatOpen } from "@/pages/sayohat/sayohatData";
 
 const STAFF_ROLES = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"];
 
@@ -31,6 +32,7 @@ const gameStyles = `
 export default function GamesPage() {
   const { user } = useAuth();
   const isStaff = !!user && STAFF_ROLES.includes(user.role);
+  const gameOpen = isSayohatOpen(user?.role);
 
   return (
     <div className="space-y-6 max-w-3xl pb-6">
@@ -66,12 +68,19 @@ export default function GamesPage() {
             </div>
 
             <div className="w-full sm:w-auto shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-border/40">
-              <Link href="/sayohat" className="block">
-                <button className="btn-pulse-rose w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-600 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all cursor-pointer">
-                  <span>SAYOHATNI BOSHLASH</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+              {gameOpen ? (
+                <Link href="/sayohat" className="block">
+                  <button className="btn-pulse-rose w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-600 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all cursor-pointer">
+                    <span>SAYOHATNI BOSHLASH</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </Link>
+              ) : (
+                <button disabled className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-secondary text-muted-foreground font-extrabold text-xs cursor-not-allowed opacity-70">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>TEZ KUNDA</span>
                 </button>
-              </Link>
+              )}
             </div>
           </div>
         </div>

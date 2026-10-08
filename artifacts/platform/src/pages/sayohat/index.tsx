@@ -2,14 +2,14 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Sparkles, Settings, Check, Lock, Clock3, Coins, Trophy, Pencil, CalendarClock } from "lucide-react";
 import {
-  REGIONS, CHARACTERS, DIFFICULTIES, isPlayable,
+  REGIONS, CHARACTERS, DIFFICULTIES, isPlayable, isSayohatOpen,
   type Difficulty, type Souvenir,
 } from "./sayohatData";
 import {
   loadState, saveState, loadUnlocks, DEFAULT_STATE,
   type SayohatState, type UnlockMap,
 } from "@/lib/sayohat-progress";
-import { Avatar, SceneBg, StarRow, sayohatStyles } from "./_shared";
+import { Avatar, SceneBg, StarRow, sayohatStyles, LockedScreen } from "./_shared";
 import { playSound } from "@/lib/game-sounds";
 import { useAuth } from "@/lib/use-auth";
 
@@ -59,6 +59,11 @@ export default function SayohatIndex() {
     setShowWizard(false);
     playSound("win");
     await saveState(updated);
+  }
+
+  // O'yin qulflangan bo'lsa (va foydalanuvchi bypass emas) — kira olmaydi
+  if (!isSayohatOpen(user?.role)) {
+    return <LockedScreen />;
   }
 
   if (!state) {

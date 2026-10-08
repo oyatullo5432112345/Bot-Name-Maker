@@ -3,6 +3,7 @@
 //  Rasm/video fayl yuklanmaydi — hammasi kod bilan chiziladi.
 // ============================================================
 import { Star } from "lucide-react";
+import { Link } from "wouter";
 
 export const sayohatStyles = `
   @keyframes drift      { from { transform: translateX(-10%); } to { transform: translateX(110%); } }
@@ -146,6 +147,25 @@ export function SceneBg({ color, accent }: { color: string; accent: string }) {
         <path d="M0 60 Q100 20 200 55 Q300 85 400 45 L400 90 L0 90 Z" fill={color} opacity="0.55" />
         <path d="M0 75 Q120 45 240 70 Q320 86 400 65 L400 90 L0 90 Z" fill={color} opacity="0.85" />
       </svg>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------
+//  Qulflangan ekran (o'yin vaqtincha yopilganda)
+// ------------------------------------------------------------
+export function LockedScreen() {
+  return (
+    <div className="max-w-md mx-auto text-center py-16 space-y-4">
+      <style>{sayohatStyles}</style>
+      <div className="mx-auto w-24 h-24 rounded-3xl flex items-center justify-center shadow-lg s-floaty" style={{ background: "linear-gradient(135deg,#7C3AED,#DB2777)" }}>
+        <span className="text-5xl">🔒</span>
+      </div>
+      <h2 className="font-black text-2xl">Sayohat tez kunda!</h2>
+      <p className="text-sm text-muted-foreground">O'yin hozircha qulflangan. Tez orada ochiladi — kuzatib boring! 🧭</p>
+      <Link href="/dashboard">
+        <button className="px-5 py-3 rounded-2xl bg-secondary text-sm font-bold cursor-pointer">Bosh sahifaga</button>
+      </Link>
     </div>
   );
 }
