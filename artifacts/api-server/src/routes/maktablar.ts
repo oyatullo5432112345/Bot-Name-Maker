@@ -19,6 +19,37 @@ function admin(req: { headers: { authorization?: string } }): Record<string, unk
   return u;
 }
 
+// GET /maktablar/mine — joriy foydalanuvchining maktabi (kirish yozuvi uchun)
+//  Har qanday kirgan foydalanuvchi uchun. Admin → barcha maktablar.
+router.get("/maktablar/mine", async (req, res): Promise<void> => {
+  const u = getAuthUser(req.headers.authorization);
+  if (!u) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  try {
+    if ((u["role"] as string) === "admin") {
+      res.json({ id: null, nom: "Barcha maktablar", tuman: "Toshloq", is_admin: true });
+      return;
+    }
+    // maktab_id tokendan; bo'lmasa login bo'yicha qidiramiz; bo'lmasa 3
+    let mid = typeof u["maktab_id"] === "number" ? (u["maktab_id"] as number) : null;
+    if (mid === null && typeof u["login"] === "string") {
+      const row = await queryOne<{ maktab_id: number }>(
+        (u["role"] as string) === "student"
+          ? "SELECT maktab_id FROM users WHERE login = $1"
+          : "SELECT maktab_id FROM staff WHERE login = $1",
+        [u["login"]],
+      ).catch(() => null);
+      mid = row?.maktab_id ?? 3;
+    }
+    if (mid === null) mid = 3;
+    const m = await queryOne<{ id: number; nom: string; tuman: string }>(
+      "SELECT id, nom, tuman FROM maktablar WHERE id = $1", [mid],
+    );
+    res.json(m ? { ...m, is_admin: false } : { id: mid, nom: `${mid}-maktab`, tuman: "Toshloq", is_admin: false });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // GET /maktablar — barcha maktablar (admin) — har biri bo'yicha o'quvchi/xodim soni
 router.get("/maktablar", async (req, res): Promise<void> => {
   if (!admin(req)) { res.status(403).json({ error: "Faqat tuman admini" }); return; }

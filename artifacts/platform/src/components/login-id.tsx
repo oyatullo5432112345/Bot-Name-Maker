@@ -1,8 +1,12 @@
-// 5 xonali ID bilan kirish — yuz bilan kirish imkoni bo'lmaganlar uchun (o'quvchi/o'qituvchi/admin).
+// Kirish ID bilan kirish — yuz bilan kira olmaganlar uchun (o'quvchi/o'qituvchi/admin).
+// 3-maktab: 5 xonali. Boshqa maktablar: maktab raqami + 5 xona (6..8 xona).
 
 import { useState } from "react";
-import { KeyRound, X, Delete, Loader2, ScanFace } from "lucide-react";
+import { KeyRound, X, Delete, Loader2, ScanFace, LogIn } from "lucide-react";
 import { API_BASE } from "@/lib/face";
+
+const MIN_LEN = 5;
+const MAX_LEN = 8;
 
 export function IdLoginDialog({
   onSuccess, onClose, onUseFace,
@@ -16,6 +20,7 @@ export function IdLoginDialog({
   const [error, setError] = useState("");
 
   const submit = async (value: string) => {
+    if (value.length < MIN_LEN) return;
     setLoading(true);
     setError("");
     try {
@@ -41,13 +46,13 @@ export function IdLoginDialog({
   const press = (d: string) => {
     if (loading) return;
     setError("");
-    const next = (code + d).slice(0, 5);
-    setCode(next);
-    if (next.length === 5) void submit(next);
+    setCode((c) => (c + d).slice(0, MAX_LEN));
   };
   const back = () => { setError(""); setCode((c) => c.slice(0, -1)); };
 
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+  const boxes = Math.max(MIN_LEN, code.length);
+  const canSubmit = code.length >= MIN_LEN && !loading;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -58,12 +63,12 @@ export function IdLoginDialog({
         </div>
 
         <div className="p-6">
-          <p className="text-center text-sm text-muted-foreground mb-4">5 xonali kirish IDsini kiriting</p>
+          <p className="text-center text-sm text-muted-foreground mb-4">Maktab bergan Kirish ID ni kiriting</p>
 
-          {/* Kod nuqtalari */}
-          <div className="flex justify-center gap-3 mb-2">
-            {Array.from({ length: 5 }, (_, i) => (
-              <div key={i} className={`w-11 h-14 rounded-xl border-2 flex items-center justify-center text-2xl font-bold ${i < code.length ? "border-primary bg-primary/5" : "border-muted"}`}>
+          {/* Kod katakchalari (uzunligi o'zgaruvchan) */}
+          <div className="flex justify-center gap-2 mb-2 flex-wrap">
+            {Array.from({ length: boxes }, (_, i) => (
+              <div key={i} className={`w-10 h-13 min-h-[3.25rem] rounded-xl border-2 flex items-center justify-center text-2xl font-bold px-0.5 ${i < code.length ? "border-primary bg-primary/5" : "border-muted"}`}>
                 {code[i] ?? ""}
               </div>
             ))}
@@ -78,12 +83,15 @@ export function IdLoginDialog({
                 {k}
               </button>
             ))}
-            <div />
-            <button onClick={() => press("0")} disabled={loading}
-              className="h-14 rounded-2xl bg-muted hover:bg-accent text-2xl font-semibold active:scale-95 transition">0</button>
             <button onClick={back} disabled={loading}
               className="h-14 rounded-2xl hover:bg-accent flex items-center justify-center active:scale-95 transition">
               <Delete className="w-6 h-6" />
+            </button>
+            <button onClick={() => press("0")} disabled={loading}
+              className="h-14 rounded-2xl bg-muted hover:bg-accent text-2xl font-semibold active:scale-95 transition">0</button>
+            <button onClick={() => submit(code)} disabled={!canSubmit}
+              className="h-14 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition disabled:opacity-40">
+              <LogIn className="w-6 h-6" />
             </button>
           </div>
 

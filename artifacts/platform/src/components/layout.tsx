@@ -17,6 +17,23 @@ import { isSayohatOpen } from "@/pages/sayohat/sayohatData";
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
 
+// Joriy foydalanuvchining maktabi — "Toshloq tumani · 3-maktab" (kirish yozuvi)
+function SchoolBadge({ className = "" }: { className?: string }) {
+  const [label, setLabel] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API_BASE}/maktablar/mine`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { nom?: string; tuman?: string } | null) => {
+        if (alive && d?.nom) setLabel(d.tuman ? `${d.tuman} tumani · ${d.nom}` : d.nom);
+      })
+      .catch(() => { /* jim */ });
+    return () => { alive = false; };
+  }, []);
+  if (!label) return null;
+  return <p className={`text-[11px] font-semibold text-primary/80 truncate ${className}`}>🏫 {label}</p>;
+}
+
 const roleDisplay: Record<string, string> = {
   admin: "Admin", director: "Direktor", mudir: "Obidov Boburjon",
   zam_direktor: "MMTB", zavuch: "O'quv ishlari mudiri",
@@ -240,6 +257,7 @@ function QuickSheet({
             <div className="flex-1 min-w-0">
               <p className="font-bold text-sm truncate">{user?.full_name}</p>
               <p className="text-xs text-muted-foreground truncate">{roleDisplay[user?.role ?? ""] || user?.role}</p>
+              <SchoolBadge />
               {user?.class_name && <p className="text-xs text-muted-foreground">{user.class_name} sinf</p>}
             </div>
             {tanga && (
@@ -493,6 +511,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold truncate">{user.full_name}</p>
             <p className="text-xs text-muted-foreground truncate">{roleDisplay[user.role] || user.role}</p>
+            <SchoolBadge />
             {user.class_name && <p className="text-xs text-muted-foreground">{user.class_name} sinf</p>}
           </div>
         </div>

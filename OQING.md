@@ -1,33 +1,35 @@
-# Faza 1A — Ko'p maktabli POYDEVOR (tuman platformasi, 1-qadam)
+# Faza 1A + 1B — Tuman platformasi poydevori + kirish/kod (KUMULYATIV)
 
-Bu tuman platformasiga aylantirishning BIRINCHI qadami. **Xavfsiz va non-breaking** —
-hozirgi hamma narsa avvalgidek ishlaydi, chunki mavjud ma'lumot avtomatik 3-maktabga tegishli bo'ladi.
+Bu zip Faza 1A va 1B ni BIRGA o'z ichiga oladi. Faqat shuni yuklasangiz yetadi
+(oldingi "faza1A" zipni alohida yuklash shart emas — bu uni ham qamraydi).
 
-## Nima qo'shildi
-- `maktablar` jadvali (migration 018) — har maktab: raqam(id), nom, tuman, manzil, direktor, faollik.
-- HAMMA asosiy jadvalga `maktab_id` ustuni (default 3) — o'quvchi, xodim, sinf, davomat, baho, Face ID,
-  tanga, kutubxona, monitoring, lab... Mavjud satrlar 3-maktabga biriktirildi (hech narsa yo'qolmadi).
-- `classes.name` endi HAR MAKTAB ichida yagona (tumanda emas) — turli maktabda "5-A" bo'laveradi.
-- Admin uchun yangi sahifa: **Tuman boshqaruvi → Maktablar** — maktab qo'shish/tahrir/faollik/o'chirish.
-- API: `/api/maktablar` (faqat admin).
+## Faza 1A (poydevor) — xavfsiz, non-breaking
+- `maktablar` jadvali + hamma asosiy jadvalga `maktab_id` (default 3). Mavjud ma'lumot 3-maktabda.
+- `classes.name` har maktab ichida yagona.
+- Admin: "Tuman boshqaruvi → Maktablar" sahifasi — maktab qo'shish/tahrir/faollik/o'chirish.
 
-## Nimani hali O'ZGARTIRMADI (keyingi qadamlar)
-- Kirish kodi hali maktab raqamsiz (3-maktab kabi). → Faza 1B.
-- Ma'lumot filtrlash (izolyatsiya) hali kodda yoqilmagan — hozir hammasi 3-maktab, shuning uchun muammosiz.
-  → Faza 1C da har so'rov maktab bo'yicha filtrlanadi.
-- "Toshloq tumani N-maktab" yozuvi kirishda → Faza 1B.
+## Faza 1B (kirish / kod / maktab yozuvi) — YANGI
+- **Kirish kodi maktab bilan:** 3-maktab eski 5 xonali qoladi; boshqa maktablar — maktab raqami + 5 xona
+  (1-maktab → 1xxxxx, 7-maktab → 7xxxxx). Kodlar butun tuman bo'yicha yagona.
+- **Kirish ID oynasi** endi 5–8 xonali kodni qabul qiladi (avval faqat 5 edi) — "Kirish" tugmasi qo'shildi.
+- **Token `maktab_id` ni oladi** (login, ID bilan kirish, yuz bilan kirish, bot orqali kirish) — bu Faza 1C
+  (izolyatsiya) uchun poydevor. Admin → barcha maktablar (maktab_id yo'q).
+- **Kirgach "Toshloq tumani · N-maktab" yozuvi** chap menyuda ism ostida ko'rinadi.
+
+## Nimani hali O'ZGARTIRMADI
+- Ma'lumot filtrlash (to'liq izolyatsiya) hali YO'Q — hozir hammasi 3-maktab, muammosiz. → Faza 1C.
+  Faza 1C da har bir ro'yxat/qo'shish/o'chirish so'rovi `maktab_id` bo'yicha filtrlanadi.
 
 ## Fayllar
-Yangi: `migrations/018_multi_maktab.sql`, `artifacts/api-server/src/routes/maktablar.ts`,
-`artifacts/platform/src/pages/admin/maktablar.tsx`
-O'zgargan: `artifacts/api-server/migrate.mjs`, `artifacts/api-server/src/routes/index.ts`,
-`artifacts/platform/src/App.tsx`, `artifacts/platform/src/components/layout.tsx`
+Migration: `migrations/018_multi_maktab.sql`
+Server: `migrate.mjs`, `routes/maktablar.ts` (+/mine), `routes/index.ts`, `routes/auth.ts`, `routes/auth-login.ts`
+Frontend: `App.tsx`, `components/layout.tsx`, `components/login-id.tsx`, `pages/admin/maktablar.tsx`
 
 ## Deploy
 1. `artifacts/` va `migrations/` ni GitHub'ga joylang (ustiga).
-2. Render build + migration 018 avtomatik ishlaydi (xavfsiz, qo'shimcha).
-3. Admin bo'lib kiring → chap menyu → "Tuman boshqaruvi → Maktablar" → maktab qo'shib ko'ring.
+2. Render build + migration 018 avtomatik.
+3. Tekshiring: admin "Maktablar" ishlaydi; kirgach maktab nomi ko'rinadi; 3-maktab eski 5 xonali kod bilan kiradi.
 
-## Keyingi: Faza 1B
-Kirish kodini maktab raqami bilan (1-maktab → 1xxxxx), 3-maktab eski 5 xonali qoladi;
-kirgach "Toshloq tumani N-maktab" ko'rinadi; token maktab_id ni oladi.
+## Keyingi — Faza 1C (eng ehtiyotkor)
+Har so'rov maktab bo'yicha filtrlanadi: direktor/zavuch/MMTB faqat o'z maktabini ko'radi,
+yangi o'quvchi/xodim yaratilganda yaratuvchining maktabiga biriktiriladi, admin hammasini ko'radi.

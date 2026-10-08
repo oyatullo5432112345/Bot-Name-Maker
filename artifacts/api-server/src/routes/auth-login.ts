@@ -75,18 +75,22 @@ async function idTaken(code: string): Promise<boolean> {
   const s = await getAuthSettings();
   return !!a || !!b || s.admin_login_id === code;
 }
-export async function genUniqueLoginId(): Promise<string> {
-  for (let i = 0; i < 60; i++) {
-    const code = String(crypto.randomInt(10000, 100000)); // 10000..99999
+// Kod formati: 3-maktab — eski (prefiks siz) 5 xonali. Boshqa maktablar:
+// maktab raqami + 5 xona (1-maktab → 1xxxxx, 7-maktab → 7xxxxx). Kodlar
+// butun tuman bo'yicha yagona (idTaken global tekshiradi).
+export async function genUniqueLoginId(schoolId: number = 3): Promise<string> {
+  const prefix = schoolId === 3 ? "" : String(schoolId);
+  for (let i = 0; i < 80; i++) {
+    const code = prefix + String(crypto.randomInt(10000, 100000));
     if (!(await idTaken(code))) return code;
   }
   throw new Error("Bo'sh ID topilmadi");
 }
-/** users/staff qatoriga login_id yo'q bo'lsa — beradi va qaytaradi */
+/** users/staff qatoriga login_id yo'q bo'lsa — maktabiga mos kod beradi va qaytaradi */
 export async function ensureLoginId(table: "users" | "staff", id: string): Promise<string> {
-  const row = await queryOne<{ login_id: string }>(`SELECT login_id FROM ${table} WHERE id = $1`, [id]);
+  const row = await queryOne<{ login_id: string; maktab_id: number }>(`SELECT login_id, maktab_id FROM ${table} WHERE id = $1`, [id]);
   if (row?.login_id) return row.login_id;
-  const code = await genUniqueLoginId();
+  const code = await genUniqueLoginId(row?.maktab_id ?? 3);
   await query(`UPDATE ${table} SET login_id = $1 WHERE id = $2`, [code, id]);
   return code;
 }
@@ -128,15 +132,15 @@ function clientIp(req: Request): string {
 }
 
 // ─── Payloadlar ──────────────────────────────────────────────────────────────
-async function studentPayload(u: { id: string; full_name: string; login: string; class_name: string; telegram_id: number | null; pro_expires_at?: string | null }) {
+async function studentPayload(u: { id: string; full_name: string; login: string; class_name: string; telegram_id: number | null; pro_expires_at?: string | null; maktab_id?: number | null }) {
   const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [u.class_name]).catch(() => null);
   return {
     id: u.id ?? String(u.telegram_id), role: "student", full_name: u.full_name, login: u.login,
     class_name: u.class_name, class_id: cls?.id ?? null, telegram_id: u.telegram_id,
-    pro_expires_at: u.pro_expires_at ?? null,
+    pro_expires_at: u.pro_expires_at ?? null, maktab_id: u.maktab_id ?? 3,
   };
 }
-async function staffPayload(s: { id: string; full_name: string; login: string; role: string; class_id: string | null; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean; pro_expires_at?: string | null }) {
+async function staffPayload(s: { id: string; full_name: string; login: string; role: string; class_id: string | null; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean; pro_expires_at?: string | null; maktab_id?: number | null }) {
   let class_name: string | null = null;
   if (s.class_id) {
     const c = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [s.class_id]).catch(() => null);
@@ -147,6 +151,8 @@ async function staffPayload(s: { id: string; full_name: string; login: string; r
     id: s.id, role: s.role, full_name: s.full_name, login: s.login, class_name, class_id: s.class_id,
     telegram_id: s.telegram_id, subjects: teaching ? (s.subjects ?? []) : undefined,
     can_teach: s.can_teach ?? false, pro_expires_at: s.pro_expires_at ?? null,
+    // admin uchun null; boshqalar uchun o'z maktabi
+    maktab_id: s.role === "admin" ? null : (s.maktab_id ?? 3),
   };
 }
 
@@ -196,8 +202,8 @@ router.post("/auth/face-login", async (req, res): Promise<void> => {
   }
 
   const login = results[0]!.login;
-  const u = await queryOne<{ id: string; full_name: string; login: string; class_name: string; telegram_id: number | null; pro_expires_at?: string | null }>(
-    "SELECT id, full_name, login, class_name, telegram_id::float8 AS telegram_id, pro_expires_at FROM users WHERE login = $1",
+  const u = await queryOne<{ id: string; full_name: string; login: string; class_name: string; telegram_id: number | null; pro_expires_at?: string | null; maktab_id?: number }>(
+    "SELECT id, full_name, login, class_name, telegram_id::float8 AS telegram_id, pro_expires_at, maktab_id FROM users WHERE login = $1",
     [login]
   );
   if (!u) { res.status(404).json({ error: "O'quvchi topilmadi" }); return; }
@@ -212,11 +218,12 @@ router.post("/auth/id-login", async (req, res): Promise<void> => {
   if (rateLimited(`id:${ip}`, 20, 5 * 60_000)) { res.status(429).json({ error: "Juda ko'p urinish. Biroz kuting." }); return; }
 
   const raw = String((req.body as { login_id?: unknown }).login_id ?? "").trim();
-  if (!/^\d{5}$/.test(raw)) { res.status(400).json({ error: "5 xonali ID kiriting" }); return; }
+  // 3-maktab — 5 xonali; boshqa maktablar — maktab raqami + 5 xona (6..8 xona)
+  if (!/^\d{5,8}$/.test(raw)) { res.status(400).json({ error: "Kirish ID ni to'g'ri kiriting" }); return; }
 
   // O'quvchi
-  const student = await queryOne<{ id: string; full_name: string; login: string; class_name: string; telegram_id: number | null; pro_expires_at?: string | null }>(
-    "SELECT id, full_name, login, class_name, telegram_id::float8 AS telegram_id, pro_expires_at FROM users WHERE login_id = $1",
+  const student = await queryOne<{ id: string; full_name: string; login: string; class_name: string; telegram_id: number | null; pro_expires_at?: string | null; maktab_id?: number }>(
+    "SELECT id, full_name, login, class_name, telegram_id::float8 AS telegram_id, pro_expires_at, maktab_id FROM users WHERE login_id = $1",
     [raw]
   );
   if (student) {
@@ -225,8 +232,8 @@ router.post("/auth/id-login", async (req, res): Promise<void> => {
     return;
   }
   // Xodim
-  const staff = await queryOne<{ id: string; full_name: string; login: string; role: string; class_id: string | null; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean; pro_expires_at?: string | null }>(
-    "SELECT id, full_name, login, role, class_id, telegram_id, subjects, can_teach, pro_expires_at FROM staff WHERE login_id = $1",
+  const staff = await queryOne<{ id: string; full_name: string; login: string; role: string; class_id: string | null; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean; pro_expires_at?: string | null; maktab_id?: number }>(
+    "SELECT id, full_name, login, role, class_id, telegram_id, subjects, can_teach, pro_expires_at, maktab_id FROM staff WHERE login_id = $1",
     [raw]
   );
   if (staff) {
@@ -237,7 +244,7 @@ router.post("/auth/id-login", async (req, res): Promise<void> => {
   // Admin
   const s = await getAuthSettings();
   if (s.admin_login_id && s.admin_login_id === raw) {
-    const payload = { id: "admin", role: "admin", full_name: "Administrator", login: "admin", class_name: null, class_id: null, telegram_id: null };
+    const payload = { id: "admin", role: "admin", full_name: "Administrator", login: "admin", class_name: null, class_id: null, telegram_id: null, maktab_id: null };
     res.json({ ...payload, token: createToken(payload, ID_SESSION_MS) });
     return;
   }
