@@ -426,6 +426,35 @@ export function createBot(): Bot {
   // guruh xabarlari quyidagi eski handlerlarga tushmasligi uchun.
   registerTelegramFeatures(bot, { websiteUrl: WEBSITE_URL, adminId: ADMIN_ID });
 
+  // ─── MAJBURIY KANAL: har qanday amaldan oldin a'zolikni tekshiramiz ──────────
+  // Avval faqat /start da tekshirilardi — foydalanuvchi boshqa yo'l bilan (tugma,
+  // xabar) botdan foydalanib ketishi mumkin edi. Endi barcha shaxsiy amallar
+  // a'zolikdan o'tadi. (Bot kanalda ADMIN bo'lishi shart — aks holda tekshirib bo'lmaydi.)
+  bot.use(async (ctx, next) => {
+    if (ctx.chat?.type !== "private") return next(); // guruh/kanalga tegmaymiz
+    const uid = ctx.from?.id;
+    if (!uid || isAdmin(uid)) return next();
+
+    // /start va "A'zo bo'ldim ✅" o'zi tekshiradi — o'tkazamiz
+    const text = ctx.message?.text ?? "";
+    if (text.startsWith("/start")) return next();
+    if (ctx.callbackQuery?.data === "check_membership") return next();
+
+    const { allJoined, missing } = await checkAllChannels(bot, uid);
+    if (allJoined) return next();
+
+    // A'zo emas — obuna so'raymiz va so'rovni to'xtatamiz (next chaqirilmaydi)
+    if (ctx.callbackQuery) { try { await ctx.answerCallbackQuery("Avval kanalga a'zo bo'ling"); } catch { /* */ } }
+    const settings = loadSettings();
+    const names = settings.channels.filter((c) => missing.includes(c.id)).map((c) => `• ${c.name}`).join("\n");
+    try {
+      await ctx.reply(
+        "📢 Botdan foydalanish uchun avval quyidagi kanal(lar)ga a'zo bo'ling:\n\n" + names,
+        { reply_markup: buildSubscribeKeyboard(missing) }
+      );
+    } catch { /* yuborilmasa jim o'tamiz */ }
+  });
+
   // ─── /start ────────────────────────────────────────────────────────────────
   bot.command("start", async (ctx) => {
     const userId = ctx.from?.id;
@@ -531,13 +560,13 @@ export function createBot(): Bot {
       return;
     }
 
-    // Bog'lanmagan → platforma linki + admin bildirishnomasi
+    // Bog'lanmagan → platformaga KIRISH (ro'yxatdan o'tish olib tashlangan)
     const regKb = new InlineKeyboard()
-      .url("📝 Ro'yxatdan o'tish", `${WEBSITE_URL}/register`);
+      .url("🚀 Platformaga kirish", `${WEBSITE_URL}/login`);
     await ctx.reply(
       "🌐 *Toshloq tuman platformasi*\n\n" +
-      "Platformaga kirish uchun *mahfiy kod* kerak bo'ladi\\.\n" +
-      "Kodni admindan oling va quyidagi tugma orqali ro'yxatdan o'ting 👇",
+      "Platformaga kirish uchun maktab bergan *Kirish ID* dan foydalaning\\.\n" +
+      "Kirish ID ni sinf rahbari yoki admindan olib, quyidagi tugma orqali kiring 👇",
       { parse_mode: "MarkdownV2", reply_markup: regKb }
     );
 
@@ -554,8 +583,8 @@ export function createBot(): Bot {
           `👤 ${fName} ${lName}${uname}\n` +
           `🆔 Telegram ID: ${userId}\n` +
           `📡 Kanal a'zosi: ✅\n` +
-          `💡 Hali platformaga ro'yxatdan o'tmagan.\n\n` +
-          `🔗 Platform: ${WEBSITE_URL}/register`
+          `💡 Hali platformaga kirmagan (bog'lanmagan).\n\n` +
+          `🔗 Platform: ${WEBSITE_URL}/login`
         );
       } catch { /* bildirishnoma xato bo'lsa davom etamiz */ }
     }
@@ -627,7 +656,7 @@ export function createBot(): Bot {
       await ctx.api.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
       await ctx.reply(
         "❌ Akkauntingiz topilmadi.\n\n" +
-        "Telefon raqamingizni /start orqali bog'lang yoki platformaga ro'yxatdan o'ting."
+        "Maktab bergan Kirish ID bilan platformaga kiring, yoki telefon raqamingizni /start orqali bog'lang."
       );
       return;
     }
@@ -790,11 +819,11 @@ export function createBot(): Bot {
       );
       await sendMainMenu(ctx, userId);
     } else {
-      // Saytda hali ro'yxatdan o'tmagan — faylga saqlab qo'yamiz
+      // Saytda hali qo'shilmagan — faylga saqlab qo'yamiz
       linkPhoneToChatId(normalized, userId);
       await ctx.reply(
         "📱 *Telefon raqamingiz saqlandi.*\n\n" +
-        "Agar veb saytda shu raqam bilan ro'yxatdan o'tsangiz, akkauntingiz avtomatik bog'lanadi. 🔗",
+        "Maktab sizni shu raqam bilan qo'shsa, akkauntingiz avtomatik bog'lanadi. 🔗",
         {
           parse_mode: "Markdown",
           reply_markup: { remove_keyboard: true },
