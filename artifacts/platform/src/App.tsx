@@ -34,6 +34,7 @@ const ZukkoPlay = lazy(() => import("@/pages/games/zukko/play"));
 const SayohatIndex = lazy(() => import("@/pages/sayohat/index"));
 const SayohatPlay = lazy(() => import("@/pages/sayohat/play"));
 const SayohatAdmin = lazy(() => import("@/pages/sayohat/admin"));
+const SayohatAdminQuestions = lazy(() => import("@/pages/sayohat/admin-questions"));
 const ProPage = lazy(() => import("@/pages/pro"));
 const DarslikPage = lazy(() => import("@/pages/darslik/index"));
 const NewDarslikPage = lazy(() => import("@/pages/darslik/new"));
@@ -187,6 +188,7 @@ function Router() {
       <Route path="/games/wheel"><ProtectedRoute component={WheelList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/games/zukko/:level"><ProtectedRoute component={ZukkoPlay} /></Route>
       <Route path="/games/zukko"><ProtectedRoute component={ZukkoLevels} /></Route>
+      <Route path="/sayohat/admin/savollar"><ProtectedRoute component={SayohatAdminQuestions} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/sayohat/admin"><ProtectedRoute component={SayohatAdmin} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/sayohat/:region"><ProtectedRoute component={SayohatPlay} /></Route>
       <Route path="/sayohat"><ProtectedRoute component={SayohatIndex} /></Route>

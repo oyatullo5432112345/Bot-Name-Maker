@@ -2,12 +2,12 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Sparkles, Settings, Check, Lock, Clock3, Coins, Trophy, Pencil, CalendarClock } from "lucide-react";
 import {
-  REGIONS, CHARACTERS, DIFFICULTIES, isPlayable, isSayohatOpen,
+  REGIONS, CHARACTERS, DIFFICULTIES, isSayohatOpen,
   type Difficulty, type Souvenir,
 } from "./sayohatData";
 import {
-  loadState, saveState, loadUnlocks, DEFAULT_STATE,
-  type SayohatState, type UnlockMap,
+  loadState, saveState, loadRegions, DEFAULT_STATE,
+  type SayohatState, type RegionInfo,
 } from "@/lib/sayohat-progress";
 import { Avatar, SceneBg, StarRow, sayohatStyles, LockedScreen } from "./_shared";
 import { playSound } from "@/lib/game-sounds";
@@ -15,7 +15,6 @@ import { useAuth } from "@/lib/use-auth";
 
 const MGMT_ROLES = ["admin", "director", "zam_direktor", "zavuch"];
 
-/** Sanani qisqa ko'rinishda: "05.11 09:00" */
 function fmtUnlock(iso: string): string {
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, "0");
@@ -32,16 +31,16 @@ export default function SayohatIndex() {
   const { user } = useAuth();
   const isMgmt = !!user && MGMT_ROLES.includes(user.role);
   const [state, setState] = useState<SayohatState | null>(null);
-  const [unlocks, setUnlocks] = useState<UnlockMap>({});
+  const [info, setInfo] = useState<Record<string, RegionInfo>>({});
   const [showWizard, setShowWizard] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    Promise.all([loadState(), loadUnlocks()]).then(([s, u]) => {
+    Promise.all([loadState(), loadRegions()]).then(([s, regions]) => {
       if (!alive) return;
       setState(s);
-      setUnlocks(u);
+      setInfo(Object.fromEntries(regions.map((r) => [r.id, r])));
       if (!s.character) setShowWizard(true);
     });
     return () => { alive = false; };
@@ -61,10 +60,7 @@ export default function SayohatIndex() {
     await saveState(updated);
   }
 
-  // O'yin qulflangan bo'lsa (va foydalanuvchi bypass emas) — kira olmaydi
-  if (!isSayohatOpen(user?.role)) {
-    return <LockedScreen />;
-  }
+  if (!isSayohatOpen(user?.role)) return <LockedScreen />;
 
   if (!state) {
     return (
@@ -74,7 +70,6 @@ export default function SayohatIndex() {
     );
   }
 
-  // ----- Xarakter tanlash / sozlamalar oynasi -----
   if (showWizard) {
     return (
       <>
@@ -90,20 +85,23 @@ export default function SayohatIndex() {
   }
 
   // ----- XARITA HUB -----
+  const diffId = state.difficulty;
   const completed = (id: string) => (state.stars[id] ?? 0) >= 1;
+  const playable = (id: string) => (info[id]?.counts[diffId] ?? 0) > 0;
 
-  // Admin belgilagan vaqt darvozasi: "open" (vaqt o'tgan) | "locked" (hali kelmagan) | "none"
+  // Admin belgilagan vaqt darvozasi
   const timeGate = (id: string): "open" | "locked" | "none" => {
-    const iso = unlocks[id];
+    const iso = info[id]?.unlock_at;
     if (!iso) return "none";
     return Date.now() >= new Date(iso).getTime() ? "open" : "locked";
   };
   const unlocked = (order: number) => {
     const r = SORTED[order]!;
+    if (!info[r.id]) return false;            // serverda faol emas
     const g = timeGate(r.id);
-    if (g === "open") return true;      // admin ochdi (vaqt o'tdi)
-    if (g === "locked") return false;   // vaqt hali kelmagan
-    return order === 0 || completed(SORTED[order - 1]!.id); // jadval tartibi
+    if (g === "open") return true;
+    if (g === "locked") return false;
+    return order === 0 || completed(SORTED[order - 1]!.id);
   };
   const current = SORTED.find((r) => unlocked(r.order) && !completed(r.id)) ?? SORTED[SORTED.length - 1]!;
   const char = CHARACTERS.find((c) => c.id === state.character)!;
@@ -116,17 +114,15 @@ export default function SayohatIndex() {
     const r = SORTED[order]!;
     if (!unlocked(order)) {
       playSound("wrong");
-      const iso = unlocks[r.id];
-      if (iso && timeGate(r.id) === "locked") {
-        flashMsg(`📅 «${r.name}» ${fmtUnlock(iso)} da ochiladi`);
-      } else {
-        flashMsg(`🔒 Avval «${SORTED[order - 1]!.name}» manzilini yakunlang`);
-      }
+      const iso = info[r.id]?.unlock_at;
+      if (iso && timeGate(r.id) === "locked") flashMsg(`📅 «${r.name}» ${fmtUnlock(iso)} da ochiladi`);
+      else if (!info[r.id]) flashMsg(`🔒 «${r.name}» hali yopiq`);
+      else flashMsg(`🔒 Avval «${SORTED[order - 1]!.name}» manzilini yakunlang`);
       return;
     }
-    if (!isPlayable(r, state!.difficulty)) {
+    if (!playable(r.id)) {
       playSound("click");
-      flashMsg(`⏳ «${r.name}» uchun topshiriqlar tez kunda qo'shiladi`);
+      flashMsg(`⏳ «${r.name}» uchun «${diff.title}» darajada savollar tez kunda qo'shiladi`);
       return;
     }
     playSound("click");
@@ -152,7 +148,7 @@ export default function SayohatIndex() {
               onClick={() => { playSound("click"); setLocation("/sayohat/admin"); }}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold cursor-pointer active:scale-95 transition-all"
             >
-              <CalendarClock className="w-4 h-4" /> <span className="hidden sm:inline">Ochish vaqtlari</span>
+              <CalendarClock className="w-4 h-4" /> <span className="hidden sm:inline">Boshqaruv</span>
             </button>
           )}
           <button
@@ -186,30 +182,27 @@ export default function SayohatIndex() {
       <div className="relative w-full rounded-3xl border border-border overflow-hidden shadow-xl h-[440px] sm:h-[540px]">
         <SceneBg color="#3b2a6b" accent="#8b5cf6" />
 
-        {/* Sayohat yo'li (chiziq) */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
           <polyline
             points={SORTED.map((r) => `${r.x},${r.y}`).join(" ")}
             fill="none" stroke="#ffffff" strokeOpacity="0.35" strokeWidth="0.6"
             strokeDasharray="2 2" strokeLinecap="round" strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-            style={{ strokeWidth: 2 }}
+            vectorEffect="non-scaling-stroke" style={{ strokeWidth: 2 }}
           />
         </svg>
 
-        {/* Manzil tugunlari */}
         {SORTED.map((r) => {
           const isDone = completed(r.id);
           const isOpen = unlocked(r.order);
           const isCurrent = r.id === current.id && !isDone;
-          const playable = isPlayable(r, state.difficulty);
+          const canPlay = playable(r.id);
           const stars = state.stars[r.id] ?? 0;
           const timeLocked = timeGate(r.id) === "locked";
 
           let ring = "border-white/30 bg-slate-800/80 text-white/60";
           if (isDone) ring = "border-emerald-300 bg-gradient-to-br from-emerald-500 to-teal-600 text-white";
-          else if (isOpen && playable) ring = "border-white/70 bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white";
-          else if (isOpen && !playable) ring = "border-amber-300/60 bg-amber-500/20 text-amber-200";
+          else if (isOpen && canPlay) ring = "border-white/70 bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white";
+          else if (isOpen && !canPlay) ring = "border-amber-300/60 bg-amber-500/20 text-amber-200";
 
           return (
             <button
@@ -231,23 +224,21 @@ export default function SayohatIndex() {
                     <Check className="w-2.5 h-2.5 text-white" strokeWidth={4} />
                   </span>
                 )}
-                {isOpen && !playable && !isDone && (
+                {isOpen && !canPlay && !isDone && (
                   <span className="absolute -right-1 -bottom-1 w-4 h-4 rounded-full bg-amber-600 border border-white/50 flex items-center justify-center">
                     <Clock3 className="w-2.5 h-2.5 text-white" />
                   </span>
                 )}
               </div>
 
-              {/* nom + yulduz */}
               <div className="mt-1 px-1.5 py-0.5 rounded-md bg-black/45 backdrop-blur-sm flex flex-col items-center">
                 <span className="text-[8.5px] sm:text-[9px] font-bold text-white whitespace-nowrap leading-tight">{r.name}</span>
                 {isDone && <div className="scale-[0.6] -my-0.5"><StarRow value={stars} size={12} /></div>}
-                {timeLocked && unlocks[r.id] && (
-                  <span className="text-[7.5px] font-bold text-amber-300 whitespace-nowrap leading-tight">📅 {fmtUnlock(unlocks[r.id]!)}</span>
+                {timeLocked && info[r.id]?.unlock_at && (
+                  <span className="text-[7.5px] font-bold text-amber-300 whitespace-nowrap leading-tight">📅 {fmtUnlock(info[r.id]!.unlock_at!)}</span>
                 )}
               </div>
 
-              {/* joriy manzilda xarakter turadi */}
               {isCurrent && (
                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 s-bobble pointer-events-none">
                   <Avatar character={char.id} size={30} wave />
@@ -257,7 +248,6 @@ export default function SayohatIndex() {
           );
         })}
 
-        {/* flash xabar */}
         {flash && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 s-rise px-3.5 py-2 rounded-xl bg-black/75 backdrop-blur text-white text-xs font-bold text-center max-w-[90%]">
             {flash}
@@ -295,10 +285,7 @@ export default function SayohatIndex() {
 //  Xarakter tanlash / sozlamalar sehrgari
 // ============================================================
 function Wizard({
-  initial,
-  firstTime,
-  onDone,
-  onCancel,
+  initial, firstTime, onDone, onCancel,
 }: {
   initial: SayohatState;
   firstTime: boolean;
@@ -312,10 +299,7 @@ function Wizard({
   function pick(id: "bek" | "lola") {
     playSound("click");
     setPicked(id);
-    if (!name.trim()) {
-      const c = CHARACTERS.find((x) => x.id === id)!;
-      setName(c.defaultName);
-    }
+    if (!name.trim()) setName(CHARACTERS.find((x) => x.id === id)!.defaultName);
   }
 
   const canStart = !!picked && name.trim().length > 0;
@@ -330,7 +314,6 @@ function Wizard({
         <p className="text-muted-foreground text-xs mt-1">Ismini o'zgartirishingiz va darajani tanlashingiz mumkin</p>
       </div>
 
-      {/* Qahramonlar */}
       <div className="grid grid-cols-2 gap-3">
         {CHARACTERS.map((c) => {
           const sel = picked === c.id;
@@ -355,7 +338,6 @@ function Wizard({
         })}
       </div>
 
-      {/* Ism */}
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
           <Pencil className="w-3.5 h-3.5" /> Qahramon ismi
@@ -368,7 +350,6 @@ function Wizard({
         />
       </div>
 
-      {/* Daraja */}
       <div className="space-y-2">
         <p className="text-xs font-bold text-muted-foreground">Qiyinlik darajasi</p>
         <div className="grid grid-cols-3 gap-2">
@@ -392,7 +373,6 @@ function Wizard({
         </div>
       </div>
 
-      {/* Tugmalar */}
       <div className="flex gap-2.5">
         {onCancel && (
           <button onClick={() => { playSound("click"); onCancel(); }} className="px-5 py-3.5 rounded-2xl bg-secondary font-bold text-sm cursor-pointer">
