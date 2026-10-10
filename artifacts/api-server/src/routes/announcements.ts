@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { requireAuth, getAuthUser } from "./auth.js";
+import { requireAuth, getAuthUser, schoolOf } from "./auth.js";
 import { publishAnnouncement, getWebsiteUrl } from "../lib/tg-shared.js";
 import { logger } from "../lib/logger.js";
 
@@ -12,18 +12,32 @@ router.get("/announcements", requireAuth, async (req, res): Promise<void> => {
     const user = getAuthUser(req.headers.authorization);
     if (!user) { res.status(401).json({ error: "Autentifikatsiya talab qilinadi" }); return; }
 
-    const rows = await query<{
-      id: string; title: string; content: string;
-      author_name: string; role_filter: string | null;
-      pinned: boolean; created_at: string;
-    }>(
-      `SELECT id, title, content, author_name, role_filter, pinned, priority, created_at
-       FROM announcements
-       WHERE role_filter IS NULL OR role_filter = $1 OR role_filter = 'all'
-       ORDER BY pinned DESC, created_at DESC
-       LIMIT 50`,
-      [user.role]
-    );
+    const mid = schoolOf(user);
+    const rows = mid !== null
+      ? await query<{
+          id: string; title: string; content: string;
+          author_name: string; role_filter: string | null;
+          pinned: boolean; created_at: string;
+        }>(
+          `SELECT id, title, content, author_name, role_filter, pinned, priority, created_at
+           FROM announcements
+           WHERE (role_filter IS NULL OR role_filter = $1 OR role_filter = 'all') AND maktab_id = $2
+           ORDER BY pinned DESC, created_at DESC
+           LIMIT 50`,
+          [user.role, mid]
+        )
+      : await query<{
+          id: string; title: string; content: string;
+          author_name: string; role_filter: string | null;
+          pinned: boolean; created_at: string;
+        }>(
+          `SELECT id, title, content, author_name, role_filter, pinned, priority, created_at
+           FROM announcements
+           WHERE role_filter IS NULL OR role_filter = $1 OR role_filter = 'all'
+           ORDER BY pinned DESC, created_at DESC
+           LIMIT 50`,
+          [user.role]
+        );
 
     res.json(rows);
   } catch (err) {
@@ -51,10 +65,12 @@ router.post("/announcements", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
+  const mid = schoolOf(user);
+
   try {
     const row = await queryOne<{ id: string; created_at: string }>(
-      `INSERT INTO announcements (title, content, author_name, author_login, role_filter, pinned, priority)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO announcements (title, content, author_name, author_login, role_filter, pinned, priority, maktab_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, created_at`,
       [
         title.trim(),
@@ -64,6 +80,7 @@ router.post("/announcements", requireAuth, async (req, res): Promise<void> => {
         role_filter ?? null,
         pinned ?? false,
         ["normal", "important", "urgent"].includes(priority ?? "") ? priority : "normal",
+        mid ?? 3,
       ]
     );
     res.status(201).json(row);
@@ -99,10 +116,12 @@ router.delete("/announcements/:id", requireAuth, async (req, res): Promise<void>
   }
 
   const { id } = req.params;
+  const mid = schoolOf(user);
 
   try {
     if (canDelete) {
-      await query("DELETE FROM announcements WHERE id = $1", [id]);
+      if (mid !== null) await query("DELETE FROM announcements WHERE id = $1 AND maktab_id = $2", [id, mid]);
+      else await query("DELETE FROM announcements WHERE id = $1", [id]);
     } else {
       await query("DELETE FROM announcements WHERE id = $1 AND author_login = $2", [id, user.login]);
     }
@@ -120,8 +139,10 @@ router.patch("/announcements/:id/pin", requireAuth, async (req, res): Promise<vo
   }
 
   const { pinned } = req.body as { pinned?: boolean };
+  const mid = schoolOf(user);
   try {
-    await query("UPDATE announcements SET pinned = $1 WHERE id = $2", [pinned ?? false, req.params.id]);
+    if (mid !== null) await query("UPDATE announcements SET pinned = $1 WHERE id = $2 AND maktab_id = $3", [pinned ?? false, req.params.id, mid]);
+    else await query("UPDATE announcements SET pinned = $1 WHERE id = $2", [pinned ?? false, req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 
 const CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 
@@ -58,6 +58,7 @@ router.get("/admin/codes", async (req, res): Promise<void> => {
     return;
   }
 
+  const mid = schoolOf(user);
   const { class_id, role } = req.query as Record<string, string>;
   let sql = "SELECT * FROM registration_codes";
   const params: unknown[] = [];
@@ -65,6 +66,7 @@ router.get("/admin/codes", async (req, res): Promise<void> => {
 
   if (class_id) { conditions.push(`class_id = $${params.length + 1}`); params.push(class_id); }
   if (role) { conditions.push(`role = $${params.length + 1}`); params.push(role); }
+  if (mid !== null) { conditions.push(`maktab_id = $${params.length + 1}`); params.push(mid); }
 
   if (conditions.length > 0) sql += " WHERE " + conditions.join(" AND ");
   sql += " ORDER BY created_at DESC";
@@ -84,6 +86,8 @@ router.post("/admin/codes/generate", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }
+
+  const mid = schoolOf(user);
 
   const { names, role = "student", class_id, class_name } = req.body as {
     names: string[]; role?: string; class_id?: string; class_name?: string;
@@ -108,9 +112,9 @@ router.post("/admin/codes/generate", async (req, res): Promise<void> => {
     const inserted = [];
     for (const r of rows) {
       const d = await queryOne(
-        `INSERT INTO registration_codes (code, full_name, first_name, last_name, role, class_id, class_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [r.code, r.full_name, r.first_name, r.last_name, r.role, r.class_id, r.class_name]
+        `INSERT INTO registration_codes (code, full_name, first_name, last_name, role, class_id, class_name, maktab_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        [r.code, r.full_name, r.first_name, r.last_name, r.role, r.class_id, r.class_name, mid ?? 3]
       );
       if (d) inserted.push(d);
     }
@@ -128,8 +132,10 @@ router.delete("/admin/codes/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  const mid = schoolOf(user);
   try {
-    await query("DELETE FROM registration_codes WHERE id = $1", [req.params["id"]]);
+    if (mid !== null) await query("DELETE FROM registration_codes WHERE id = $1 AND maktab_id = $2", [req.params["id"], mid]);
+    else await query("DELETE FROM registration_codes WHERE id = $1", [req.params["id"]]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -145,18 +151,23 @@ router.delete("/admin/codes", async (req, res): Promise<void> => {
   }
 
   const { ids, unused, class_id } = req.body as { ids?: string[]; unused?: boolean; class_id?: string };
+  const mid = schoolOf(user);
 
   try {
     let deleted = 0;
 
     if (Array.isArray(ids) && ids.length > 0) {
       const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
-      const result = await query(`DELETE FROM registration_codes WHERE id IN (${placeholders}) RETURNING id`, ids);
+      const params: unknown[] = [...ids];
+      let sql = `DELETE FROM registration_codes WHERE id IN (${placeholders})`;
+      if (mid !== null) { params.push(mid); sql += ` AND maktab_id = $${params.length}`; }
+      const result = await query(sql + " RETURNING id", params);
       deleted = result.length;
     } else if (unused === true) {
       const params: unknown[] = [];
       let sql = "DELETE FROM registration_codes WHERE used = false";
       if (class_id) { params.push(class_id); sql += ` AND class_id = $1`; }
+      if (mid !== null) { params.push(mid); sql += ` AND maktab_id = $${params.length}`; }
       const result = await query(sql + " RETURNING id", params);
       deleted = result.length;
     } else {

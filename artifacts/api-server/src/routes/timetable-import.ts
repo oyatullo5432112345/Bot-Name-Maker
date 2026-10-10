@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 import { enrichEntry } from "./timetable.js";
 
 const router: IRouter = Router();
@@ -55,10 +55,17 @@ router.post("/timetable/import", async (req, res): Promise<void> => {
   }
 
   // Mavjud sinflar va xodimlar ro'yxatini olib, modelga moslashtirish uchun beramiz.
-  const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes");
-  const staff = await query<{ id: string; full_name: string; can_teach: boolean }>(
-    "SELECT id, full_name, can_teach FROM staff WHERE can_teach = true"
-  );
+  const mid = schoolOf(user);
+  const classes = mid !== null
+    ? await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE maktab_id = $1", [mid])
+    : await query<{ id: string; name: string }>("SELECT id, name FROM classes");
+  const staff = mid !== null
+    ? await query<{ id: string; full_name: string; can_teach: boolean }>(
+        "SELECT id, full_name, can_teach FROM staff WHERE can_teach = true AND maktab_id = $1", [mid]
+      )
+    : await query<{ id: string; full_name: string; can_teach: boolean }>(
+        "SELECT id, full_name, can_teach FROM staff WHERE can_teach = true"
+      );
 
   const classNames = classes.map((c) => c.name).join(", ");
   const staffNames = staff.map((s) => s.full_name).join(", ");
@@ -155,12 +162,12 @@ router.post("/timetable/import", async (req, res): Promise<void> => {
           id: string; class_id: string; day_of_week: number;
           period: number; subject: string; teacher_id: string | null; created_at: string;
         }>(
-          `INSERT INTO timetable (class_id, day_of_week, period, subject, teacher_id)
-           VALUES ($1, $2, $3, $4, $5)
+          `INSERT INTO timetable (class_id, day_of_week, period, subject, teacher_id, maktab_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (class_id, day_of_week, period)
            DO UPDATE SET subject = EXCLUDED.subject, teacher_id = EXCLUDED.teacher_id
            RETURNING *`,
-          [classId, row.day_of_week, row.period, row.subject.trim(), teacherId]
+          [classId, row.day_of_week, row.period, row.subject.trim(), teacherId, mid ?? 3]
         );
         if (data) inserted.push(await enrichEntry(data));
       } catch (err) {

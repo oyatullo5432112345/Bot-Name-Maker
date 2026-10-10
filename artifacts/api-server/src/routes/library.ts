@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -35,13 +35,18 @@ router.get("/library/books", async (req, res): Promise<void> => {
   }
 
   const { category, search } = req.query as Record<string, string>;
+  const mid = schoolOf(user);
 
   try {
     let rows;
     if (category && category !== "all") {
-      rows = await query("SELECT * FROM library_books WHERE category = $1 ORDER BY created_at DESC", [category]);
+      rows = mid !== null
+        ? await query("SELECT * FROM library_books WHERE category = $1 AND maktab_id = $2 ORDER BY created_at DESC", [category, mid])
+        : await query("SELECT * FROM library_books WHERE category = $1 ORDER BY created_at DESC", [category]);
     } else {
-      rows = await query("SELECT * FROM library_books ORDER BY created_at DESC");
+      rows = mid !== null
+        ? await query("SELECT * FROM library_books WHERE maktab_id = $1 ORDER BY created_at DESC", [mid])
+        : await query("SELECT * FROM library_books ORDER BY created_at DESC");
     }
 
     if (search) {
@@ -80,13 +85,14 @@ router.post("/library/books", async (req, res): Promise<void> => {
   }
 
   const { quantity, title, author, category, class_name, subject, isbn, published_year, description } = parsed.data;
+  const mid = schoolOf(user);
 
   try {
     const data = await queryOne(
-      `INSERT INTO library_books (title, author, category, class_name, subject, quantity, available, isbn, published_year, description, added_by, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      `INSERT INTO library_books (title, author, category, class_name, subject, quantity, available, isbn, published_year, description, added_by, created_at, maktab_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
       [title, author, category, class_name, subject, quantity, quantity, isbn, published_year ?? null,
-       description, user["login"] as string, new Date().toISOString()]
+       description, user["login"] as string, new Date().toISOString(), mid ?? 3]
     );
     res.status(201).json(data);
   } catch (err) {
@@ -179,6 +185,7 @@ router.get("/library/loans", async (req, res): Promise<void> => {
   }
 
   const { status, book_id } = req.query as Record<string, string>;
+  const mid = schoolOf(user);
 
   try {
     let rows;
@@ -190,11 +197,18 @@ router.get("/library/loans", async (req, res): Promise<void> => {
         [book_id]
       );
     } else {
-      rows = await query(
-        `SELECT l.*, b.title as book_title, b.author as book_author, b.category as book_category
-         FROM library_loans l LEFT JOIN library_books b ON l.book_id = b.id
-         ORDER BY l.created_at DESC`
-      );
+      rows = mid !== null
+        ? await query(
+            `SELECT l.*, b.title as book_title, b.author as book_author, b.category as book_category
+             FROM library_loans l LEFT JOIN library_books b ON l.book_id = b.id
+             WHERE l.maktab_id = $1 ORDER BY l.created_at DESC`,
+            [mid]
+          )
+        : await query(
+            `SELECT l.*, b.title as book_title, b.author as book_author, b.category as book_category
+             FROM library_loans l LEFT JOIN library_books b ON l.book_id = b.id
+             ORDER BY l.created_at DESC`
+          );
     }
 
     // Transform to match expected shape with library_books nested
@@ -254,14 +268,16 @@ router.post("/library/loans", async (req, res): Promise<void> => {
     return;
   }
 
+  const mid = schoolOf(user);
+
   try {
     const today = new Date().toISOString().slice(0, 10);
     const loan = await queryOne(
-      `INSERT INTO library_loans (book_id, student_name, student_class, student_login, due_date, notes, issued_date, issued_by, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      `INSERT INTO library_loans (book_id, student_name, student_class, student_login, due_date, notes, issued_date, issued_by, created_at, maktab_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [parsed.data.book_id, parsed.data.student_name, parsed.data.student_class,
        parsed.data.student_login, parsed.data.due_date, parsed.data.notes,
-       today, user["login"] as string, new Date().toISOString()]
+       today, user["login"] as string, new Date().toISOString(), mid ?? 3]
     );
 
     await query("UPDATE library_books SET available = $1 WHERE id = $2", [book.available - 1, parsed.data.book_id]);

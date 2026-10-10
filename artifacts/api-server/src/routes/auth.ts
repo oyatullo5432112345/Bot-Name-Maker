@@ -150,6 +150,18 @@ export function getAuthUser(authHeader: string | undefined): Record<string, unkn
   return parseToken(token);
 }
 
+// ─── KO'P MAKTABLI IZOLYATSIYA ───────────────────────────────────────────────
+//  schoolOf: foydalanuvchi qaysi maktabni ko'radi.
+//   • admin (tuman super-admini) → null = BARCHA maktablar (filtr yo'q)
+//   • boshqalar → o'z maktab_id si (eski tokenda yo'q bo'lsa 3 — hozirgi maktab)
+//  Har bir route SELECT/INSERT/UPDATE/DELETE da shu bilan filtrlanadi.
+export function schoolOf(user: Record<string, unknown> | null | undefined): number | null {
+  if (!user) return null;
+  if ((user["role"] as string) === "admin") return null;
+  const m = user["maktab_id"];
+  return typeof m === "number" ? m : 3;
+}
+
 import type { Request, Response, NextFunction } from "express";
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {

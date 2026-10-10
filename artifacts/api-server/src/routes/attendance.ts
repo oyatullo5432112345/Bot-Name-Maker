@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { requireAuth, getAuthUser } from "./auth.js";
+import { requireAuth, getAuthUser, schoolOf } from "./auth.js";
 import { notifyUser, attendanceNotificationText } from "../lib/notify.js";
 
 const router: IRouter = Router();
@@ -119,13 +119,14 @@ router.post("/attendance", requireAuth, async (req, res): Promise<void> => {
       return;
     }
 
+    const mid = schoolOf(user) ?? 3;
     for (const rec of records) {
       await query(
-        `INSERT INTO attendance (class_id, class_name, student_login, student_name, date, status, note, teacher_login)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO attendance (class_id, class_name, student_login, student_name, date, status, note, teacher_login, maktab_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (student_login, date)
          DO UPDATE SET status = $6, note = $7, teacher_login = $8`,
-        [class_id, class_name, rec.student_login, rec.student_name, date, rec.status || "present", rec.note || "", user.login]
+        [class_id, class_name, rec.student_login, rec.student_name, date, rec.status || "present", rec.note || "", user.login, mid]
       );
     }
 

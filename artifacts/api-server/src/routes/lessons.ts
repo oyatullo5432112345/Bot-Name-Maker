@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -32,15 +32,20 @@ router.get("/lessons", async (req, res): Promise<void> => {
   const role = user["role"] as string;
   const class_name = user["class_name"] as string | null;
   const login = user["login"] as string;
+  const mid = schoolOf(user);
 
   try {
     let rows;
     if (role === "student" && class_name) {
-      rows = await query("SELECT * FROM lessons WHERE class_name = $1 ORDER BY created_at DESC", [class_name]);
+      rows = mid !== null
+        ? await query("SELECT * FROM lessons WHERE class_name = $1 AND maktab_id = $2 ORDER BY created_at DESC", [class_name, mid])
+        : await query("SELECT * FROM lessons WHERE class_name = $1 ORDER BY created_at DESC", [class_name]);
     } else if (role === "teacher" || role === "sinf_rahbari" || role === "boshlangich_oqituvchi") {
       rows = await query("SELECT * FROM lessons WHERE teacher_login = $1 ORDER BY created_at DESC", [login]);
     } else {
-      rows = await query("SELECT * FROM lessons ORDER BY created_at DESC");
+      rows = mid !== null
+        ? await query("SELECT * FROM lessons WHERE maktab_id = $1 ORDER BY created_at DESC", [mid])
+        : await query("SELECT * FROM lessons ORDER BY created_at DESC");
     }
     res.json(rows);
   } catch (err) {
@@ -70,13 +75,14 @@ router.post("/lessons", async (req, res): Promise<void> => {
   }
 
   const { title, subject, description, content, class_name } = parsed.data;
+  const mid = schoolOf(user) ?? 3;
 
   try {
     const data = await queryOne(
-      `INSERT INTO lessons (title, subject, description, content, class_name, teacher_login, teacher_name, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      `INSERT INTO lessons (title, subject, description, content, class_name, teacher_login, teacher_name, maktab_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [title, subject, description ?? "", content ?? "", class_name,
-       user["login"] as string, user["full_name"] as string, new Date().toISOString()]
+       user["login"] as string, user["full_name"] as string, mid, new Date().toISOString()]
     );
     res.status(201).json(data);
   } catch (err) {

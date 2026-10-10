@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -25,13 +25,14 @@ router.post("/games/score", async (req, res): Promise<void> => {
   }
 
   const { game_id, score_change, reason } = parsed.data;
+  const mid = schoolOf(user);
 
   try {
     await query(
-      `INSERT INTO game_scores (user_login, full_name, class_name, game_id, score_change, reason)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO game_scores (user_login, full_name, class_name, game_id, score_change, reason, maktab_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [user["login"] as string, user["full_name"] as string,
-       (user["class_name"] as string) ?? "", game_id, score_change, reason ?? null]
+       (user["class_name"] as string) ?? "", game_id, score_change, reason ?? null, mid ?? 3]
     );
     res.json({ ok: true });
   } catch (err) {
@@ -49,16 +50,24 @@ router.get("/games/ratings", async (req, res): Promise<void> => {
   }
 
   const gameId = req.query["game_id"] as string | undefined;
+  const mid = schoolOf(user);
 
   try {
     let rows;
     if (gameId) {
-      rows = await query(
-        "SELECT user_login, full_name, class_name, score_change FROM game_scores WHERE game_id = $1",
-        [gameId]
-      );
+      rows = mid !== null
+        ? await query(
+            "SELECT user_login, full_name, class_name, score_change FROM game_scores WHERE game_id = $1 AND maktab_id = $2",
+            [gameId, mid]
+          )
+        : await query(
+            "SELECT user_login, full_name, class_name, score_change FROM game_scores WHERE game_id = $1",
+            [gameId]
+          );
     } else {
-      rows = await query("SELECT user_login, full_name, class_name, score_change FROM game_scores");
+      rows = mid !== null
+        ? await query("SELECT user_login, full_name, class_name, score_change FROM game_scores WHERE maktab_id = $1", [mid])
+        : await query("SELECT user_login, full_name, class_name, score_change FROM game_scores");
     }
 
     const map = new Map<string, { user_login: string; full_name: string; class_name: string; total_score: number; wins: number; losses: number }>();

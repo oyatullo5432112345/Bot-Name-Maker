@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { requireAuth } from "./auth.js";
+import { requireAuth, schoolOf, getAuthUser } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -8,6 +8,7 @@ const router: IRouter = Router();
 router.get("/teacher-subjects", requireAuth, async (req, res): Promise<void> => {
   const class_id = req.query["class_id"] as string | undefined;
   const teacher_id = req.query["teacher_id"] as string | undefined;
+  const mid = schoolOf(getAuthUser(req.headers.authorization));
 
   let sql = "SELECT id, teacher_id, class_id, subject, created_at FROM teacher_subjects";
   const params: unknown[] = [];
@@ -15,6 +16,7 @@ router.get("/teacher-subjects", requireAuth, async (req, res): Promise<void> => 
 
   if (class_id) { conditions.push(`class_id = $${params.length + 1}`); params.push(class_id); }
   if (teacher_id) { conditions.push(`teacher_id = $${params.length + 1}`); params.push(teacher_id); }
+  if (mid !== null) { conditions.push(`maktab_id = $${params.length + 1}`); params.push(mid); }
 
   if (conditions.length > 0) sql += " WHERE " + conditions.join(" AND ");
   sql += " ORDER BY subject";
@@ -58,11 +60,13 @@ router.post("/teacher-subjects", requireAuth, async (req, res): Promise<void> =>
     return;
   }
 
+  const mid = schoolOf(getAuthUser(req.headers.authorization));
+
   try {
     const data = await queryOne(
-      `INSERT INTO teacher_subjects (teacher_id, class_id, subject)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [teacher_id, class_id, subject.trim()]
+      `INSERT INTO teacher_subjects (teacher_id, class_id, subject, maktab_id)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [teacher_id, class_id, subject.trim(), mid ?? 3]
     );
     res.status(201).json(data);
   } catch (err) {

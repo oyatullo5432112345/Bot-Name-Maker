@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { requireAuth } from "./auth.js";
+import { requireAuth, schoolOf, getAuthUser } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -45,6 +45,7 @@ export async function enrichEntry(entry: {
 router.get("/timetable", requireAuth, async (req, res): Promise<void> => {
   const class_id = req.query["class_id"] as string | undefined;
   const teacher_id = req.query["teacher_id"] as string | undefined;
+  const mid = schoolOf(getAuthUser(req.headers.authorization));
 
   try {
     let sql = "SELECT * FROM timetable";
@@ -53,6 +54,7 @@ router.get("/timetable", requireAuth, async (req, res): Promise<void> => {
 
     if (class_id) { conditions.push(`class_id = $${params.length + 1}`); params.push(class_id); }
     if (teacher_id) { conditions.push(`teacher_id = $${params.length + 1}`); params.push(teacher_id); }
+    if (mid !== null) { conditions.push(`maktab_id = $${params.length + 1}`); params.push(mid); }
 
     if (conditions.length > 0) sql += " WHERE " + conditions.join(" AND ");
     sql += " ORDER BY day_of_week, period";
@@ -81,17 +83,19 @@ router.post("/timetable", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
+  const mid = schoolOf(getAuthUser(req.headers.authorization));
+
   try {
     const data = await queryOne<{
       id: string; class_id: string; day_of_week: number;
       period: number; subject: string; teacher_id: string | null; created_at: string;
     }>(
-      `INSERT INTO timetable (class_id, day_of_week, period, subject, teacher_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO timetable (class_id, day_of_week, period, subject, teacher_id, maktab_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (class_id, day_of_week, period)
        DO UPDATE SET subject = EXCLUDED.subject, teacher_id = EXCLUDED.teacher_id
        RETURNING *`,
-      [class_id, day_of_week, period, subject.trim(), teacher_id ?? null]
+      [class_id, day_of_week, period, subject.trim(), teacher_id ?? null, mid ?? 3]
     );
 
     const enriched = await enrichEntry(data!);

@@ -16,7 +16,7 @@ import { Router, type IRouter, type Request } from "express";
 import crypto from "node:crypto";
 import { query, queryOne } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -180,9 +180,14 @@ router.get("/lab/overview", async (req, res): Promise<void> => {
   const u = authAs(req, CONTROL);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const manager = isManager(u);
+  const mid = schoolOf(u);
   const [rooms, comps, settings] = await Promise.all([
-    query<{ id: string; name: string; note: string }>("SELECT id, name, note FROM lab_rooms ORDER BY name"),
-    query<ComputerRow>("SELECT * FROM lab_computers ORDER BY name"),
+    mid !== null
+      ? query<{ id: string; name: string; note: string }>("SELECT id, name, note FROM lab_rooms WHERE maktab_id = $1 ORDER BY name", [mid])
+      : query<{ id: string; name: string; note: string }>("SELECT id, name, note FROM lab_rooms ORDER BY name"),
+    mid !== null
+      ? query<ComputerRow>("SELECT * FROM lab_computers WHERE maktab_id = $1 ORDER BY name", [mid])
+      : query<ComputerRow>("SELECT * FROM lab_computers ORDER BY name"),
     getSettings(),
   ]);
   const computers = comps.map((c) => viewComputer(c, manager));
@@ -201,9 +206,10 @@ router.get("/lab/overview", async (req, res): Promise<void> => {
 router.get("/lab/events", async (req, res): Promise<void> => {
   const u = authAs(req, CONTROL);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
-  const rows = await query(
-    "SELECT computer_name, action, detail, actor, created_at FROM lab_events ORDER BY created_at DESC LIMIT 100"
-  );
+  const mid = schoolOf(u);
+  const rows = mid !== null
+    ? await query("SELECT computer_name, action, detail, actor, created_at FROM lab_events WHERE maktab_id = $1 ORDER BY created_at DESC LIMIT 100", [mid])
+    : await query("SELECT computer_name, action, detail, actor, created_at FROM lab_events ORDER BY created_at DESC LIMIT 100");
   res.json(rows);
 });
 
@@ -213,9 +219,10 @@ router.post("/lab/rooms", async (req, res): Promise<void> => {
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const { name, note } = req.body as { name?: string; note?: string };
   if (!name || !name.trim()) { res.status(400).json({ error: "Xona nomi kerak" }); return; }
+  const mid = schoolOf(u);
   const row = await queryOne<{ id: string }>(
-    "INSERT INTO lab_rooms (name, note) VALUES ($1,$2) RETURNING id",
-    [name.trim(), (note ?? "").trim()]
+    "INSERT INTO lab_rooms (name, note, maktab_id) VALUES ($1,$2,$3) RETURNING id",
+    [name.trim(), (note ?? "").trim(), mid ?? 3]
   );
   res.json({ ok: true, id: row?.id });
 });
@@ -242,10 +249,11 @@ router.post("/lab/computers", async (req, res): Promise<void> => {
   const { name, host, room_id, note } = req.body as { name?: string; host?: string; room_id?: string | null; note?: string };
   if (!name || !name.trim()) { res.status(400).json({ error: "Kompyuter nomi kerak" }); return; }
   if (!host || !host.trim()) { res.status(400).json({ error: "IP yoki hostname kerak" }); return; }
+  const mid = schoolOf(u);
   try {
     const row = await queryOne<{ id: string }>(
-      "INSERT INTO lab_computers (name, host, room_id, note) VALUES ($1,$2,$3,$4) RETURNING id",
-      [name.trim(), host.trim(), room_id || null, (note ?? "").trim()]
+      "INSERT INTO lab_computers (name, host, room_id, note, maktab_id) VALUES ($1,$2,$3,$4,$5) RETURNING id",
+      [name.trim(), host.trim(), room_id || null, (note ?? "").trim(), mid ?? 3]
     );
     await logEvent(row?.id ?? null, name.trim(), "add", host.trim(), actorName(u));
     res.json({ ok: true, id: row?.id });

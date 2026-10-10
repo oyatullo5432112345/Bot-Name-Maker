@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -20,11 +20,13 @@ router.get("/wheel-games", async (req, res): Promise<void> => {
   if (!user) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const search = (req.query["search"] as string | undefined)?.trim();
   const mine = req.query["mine"] === "true";
+  const mid = schoolOf(user);
 
   const conditions: string[] = [];
   const params: unknown[] = [];
   if (search) { params.push(`%${search}%`); conditions.push(`title ILIKE $${params.length}`); }
   if (mine) { params.push(user["login"] as string); conditions.push(`created_by_login = $${params.length}`); }
+  if (mid !== null) { params.push(mid); conditions.push(`maktab_id = $${params.length}`); }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const rows = await query(`SELECT * FROM wheel_games ${where} ORDER BY created_at DESC`, params);
@@ -57,11 +59,12 @@ router.post("/wheel-games", async (req, res): Promise<void> => {
 
   const segments = d.segments.map((s, i) => ({ ...s, color: SEGMENT_COLORS[i % SEGMENT_COLORS.length] }));
   const teamScores = Array.from({ length: d.team_count }, (_, i) => ({ name: `${i + 1}-jamoa`, score: 0 }));
+  const mid = schoolOf(user);
 
   const game = await queryOne<{ id: string }>(
-    `INSERT INTO wheel_games (title, subject, class_name, segments, time_limit_seconds, created_by_login, team_count, team_scores)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-    [d.title, d.subject ?? null, d.class_name ?? null, JSON.stringify(segments), d.time_limit_seconds ?? null, user["login"] as string, d.team_count, JSON.stringify(teamScores)]
+    `INSERT INTO wheel_games (title, subject, class_name, segments, time_limit_seconds, created_by_login, team_count, team_scores, maktab_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [d.title, d.subject ?? null, d.class_name ?? null, JSON.stringify(segments), d.time_limit_seconds ?? null, user["login"] as string, d.team_count, JSON.stringify(teamScores), mid ?? 3]
   );
   res.status(201).json({ id: game?.id });
 });

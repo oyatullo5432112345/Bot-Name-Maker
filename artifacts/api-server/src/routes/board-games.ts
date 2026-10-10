@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -26,11 +26,13 @@ router.get("/board-games", async (req, res): Promise<void> => {
 
   const search = (req.query["search"] as string | undefined)?.trim();
   const mine = req.query["mine"] === "true";
+  const mid = schoolOf(user);
 
   const conditions: string[] = [];
   const params: unknown[] = [];
   if (search) { params.push(`%${search}%`); conditions.push(`(title ILIKE $${params.length} OR subject ILIKE $${params.length})`); }
   if (mine) { params.push(user["login"] as string); conditions.push(`created_by_login = $${params.length}`); }
+  if (mid !== null) { params.push(mid); conditions.push(`maktab_id = $${params.length}`); }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const rows = await query(`SELECT * FROM board_games ${where} ORDER BY created_at DESC`, params);
@@ -74,11 +76,12 @@ router.post("/board-games", async (req, res): Promise<void> => {
   }
 
   const teamNames = Array.from({ length: d.team_count }, (_, i) => ({ name: `${i + 1}-jamoa`, score: 0 }));
+  const mid = schoolOf(user);
 
   const game = await queryOne<{ id: string }>(
-    `INSERT INTO board_games (title, subject, class_name, team_count, cell_count, status, team_scores, created_by_login)
-     VALUES ($1,$2,$3,$4,$5,'ready',$6,$7) RETURNING id`,
-    [d.title, d.subject ?? null, d.class_name ?? null, d.team_count, d.cell_count, JSON.stringify(teamNames), user["login"] as string]
+    `INSERT INTO board_games (title, subject, class_name, team_count, cell_count, status, team_scores, created_by_login, maktab_id)
+     VALUES ($1,$2,$3,$4,$5,'ready',$6,$7,$8) RETURNING id`,
+    [d.title, d.subject ?? null, d.class_name ?? null, d.team_count, d.cell_count, JSON.stringify(teamNames), user["login"] as string, mid ?? 3]
   );
   if (!game) { res.status(500).json({ error: "O'yin yaratilmadi" }); return; }
 

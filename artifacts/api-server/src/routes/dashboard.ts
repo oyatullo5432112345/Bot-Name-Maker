@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { query, queryCount } from "../lib/db.js";
 import { GetDashboardStatsResponse, GetMyClassResponse } from "@workspace/api-zod";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -13,13 +13,22 @@ function getDaysUntilSeptember(): number {
 }
 
 // GET /api/dashboard/stats
-router.get("/dashboard/stats", async (_req, res): Promise<void> => {
+router.get("/dashboard/stats", async (req, res): Promise<void> => {
   try {
+    const mid = schoolOf(getAuthUser(req.headers.authorization));
     const [total_students, total_classes, total_staff, classRows] = await Promise.all([
-      queryCount("SELECT COUNT(*) FROM users"),
-      queryCount("SELECT COUNT(*) FROM classes"),
-      queryCount("SELECT COUNT(*) FROM staff"),
-      query<{ class_name: string }>("SELECT class_name FROM users"),
+      mid !== null
+        ? queryCount("SELECT COUNT(*) FROM users WHERE maktab_id = $1", [mid])
+        : queryCount("SELECT COUNT(*) FROM users"),
+      mid !== null
+        ? queryCount("SELECT COUNT(*) FROM classes WHERE maktab_id = $1", [mid])
+        : queryCount("SELECT COUNT(*) FROM classes"),
+      mid !== null
+        ? queryCount("SELECT COUNT(*) FROM staff WHERE maktab_id = $1", [mid])
+        : queryCount("SELECT COUNT(*) FROM staff"),
+      mid !== null
+        ? query<{ class_name: string }>("SELECT class_name FROM users WHERE maktab_id = $1", [mid])
+        : query<{ class_name: string }>("SELECT class_name FROM users"),
     ]);
 
     const classCounts: Record<string, number> = {};
@@ -60,7 +69,10 @@ router.get("/dashboard/my-class", async (req, res): Promise<void> => {
   }
 
   try {
-    const students = await query("SELECT * FROM users WHERE class_name = $1 ORDER BY full_name", [class_name]);
+    const mid = schoolOf(user);
+    const students = mid !== null
+      ? await query("SELECT * FROM users WHERE class_name = $1 AND maktab_id = $2 ORDER BY full_name", [class_name, mid])
+      : await query("SELECT * FROM users WHERE class_name = $1 ORDER BY full_name", [class_name]);
     res.json(GetMyClassResponse.parse({ class_name, class_id, students }));
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

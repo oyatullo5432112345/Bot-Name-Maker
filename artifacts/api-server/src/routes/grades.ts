@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 import { notifyUser, gradeNotificationText } from "../lib/notify.js";
 import { z } from "zod";
 
@@ -31,17 +31,23 @@ router.get("/grades", async (req, res): Promise<void> => {
 
   const role = user["role"] as string;
   const login = user["login"] as string;
+  const mid = schoolOf(user); // null = admin (barcha maktablar)
 
   try {
     let rows;
     if (role === "student") {
+      // login global yagona — izolyatsiya o'z-o'zidan
       rows = await query("SELECT * FROM grades WHERE student_login = $1 ORDER BY created_at DESC", [login]);
     } else if (role === "teacher" || role === "sinf_rahbari" || role === "boshlangich_oqituvchi") {
       rows = await query("SELECT * FROM grades WHERE teacher_login = $1 ORDER BY created_at DESC", [login]);
     } else if ((role === "director" || role === "zavuch" || role === "zam_direktor") && req.query["class_name"]) {
-      rows = await query("SELECT * FROM grades WHERE class_name = $1 ORDER BY created_at DESC", [req.query["class_name"]]);
+      rows = mid !== null
+        ? await query("SELECT * FROM grades WHERE class_name = $1 AND maktab_id = $2 ORDER BY created_at DESC", [req.query["class_name"], mid])
+        : await query("SELECT * FROM grades WHERE class_name = $1 ORDER BY created_at DESC", [req.query["class_name"]]);
     } else {
-      rows = await query("SELECT * FROM grades ORDER BY created_at DESC");
+      rows = mid !== null
+        ? await query("SELECT * FROM grades WHERE maktab_id = $1 ORDER BY created_at DESC", [mid])
+        : await query("SELECT * FROM grades ORDER BY created_at DESC");
     }
     res.json(rows);
   } catch (err) {
@@ -65,9 +71,12 @@ router.get("/grades/class/:class_name", async (req, res): Promise<void> => {
   }
 
   const { class_name } = req.params as { class_name: string };
+  const mid = schoolOf(user);
 
   try {
-    const rows = await query("SELECT * FROM grades WHERE class_name = $1 ORDER BY created_at DESC", [class_name]);
+    const rows = mid !== null
+      ? await query("SELECT * FROM grades WHERE class_name = $1 AND maktab_id = $2 ORDER BY created_at DESC", [class_name, mid])
+      : await query("SELECT * FROM grades WHERE class_name = $1 ORDER BY created_at DESC", [class_name]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: "Baholarni yuklashda xatolik", details: (err as Error).message });
@@ -96,13 +105,14 @@ router.post("/grades", async (req, res): Promise<void> => {
   }
 
   const { student_login, student_name, class_name, subject, grade, comment } = parsed.data;
+  const mid = schoolOf(user) ?? 3;
 
   try {
     const data = await queryOne(
-      `INSERT INTO grades (student_login, student_name, class_name, subject, grade, comment, teacher_login, teacher_name, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      `INSERT INTO grades (student_login, student_name, class_name, subject, grade, comment, teacher_login, teacher_name, maktab_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [student_login, student_name, class_name, subject, grade, comment ?? "",
-       user["login"] as string, user["full_name"] as string, new Date().toISOString()]
+       user["login"] as string, user["full_name"] as string, mid, new Date().toISOString()]
     );
     res.status(201).json(data);
 

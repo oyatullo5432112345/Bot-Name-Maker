@@ -14,7 +14,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { query, queryOne } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 import { notifyUser } from "../lib/notify.js";
 import { isRealTelegramId, uzDateStr, uzHourMin, uzDay, sendToChat, esc, PERIOD_TIMES, getClassChats, getChatsByPurpose, sleep } from "../lib/tg-shared.js";
 
@@ -140,58 +140,110 @@ async function findPerson(login: string): Promise<FacePerson | null> {
 
 // GET /api/faceid/overview — bugungi holat (sinflar kesimida)
 router.get("/faceid/overview", async (req, res): Promise<void> => {
-  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const u = authAs(req, MANAGE);
+  if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(u);
   try {
     const today = uzDateStr();
     const [settings, classes, recent, totals] = await Promise.all([
       getSettings(),
-      query<{ class_name: string; total: number; enrolled: number; arrived: number; late: number; left: number; early: number }>(
-        `SELECT u.class_name,
-                COUNT(*)::int AS total,
-                COUNT(fp.student_login)::int AS enrolled,
-                COUNT(fc.checked_at)::int AS arrived,
-                COUNT(fc.checked_at) FILTER (WHERE fc.status = 'late')::int AS late,
-                COUNT(fc.left_at)::int AS left,
-                COUNT(fc.left_at) FILTER (WHERE fc.left_early)::int AS early
-           FROM users u
-           LEFT JOIN face_profiles fp ON fp.student_login = u.login AND fp.consent
-           LEFT JOIN face_checkins fc ON fc.student_login = u.login AND fc.date = $1::date
-          WHERE u.class_name <> ''
-          GROUP BY u.class_name`,
-        [today]
-      ),
-      query<{ student_name: string; class_name: string; kind: string; status: string; time: string }>(
-        `SELECT student_name, class_name, kind, status, to_char(at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
-           FROM (
-             SELECT student_name, class_name, 'in' AS kind, status, checked_at AS at
-               FROM face_checkins WHERE date = $1::date AND checked_at IS NOT NULL
-             UNION ALL
-             SELECT student_name, class_name, 'out' AS kind,
-                    CASE WHEN excused THEN 'excused' WHEN left_early THEN 'early' ELSE 'normal' END, left_at
-               FROM face_checkins WHERE date = $1::date AND left_at IS NOT NULL
-           ) e
-          ORDER BY at DESC LIMIT 25`,
-        [today]
-      ),
-      queryOne<{ students: number; enrolled: number }>(
-        `SELECT (SELECT COUNT(*) FROM users)::int AS students,
-                (SELECT COUNT(*) FROM face_profiles WHERE consent)::int AS enrolled`
-      ),
+      mid !== null
+        ? query<{ class_name: string; total: number; enrolled: number; arrived: number; late: number; left: number; early: number }>(
+            `SELECT u.class_name,
+                    COUNT(*)::int AS total,
+                    COUNT(fp.student_login)::int AS enrolled,
+                    COUNT(fc.checked_at)::int AS arrived,
+                    COUNT(fc.checked_at) FILTER (WHERE fc.status = 'late')::int AS late,
+                    COUNT(fc.left_at)::int AS left,
+                    COUNT(fc.left_at) FILTER (WHERE fc.left_early)::int AS early
+               FROM users u
+               LEFT JOIN face_profiles fp ON fp.student_login = u.login AND fp.consent
+               LEFT JOIN face_checkins fc ON fc.student_login = u.login AND fc.date = $1::date
+              WHERE u.class_name <> '' AND u.maktab_id = $2
+              GROUP BY u.class_name`,
+            [today, mid]
+          )
+        : query<{ class_name: string; total: number; enrolled: number; arrived: number; late: number; left: number; early: number }>(
+            `SELECT u.class_name,
+                    COUNT(*)::int AS total,
+                    COUNT(fp.student_login)::int AS enrolled,
+                    COUNT(fc.checked_at)::int AS arrived,
+                    COUNT(fc.checked_at) FILTER (WHERE fc.status = 'late')::int AS late,
+                    COUNT(fc.left_at)::int AS left,
+                    COUNT(fc.left_at) FILTER (WHERE fc.left_early)::int AS early
+               FROM users u
+               LEFT JOIN face_profiles fp ON fp.student_login = u.login AND fp.consent
+               LEFT JOIN face_checkins fc ON fc.student_login = u.login AND fc.date = $1::date
+              WHERE u.class_name <> ''
+              GROUP BY u.class_name`,
+            [today]
+          ),
+      mid !== null
+        ? query<{ student_name: string; class_name: string; kind: string; status: string; time: string }>(
+            `SELECT student_name, class_name, kind, status, to_char(at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
+               FROM (
+                 SELECT student_name, class_name, 'in' AS kind, status, checked_at AS at
+                   FROM face_checkins WHERE date = $1::date AND checked_at IS NOT NULL AND maktab_id = $2
+                 UNION ALL
+                 SELECT student_name, class_name, 'out' AS kind,
+                        CASE WHEN excused THEN 'excused' WHEN left_early THEN 'early' ELSE 'normal' END, left_at
+                   FROM face_checkins WHERE date = $1::date AND left_at IS NOT NULL AND maktab_id = $2
+               ) e
+              ORDER BY at DESC LIMIT 25`,
+            [today, mid]
+          )
+        : query<{ student_name: string; class_name: string; kind: string; status: string; time: string }>(
+            `SELECT student_name, class_name, kind, status, to_char(at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
+               FROM (
+                 SELECT student_name, class_name, 'in' AS kind, status, checked_at AS at
+                   FROM face_checkins WHERE date = $1::date AND checked_at IS NOT NULL
+                 UNION ALL
+                 SELECT student_name, class_name, 'out' AS kind,
+                        CASE WHEN excused THEN 'excused' WHEN left_early THEN 'early' ELSE 'normal' END, left_at
+                   FROM face_checkins WHERE date = $1::date AND left_at IS NOT NULL
+               ) e
+              ORDER BY at DESC LIMIT 25`,
+            [today]
+          ),
+      mid !== null
+        ? queryOne<{ students: number; enrolled: number }>(
+            `SELECT (SELECT COUNT(*) FROM users WHERE maktab_id = $1)::int AS students,
+                    (SELECT COUNT(*) FROM face_profiles WHERE consent AND maktab_id = $1)::int AS enrolled`,
+            [mid]
+          )
+        : queryOne<{ students: number; enrolled: number }>(
+            `SELECT (SELECT COUNT(*) FROM users)::int AS students,
+                    (SELECT COUNT(*) FROM face_profiles WHERE consent)::int AS enrolled`
+          ),
     ]);
     classes.sort((x, y) => x.class_name.localeCompare(y.class_name, "uz", { numeric: true }));
     // Xodimlar (o'qituvchilar) — eshik davomati bo'yicha alohida qator
-    const staffAgg = await queryOne<{ total: number; enrolled: number; arrived: number; late: number; left: number; early: number }>(
-      `SELECT COUNT(*)::int AS total,
-              COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled,
-              COUNT(fc.checked_at)::int AS arrived,
-              COUNT(fc.checked_at) FILTER (WHERE fc.status = 'late')::int AS late,
-              COUNT(fc.left_at)::int AS left,
-              COUNT(fc.left_at) FILTER (WHERE fc.left_early)::int AS early
-         FROM staff st
-         LEFT JOIN face_profiles fp ON fp.student_login = st.login AND fp.consent
-         LEFT JOIN face_checkins fc ON fc.student_login = st.login AND fc.date = $1::date`,
-      [today]
-    ).catch(() => null);
+    const staffAgg = mid !== null
+      ? await queryOne<{ total: number; enrolled: number; arrived: number; late: number; left: number; early: number }>(
+          `SELECT COUNT(*)::int AS total,
+                  COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled,
+                  COUNT(fc.checked_at)::int AS arrived,
+                  COUNT(fc.checked_at) FILTER (WHERE fc.status = 'late')::int AS late,
+                  COUNT(fc.left_at)::int AS left,
+                  COUNT(fc.left_at) FILTER (WHERE fc.left_early)::int AS early
+             FROM staff st
+             LEFT JOIN face_profiles fp ON fp.student_login = st.login AND fp.consent
+             LEFT JOIN face_checkins fc ON fc.student_login = st.login AND fc.date = $1::date
+            WHERE st.maktab_id = $2`,
+          [today, mid]
+        ).catch(() => null)
+      : await queryOne<{ total: number; enrolled: number; arrived: number; late: number; left: number; early: number }>(
+          `SELECT COUNT(*)::int AS total,
+                  COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled,
+                  COUNT(fc.checked_at)::int AS arrived,
+                  COUNT(fc.checked_at) FILTER (WHERE fc.status = 'late')::int AS late,
+                  COUNT(fc.left_at)::int AS left,
+                  COUNT(fc.left_at) FILTER (WHERE fc.left_early)::int AS early
+             FROM staff st
+             LEFT JOIN face_profiles fp ON fp.student_login = st.login AND fp.consent
+             LEFT JOIN face_checkins fc ON fc.student_login = st.login AND fc.date = $1::date`,
+          [today]
+        ).catch(() => null);
     if (staffAgg && staffAgg.total > 0) classes.push({ class_name: STAFF_GROUP, ...staffAgg });
     const sum = (k: "arrived" | "late" | "left" | "early") => classes.reduce((acc, c) => acc + c[k], 0);
     res.json({
@@ -240,27 +292,44 @@ router.post("/faceid/settings", async (req, res): Promise<void> => {
 
 // POST /api/faceid/notify-absent — kelmaganlar ro'yxatini sinf rahbarlariga (Telegram)
 router.post("/faceid/notify-absent", async (req, res): Promise<void> => {
-  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const u = authAs(req, MANAGE);
+  if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(u);
   try {
     const today = uzDateStr();
-    const rows = await query<{ class_name: string; full_name: string }>(
-      `SELECT u.class_name, u.full_name FROM users u
-        WHERE u.class_name <> ''
-          AND NOT EXISTS (SELECT 1 FROM face_checkins fc
-                           WHERE fc.student_login = u.login AND fc.date = $1::date AND fc.checked_at IS NOT NULL)
-        ORDER BY u.class_name, u.full_name`,
-      [today]
-    );
+    const rows = mid !== null
+      ? await query<{ class_name: string; full_name: string }>(
+          `SELECT u.class_name, u.full_name FROM users u
+            WHERE u.class_name <> '' AND u.maktab_id = $2
+              AND NOT EXISTS (SELECT 1 FROM face_checkins fc
+                               WHERE fc.student_login = u.login AND fc.date = $1::date AND fc.checked_at IS NOT NULL)
+            ORDER BY u.class_name, u.full_name`,
+          [today, mid]
+        )
+      : await query<{ class_name: string; full_name: string }>(
+          `SELECT u.class_name, u.full_name FROM users u
+            WHERE u.class_name <> ''
+              AND NOT EXISTS (SELECT 1 FROM face_checkins fc
+                               WHERE fc.student_login = u.login AND fc.date = $1::date AND fc.checked_at IS NOT NULL)
+            ORDER BY u.class_name, u.full_name`,
+          [today]
+        );
     const byClass = new Map<string, string[]>();
     for (const r of rows) byClass.set(r.class_name, [...(byClass.get(r.class_name) ?? []), r.full_name]);
 
     let sent = 0;
     for (const [className, names] of byClass) {
-      const heads = await query<{ telegram_id: number }>(
-        `SELECT s.telegram_id FROM staff s JOIN classes c ON c.id = s.class_id
-          WHERE c.name = $1 AND s.telegram_id IS NOT NULL`,
-        [className]
-      );
+      const heads = mid !== null
+        ? await query<{ telegram_id: number }>(
+            `SELECT s.telegram_id FROM staff s JOIN classes c ON c.id = s.class_id
+              WHERE c.name = $1 AND s.telegram_id IS NOT NULL AND c.maktab_id = $2`,
+            [className, mid]
+          )
+        : await query<{ telegram_id: number }>(
+            `SELECT s.telegram_id FROM staff s JOIN classes c ON c.id = s.class_id
+              WHERE c.name = $1 AND s.telegram_id IS NOT NULL`,
+            [className]
+          );
       if (heads.length === 0) continue;
       const text =
         `🚪 <b>${esc(className)} — Face ID orqali kelmaganlar</b> (${today.split("-").reverse().join(".")}, ${uzTime()})\n\n` +
@@ -274,9 +343,14 @@ router.post("/faceid/notify-absent", async (req, res): Promise<void> => {
       `🚪 <b>Face ID — bugungi umumiy holat</b> (${today.split("-").reverse().join(".")}, ${uzTime()})\n\n` +
       `Hali kelmaganlar: <b>${rows.length}</b> ta (${byClass.size} sinf)\n` +
       `Sinf rahbarlariga xabar yuborildi: ${sent} ta`;
-    const dirs = await query<{ telegram_id: number }>(
-      "SELECT telegram_id FROM staff WHERE role = 'director' AND telegram_id IS NOT NULL"
-    ).catch(() => [] as { telegram_id: number }[]);
+    const dirs = mid !== null
+      ? await query<{ telegram_id: number }>(
+          "SELECT telegram_id FROM staff WHERE role = 'director' AND telegram_id IS NOT NULL AND maktab_id = $1",
+          [mid]
+        ).catch(() => [] as { telegram_id: number }[])
+      : await query<{ telegram_id: number }>(
+          "SELECT telegram_id FROM staff WHERE role = 'director' AND telegram_id IS NOT NULL"
+        ).catch(() => [] as { telegram_id: number }[]);
     for (const dd of dirs) await sendToChat(dd.telegram_id, summary);
     const adminId = Number(process.env["ADMIN_ID"] ?? 0);
     if (isRealTelegramId(adminId)) await sendToChat(adminId, summary);
@@ -299,28 +373,50 @@ router.get("/faceid/students", async (req, res): Promise<void> => {
   const className = String(req.query["class_name"] ?? "");
   if (!className) { res.status(400).json({ error: "class_name kerak" }); return; }
   if (!canTouchClass(u, className)) { res.status(403).json({ error: "Bu sinf sizga biriktirilmagan" }); return; }
+  const mid = schoolOf(u);
   // Xodimlar (o'qituvchilar) guruhi — faqat rahbariyat
   if (className === STAFF_GROUP) {
-    const staffRows = await query<{ login: string; full_name: string; enrolled: boolean; samples: number; updated_at: string | null }>(
-      `SELECT s.login, s.full_name,
-              (fp.student_login IS NOT NULL AND fp.consent) AS enrolled,
-              COALESCE(jsonb_array_length(fp.descriptors), 0)::int AS samples,
-              fp.updated_at::text AS updated_at
-         FROM staff s LEFT JOIN face_profiles fp ON fp.student_login = s.login
-        ORDER BY s.full_name`
-    );
+    const staffRows = mid !== null
+      ? await query<{ login: string; full_name: string; enrolled: boolean; samples: number; updated_at: string | null }>(
+          `SELECT s.login, s.full_name,
+                  (fp.student_login IS NOT NULL AND fp.consent) AS enrolled,
+                  COALESCE(jsonb_array_length(fp.descriptors), 0)::int AS samples,
+                  fp.updated_at::text AS updated_at
+             FROM staff s LEFT JOIN face_profiles fp ON fp.student_login = s.login
+            WHERE s.maktab_id = $1
+            ORDER BY s.full_name`,
+          [mid]
+        )
+      : await query<{ login: string; full_name: string; enrolled: boolean; samples: number; updated_at: string | null }>(
+          `SELECT s.login, s.full_name,
+                  (fp.student_login IS NOT NULL AND fp.consent) AS enrolled,
+                  COALESCE(jsonb_array_length(fp.descriptors), 0)::int AS samples,
+                  fp.updated_at::text AS updated_at
+             FROM staff s LEFT JOIN face_profiles fp ON fp.student_login = s.login
+            ORDER BY s.full_name`
+        );
     res.json(staffRows);
     return;
   }
-  const rows = await query<{ login: string; full_name: string; enrolled: boolean; samples: number; updated_at: string | null }>(
-    `SELECT u.login, u.full_name,
-            (fp.student_login IS NOT NULL AND fp.consent) AS enrolled,
-            COALESCE(jsonb_array_length(fp.descriptors), 0)::int AS samples,
-            fp.updated_at::text AS updated_at
-       FROM users u LEFT JOIN face_profiles fp ON fp.student_login = u.login
-      WHERE u.class_name = $1 ORDER BY u.full_name`,
-    [className]
-  );
+  const rows = mid !== null
+    ? await query<{ login: string; full_name: string; enrolled: boolean; samples: number; updated_at: string | null }>(
+        `SELECT u.login, u.full_name,
+                (fp.student_login IS NOT NULL AND fp.consent) AS enrolled,
+                COALESCE(jsonb_array_length(fp.descriptors), 0)::int AS samples,
+                fp.updated_at::text AS updated_at
+           FROM users u LEFT JOIN face_profiles fp ON fp.student_login = u.login
+          WHERE u.class_name = $1 AND u.maktab_id = $2 ORDER BY u.full_name`,
+        [className, mid]
+      )
+    : await query<{ login: string; full_name: string; enrolled: boolean; samples: number; updated_at: string | null }>(
+        `SELECT u.login, u.full_name,
+                (fp.student_login IS NOT NULL AND fp.consent) AS enrolled,
+                COALESCE(jsonb_array_length(fp.descriptors), 0)::int AS samples,
+                fp.updated_at::text AS updated_at
+           FROM users u LEFT JOIN face_profiles fp ON fp.student_login = u.login
+          WHERE u.class_name = $1 ORDER BY u.full_name`,
+        [className]
+      );
   res.json(rows);
 });
 
@@ -328,21 +424,37 @@ router.get("/faceid/students", async (req, res): Promise<void> => {
 router.get("/faceid/classes", async (req, res): Promise<void> => {
   const u = authAs(req, ENROLL);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
-  const rows = await query<{ class_name: string; total: number; enrolled: number }>(
-    `SELECT u.class_name, COUNT(*)::int AS total, COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled
-       FROM users u LEFT JOIN face_profiles fp ON fp.student_login = u.login
-      WHERE u.class_name <> '' GROUP BY u.class_name`
-  );
+  const mid = schoolOf(u);
+  const rows = mid !== null
+    ? await query<{ class_name: string; total: number; enrolled: number }>(
+        `SELECT u.class_name, COUNT(*)::int AS total, COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled
+           FROM users u LEFT JOIN face_profiles fp ON fp.student_login = u.login
+          WHERE u.class_name <> '' AND u.maktab_id = $1 GROUP BY u.class_name`,
+        [mid]
+      )
+    : await query<{ class_name: string; total: number; enrolled: number }>(
+        `SELECT u.class_name, COUNT(*)::int AS total, COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled
+           FROM users u LEFT JOIN face_profiles fp ON fp.student_login = u.login
+          WHERE u.class_name <> '' GROUP BY u.class_name`
+      );
   const list = rows
     .filter((r) => canTouchClass(u, r.class_name))
     .sort((a, b) => a.class_name.localeCompare(b.class_name, "uz", { numeric: true }));
   // Xodimlar (o'qituvchilar) guruhini oxiriga qo'shamiz — faqat rahbariyat uchun
   if (MANAGE.includes(u.role)) {
-    const s = await queryOne<{ total: number; enrolled: number }>(
-      `SELECT COUNT(*)::int AS total,
-              COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled
-         FROM staff st LEFT JOIN face_profiles fp ON fp.student_login = st.login`
-    );
+    const s = mid !== null
+      ? await queryOne<{ total: number; enrolled: number }>(
+          `SELECT COUNT(*)::int AS total,
+                  COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled
+             FROM staff st LEFT JOIN face_profiles fp ON fp.student_login = st.login
+            WHERE st.maktab_id = $1`,
+          [mid]
+        )
+      : await queryOne<{ total: number; enrolled: number }>(
+          `SELECT COUNT(*)::int AS total,
+                  COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled
+             FROM staff st LEFT JOIN face_profiles fp ON fp.student_login = st.login`
+        );
     if (s && s.total > 0) list.push({ class_name: STAFF_GROUP, total: s.total, enrolled: s.enrolled });
   }
   res.json(list);
@@ -367,6 +479,7 @@ router.post("/faceid/enroll", async (req, res): Promise<void> => {
   const student = await findPerson(student_login);
   if (!student) { res.status(404).json({ error: "Foydalanuvchi topilmadi" }); return; }
   if (!canTouchClass(u, student.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
+  const mid = schoolOf(u);
 
   // Namunalarning o'zi bir-biriga mosmi (kadrda boshqa odam bo'lib qolmaganmi).
   // Namunalar turli burchakdan (to'g'ri → yon) olinadi, shuning uchun "zanjir" tekshiruvi:
@@ -386,12 +499,19 @@ router.post("/faceid/enroll", async (req, res): Promise<void> => {
   // har xil odamlarda ham bir-biriga yaqinroq bo'ladi va keraksiz ogohlantirish beradi.
   if (!force) {
     const front = ds.slice(0, 3);
-    const others = await query<{ student_login: string; descriptors: number[][]; full_name: string; class_name: string }>(
-      `SELECT fp.student_login, fp.descriptors, u.full_name, u.class_name
-         FROM face_profiles fp JOIN users u ON u.login = fp.student_login
-        WHERE fp.student_login <> $1 AND fp.consent`,
-      [student_login]
-    );
+    const others = mid !== null
+      ? await query<{ student_login: string; descriptors: number[][]; full_name: string; class_name: string }>(
+          `SELECT fp.student_login, fp.descriptors, u.full_name, u.class_name
+             FROM face_profiles fp JOIN users u ON u.login = fp.student_login
+            WHERE fp.student_login <> $1 AND fp.consent AND fp.maktab_id = $2`,
+          [student_login, mid]
+        )
+      : await query<{ student_login: string; descriptors: number[][]; full_name: string; class_name: string }>(
+          `SELECT fp.student_login, fp.descriptors, u.full_name, u.class_name
+             FROM face_profiles fp JOIN users u ON u.login = fp.student_login
+            WHERE fp.student_login <> $1 AND fp.consent`,
+          [student_login]
+        );
     let best: { name: string; class_name: string; d: number } | null = null;
     for (const o of others) {
       for (const od of (o.descriptors ?? []).slice(0, 3)) {
@@ -413,12 +533,12 @@ router.post("/faceid/enroll", async (req, res): Promise<void> => {
 
   const rounded = ds.map((d) => d.map((v) => Math.round(v * 1e5) / 1e5));
   await query(
-    `INSERT INTO face_profiles (student_login, descriptors, consent, consent_by, enrolled_by, updated_at)
-     VALUES ($1, $2, TRUE, $3, $3, NOW())
+    `INSERT INTO face_profiles (student_login, descriptors, consent, consent_by, enrolled_by, updated_at, maktab_id)
+     VALUES ($1, $2, TRUE, $3, $3, NOW(), $4)
      ON CONFLICT (student_login) DO UPDATE SET
        descriptors = EXCLUDED.descriptors, consent = TRUE, consent_by = EXCLUDED.consent_by,
        enrolled_by = EXCLUDED.enrolled_by, updated_at = NOW()`,
-    [student_login, JSON.stringify(rounded), String(u.login)]
+    [student_login, JSON.stringify(rounded), String(u.login), mid ?? 3]
   );
   res.json({ ok: true, name: student.full_name, samples: rounded.length });
 });
@@ -449,26 +569,47 @@ router.post("/faceid/reset", async (req, res): Promise<void> => {
 
 // GET /api/faceid/descriptors — kiosk uchun hamma yuz izlari (faqat rozilik bilan) + bugungi holat
 router.get("/faceid/descriptors", async (req, res): Promise<void> => {
-  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const au = authAs(req, MANAGE);
+  if (!au) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(au);
   const today = uzDateStr();
-  const rows = await query<{
-    login: string; name: string; class_name: string; d: number[][];
-    arrived: string | null; arrived_ms: number | null; left: string | null;
-  }>(
-    `SELECT fp.student_login AS login,
-            COALESCE(u.full_name, s.full_name) AS name,
-            COALESCE(NULLIF(u.class_name, ''), '${STAFF_GROUP}') AS class_name,
-            fp.descriptors AS d,
-            to_char(fc.checked_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS arrived,
-            (EXTRACT(EPOCH FROM fc.checked_at) * 1000)::float8 AS arrived_ms,
-            to_char(fc.left_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS left
-       FROM face_profiles fp
-       LEFT JOIN users u ON u.login = fp.student_login
-       LEFT JOIN staff s ON s.login = fp.student_login
-       LEFT JOIN face_checkins fc ON fc.student_login = fp.student_login AND fc.date = $1::date
-      WHERE fp.consent AND (u.login IS NOT NULL OR s.login IS NOT NULL)`,
-    [today]
-  );
+  const rows = mid !== null
+    ? await query<{
+        login: string; name: string; class_name: string; d: number[][];
+        arrived: string | null; arrived_ms: number | null; left: string | null;
+      }>(
+        `SELECT fp.student_login AS login,
+                COALESCE(u.full_name, s.full_name) AS name,
+                COALESCE(NULLIF(u.class_name, ''), '${STAFF_GROUP}') AS class_name,
+                fp.descriptors AS d,
+                to_char(fc.checked_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS arrived,
+                (EXTRACT(EPOCH FROM fc.checked_at) * 1000)::float8 AS arrived_ms,
+                to_char(fc.left_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS left
+           FROM face_profiles fp
+           LEFT JOIN users u ON u.login = fp.student_login
+           LEFT JOIN staff s ON s.login = fp.student_login
+           LEFT JOIN face_checkins fc ON fc.student_login = fp.student_login AND fc.date = $1::date
+          WHERE fp.consent AND (u.login IS NOT NULL OR s.login IS NOT NULL) AND fp.maktab_id = $2`,
+        [today, mid]
+      )
+    : await query<{
+        login: string; name: string; class_name: string; d: number[][];
+        arrived: string | null; arrived_ms: number | null; left: string | null;
+      }>(
+        `SELECT fp.student_login AS login,
+                COALESCE(u.full_name, s.full_name) AS name,
+                COALESCE(NULLIF(u.class_name, ''), '${STAFF_GROUP}') AS class_name,
+                fp.descriptors AS d,
+                to_char(fc.checked_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS arrived,
+                (EXTRACT(EPOCH FROM fc.checked_at) * 1000)::float8 AS arrived_ms,
+                to_char(fc.left_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS left
+           FROM face_profiles fp
+           LEFT JOIN users u ON u.login = fp.student_login
+           LEFT JOIN staff s ON s.login = fp.student_login
+           LEFT JOIN face_checkins fc ON fc.student_login = fp.student_login AND fc.date = $1::date
+          WHERE fp.consent AND (u.login IS NOT NULL OR s.login IS NOT NULL)`,
+        [today]
+      );
   const [settings, starts] = await Promise.all([getSettings(), classStarts()]);
   res.setHeader("Cache-Control", "no-store");
   res.json({ date: today, now: Date.now(), settings, starts, people: rows });
@@ -522,7 +663,8 @@ async function handleScan(
   login: string,
   mode: ScanMode,
   distance: number | null,
-  device: string
+  device: string,
+  mid: number | null
 ): Promise<ScanResult | null> {
   const st = await findPerson(login);
   if (!st) return null;
@@ -564,24 +706,24 @@ async function handleScan(
     const startsAt = (await classStarts())[st.class_name] ?? settings.late_after;
     const status = time > startsAt ? "late" : "present";
     await query(
-      `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, distance, device)
-       VALUES ($1, $2, $3, $4::date, NOW(), $5, $6, $7)
+      `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, distance, device, maktab_id)
+       VALUES ($1, $2, $3, $4::date, NOW(), $5, $6, $7, $8)
        ON CONFLICT (student_login, date) DO UPDATE SET
          checked_at = COALESCE(face_checkins.checked_at, EXCLUDED.checked_at),
          status = CASE WHEN face_checkins.checked_at IS NULL THEN EXCLUDED.status ELSE face_checkins.status END`,
-      [login, st.full_name, st.class_name, today, status, distance, device]
+      [login, st.full_name, st.class_name, today, status, distance, device, mid ?? 3]
     );
     // Davomat (sinf jurnali) faqat O'QUVCHILAR uchun. Xodimlar (o'qituvchi) —
     // faqat eshik davomati (face_checkins), sinf jurnaliga yozilmaydi.
     if (st.kind === "student") {
       const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [st.class_name]);
       await query(
-        `INSERT INTO attendance (class_id, class_name, student_login, student_name, date, status, note, teacher_login)
-         VALUES ($1, $2, $3, $4, $5::date, $6, $7, 'faceid')
+        `INSERT INTO attendance (class_id, class_name, student_login, student_name, date, status, note, teacher_login, maktab_id)
+         VALUES ($1, $2, $3, $4, $5::date, $6, $7, 'faceid', $8)
          ON CONFLICT (student_login, date) DO UPDATE
            SET status = EXCLUDED.status, note = EXCLUDED.note, teacher_login = 'faceid'
            WHERE attendance.status = 'absent'`,
-        [cls?.id ?? null, st.class_name, login, st.full_name, today, status, `Face ID: keldi ${time}`]
+        [cls?.id ?? null, st.class_name, login, st.full_name, today, status, `Face ID: keldi ${time}`, mid ?? 3]
       ).catch((err) => logger.warn({ err }, "Face ID: davomatga yozilmadi"));
     }
 
@@ -600,10 +742,10 @@ async function handleScan(
   const end = await lessonsEnd(st.class_name, settings.default_end);
   const early = !!end && time < end;
   await query(
-    `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, distance, device, left_at, left_early)
-     VALUES ($1, $2, $3, $4::date, NULL, 'present', $5, $6, NOW(), $7)
+    `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, distance, device, left_at, left_early, maktab_id)
+     VALUES ($1, $2, $3, $4::date, NULL, 'present', $5, $6, NOW(), $7, $8)
      ON CONFLICT (student_login, date) DO UPDATE SET left_at = NOW(), left_early = EXCLUDED.left_early`,
-    [login, st.full_name, st.class_name, today, distance, device, early]
+    [login, st.full_name, st.class_name, today, distance, device, early, mid ?? 3]
   );
   if (st.kind === "student") {
     await query(
@@ -621,12 +763,14 @@ async function handleScan(
 
 // POST /api/faceid/scan { student_login, mode: "auto" | "in" | "out", distance, device }
 router.post("/faceid/scan", async (req, res): Promise<void> => {
-  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const au = authAs(req, MANAGE);
+  if (!au) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(au);
   const { student_login, mode, distance, device } = req.body as { student_login?: string; mode?: string; distance?: number; device?: string };
   if (!student_login) { res.status(400).json({ error: "student_login kerak" }); return; }
   const m: ScanMode = mode === "in" || mode === "out" ? mode : "auto";
   try {
-    const r = await handleScan(student_login, m, typeof distance === "number" ? distance : null, String(device ?? "").slice(0, 60));
+    const r = await handleScan(student_login, m, typeof distance === "number" ? distance : null, String(device ?? "").slice(0, 60), mid);
     if (!r) { res.status(404).json({ error: "O'quvchi topilmadi" }); return; }
     res.json(r);
   } catch (err) {
@@ -647,7 +791,14 @@ router.get("/faceid/today", async (req, res): Promise<void> => {
   if (!className) { res.status(400).json({ error: "class_name kerak" }); return; }
   if (!canTouchClass(u, className)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
   const today = uzDateStr();
+  const mid = schoolOf(u);
   const isStaff = className === STAFF_GROUP;
+  const where = isStaff
+    ? (mid !== null ? "WHERE s.maktab_id = $2" : "")
+    : (mid !== null ? "WHERE s.class_name = $2 AND s.maktab_id = $3" : "WHERE s.class_name = $2");
+  const params: unknown[] = isStaff
+    ? (mid !== null ? [today, mid] : [today])
+    : (mid !== null ? [today, className, mid] : [today, className]);
   const sql =
     `SELECT s.login, s.full_name,
             to_char(fc.checked_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS arrived,
@@ -657,9 +808,9 @@ router.get("/faceid/today", async (req, res): Promise<void> => {
             COALESCE(fc.excused, false) AS excused
        FROM ${isStaff ? "staff" : "users"} s
        LEFT JOIN face_checkins fc ON fc.student_login = s.login AND fc.date = $1::date
-      ${isStaff ? "" : "WHERE s.class_name = $2"}
+      ${where}
       ORDER BY s.full_name`;
-  const rows = await query(sql, isStaff ? [today] : [today, className]);
+  const rows = await query(sql, params);
   res.json(rows);
 });
 
@@ -674,6 +825,7 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
   const person = await findPerson(student_login);
   if (!person) { res.status(404).json({ error: "Topilmadi" }); return; }
   if (!canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
+  const mid = schoolOf(u);
 
   const today = uzDateStr();
   const settings = await getSettings();
@@ -690,10 +842,10 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
   // Sababli kelmagan (ruxsat bilan yo'q) — "sababsizlar" ro'yxatidan chiqadi
   if (action === "absent_excused") {
     await query(
-      `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device, excused)
-       VALUES ($1, $2, $3, $4::date, NULL, 'excused', 'manual', TRUE)
+      `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device, excused, maktab_id)
+       VALUES ($1, $2, $3, $4::date, NULL, 'excused', 'manual', TRUE, $5)
        ON CONFLICT (student_login, date) DO UPDATE SET excused = TRUE, status = 'excused', student_name = EXCLUDED.student_name`,
-      [student_login, person.full_name, person.class_name, today]
+      [student_login, person.full_name, person.class_name, today, mid ?? 3]
     );
     res.json({ ok: true, excused: true });
     return;
@@ -703,11 +855,11 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
     const startsAt = person.kind === "student" ? ((await classStarts())[person.class_name] ?? settings.late_after) : settings.late_after;
     const status = shownTime > startsAt ? "late" : "present";
     await query(
-      `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device)
-       VALUES ($1, $2, $3, $4::date, COALESCE($5::timestamptz, NOW()), $6, 'manual')
+      `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device, maktab_id)
+       VALUES ($1, $2, $3, $4::date, COALESCE($5::timestamptz, NOW()), $6, 'manual', $7)
        ON CONFLICT (student_login, date) DO UPDATE SET
          checked_at = COALESCE($5::timestamptz, NOW()), status = $6, student_name = EXCLUDED.student_name`,
-      [student_login, person.full_name, person.class_name, today, ts, status]
+      [student_login, person.full_name, person.class_name, today, ts, status, mid ?? 3]
     );
     res.json({ ok: true, status });
     return;
@@ -718,22 +870,24 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
   const end = await lessonsEnd(person.class_name, settings.default_end);
   const early = !!end && shownTime < end;
   await query(
-    `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device, left_at, left_early, excused)
-     VALUES ($1, $2, $3, $4::date, NULL, 'present', 'manual', COALESCE($5::timestamptz, NOW()), $6, $7)
+    `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device, left_at, left_early, excused, maktab_id)
+     VALUES ($1, $2, $3, $4::date, NULL, 'present', 'manual', COALESCE($5::timestamptz, NOW()), $6, $7, $8)
      ON CONFLICT (student_login, date) DO UPDATE SET
        left_at = COALESCE($5::timestamptz, NOW()), left_early = $6, excused = $7`,
-    [student_login, person.full_name, person.class_name, today, ts, early, excused]
+    [student_login, person.full_name, person.class_name, today, ts, early, excused, mid ?? 3]
   );
   res.json({ ok: true, early, excused, lessons_end: end });
 });
 
 // POST /api/faceid/checkin — eski versiya bilan moslik (faqat "keldi")
 router.post("/faceid/checkin", async (req, res): Promise<void> => {
-  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const au = authAs(req, MANAGE);
+  if (!au) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(au);
   const { student_login, distance, device } = req.body as { student_login?: string; distance?: number; device?: string };
   if (!student_login) { res.status(400).json({ error: "student_login kerak" }); return; }
   try {
-    const r = await handleScan(student_login, "in", typeof distance === "number" ? distance : null, String(device ?? "").slice(0, 60));
+    const r = await handleScan(student_login, "in", typeof distance === "number" ? distance : null, String(device ?? "").slice(0, 60), mid);
     if (!r) { res.status(404).json({ error: "O'quvchi topilmadi" }); return; }
     res.json({ ...r, ok: r.event === "in", already: r.event === "already_in" });
   } catch (err) {

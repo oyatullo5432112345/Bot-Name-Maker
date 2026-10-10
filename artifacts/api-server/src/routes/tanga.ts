@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -142,16 +142,27 @@ router.get("/tanga/my", async (req, res): Promise<void> => {
 router.get("/tanga/leaderboard", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const mid = schoolOf(user);
 
   try {
     // All students with grade tanga
-    const gradeRows = await query<{ student_login: string; student_name: string; class_name: string; day: string; grade_sum: string }>(
-      `SELECT student_login, student_name, class_name,
-              DATE(created_at AT TIME ZONE 'Asia/Tashkent') AS day,
-              SUM(grade) AS grade_sum
-       FROM grades
-       GROUP BY student_login, student_name, class_name, day`
-    );
+    const gradeRows = mid !== null
+      ? await query<{ student_login: string; student_name: string; class_name: string; day: string; grade_sum: string }>(
+          `SELECT student_login, student_name, class_name,
+                  DATE(created_at AT TIME ZONE 'Asia/Tashkent') AS day,
+                  SUM(grade) AS grade_sum
+           FROM grades
+           WHERE maktab_id = $1
+           GROUP BY student_login, student_name, class_name, day`,
+          [mid]
+        )
+      : await query<{ student_login: string; student_name: string; class_name: string; day: string; grade_sum: string }>(
+          `SELECT student_login, student_name, class_name,
+                  DATE(created_at AT TIME ZONE 'Asia/Tashkent') AS day,
+                  SUM(grade) AS grade_sum
+           FROM grades
+           GROUP BY student_login, student_name, class_name, day`
+        );
 
     const gradeMap = new Map<string, { login: string; name: string; class_name: string; grade_tanga: number }>();
     for (const r of gradeRows) {
@@ -173,15 +184,25 @@ router.get("/tanga/leaderboard", async (req, res): Promise<void> => {
     }
 
     // Bonus tanga
-    const bonusRows = await query<{ user_login: string; total: string }>(
-      "SELECT user_login, SUM(amount) AS total FROM tanga_logs GROUP BY user_login"
-    );
+    const bonusRows = mid !== null
+      ? await query<{ user_login: string; total: string }>(
+          "SELECT user_login, SUM(amount) AS total FROM tanga_logs WHERE maktab_id = $1 GROUP BY user_login",
+          [mid]
+        )
+      : await query<{ user_login: string; total: string }>(
+          "SELECT user_login, SUM(amount) AS total FROM tanga_logs GROUP BY user_login"
+        );
     const bonusMap = new Map(bonusRows.map(r => [r.user_login, parseInt(r.total)]));
 
     // Spent
-    const spentRows = await query<{ user_login: string; total: string }>(
-      "SELECT user_login, SUM(cost) AS total FROM shop_purchases GROUP BY user_login"
-    );
+    const spentRows = mid !== null
+      ? await query<{ user_login: string; total: string }>(
+          "SELECT user_login, SUM(cost) AS total FROM shop_purchases WHERE maktab_id = $1 GROUP BY user_login",
+          [mid]
+        )
+      : await query<{ user_login: string; total: string }>(
+          "SELECT user_login, SUM(cost) AS total FROM shop_purchases GROUP BY user_login"
+        );
     const spentMap = new Map(spentRows.map(r => [r.user_login, parseInt(r.total)]));
 
     // Combine all users
@@ -233,14 +254,16 @@ router.post("/tanga/bonus", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Ruxsat yo'q" }); return;
   }
 
+  const mid = schoolOf(user);
+
   const parsed = BonusBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const { user_login, amount, reason, source } = parsed.data;
   try {
     await query(
-      "INSERT INTO tanga_logs (user_login, amount, reason, source) VALUES ($1, $2, $3, $4)",
-      [user_login, amount, reason, source]
+      "INSERT INTO tanga_logs (user_login, amount, reason, source, maktab_id) VALUES ($1, $2, $3, $4, $5)",
+      [user_login, amount, reason, source, mid ?? 3]
     );
     res.json({ ok: true });
   } catch (err) {
@@ -257,6 +280,7 @@ router.post("/tanga/daily-login", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return;
   }
   const login = user["login"] as string;
+  const mid = schoolOf(user);
 
   try {
     const todayStart = new Date();
@@ -273,8 +297,8 @@ router.post("/tanga/daily-login", async (req, res): Promise<void> => {
     }
 
     await query(
-      "INSERT INTO tanga_logs (user_login, amount, reason, source) VALUES ($1, 2, 'Saytga kunlik kirish', 'daily_login')",
-      [login]
+      "INSERT INTO tanga_logs (user_login, amount, reason, source, maktab_id) VALUES ($1, 2, 'Saytga kunlik kirish', 'daily_login', $2)",
+      [login, mid ?? 3]
     );
     res.json({ ok: true, amount: 2, message: "+2 tanga! Har kuni keling!" });
   } catch (err) {
@@ -313,6 +337,7 @@ router.post("/tanga/shop/buy", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return;
   }
   const login = user["login"] as string;
+  const mid = schoolOf(user);
 
   const parsed = BuyBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -343,8 +368,8 @@ router.post("/tanga/shop/buy", async (req, res): Promise<void> => {
     }
 
     await query(
-      "INSERT INTO shop_purchases (user_login, item_id, item_name, cost) VALUES ($1, $2, $3, $4)",
-      [login, item.id, item.name, item.cost]
+      "INSERT INTO shop_purchases (user_login, item_id, item_name, cost, maktab_id) VALUES ($1, $2, $3, $4, $5)",
+      [login, item.id, item.name, item.cost, mid ?? 3]
     );
 
     res.json({ ok: true, message: `${item.emoji} ${item.name} muvaffaqiyatli sotib olindi!` });

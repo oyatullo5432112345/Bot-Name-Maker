@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -56,13 +56,24 @@ router.get("/monitoring/tests", async (req, res): Promise<void> => {
   const user = requireStaff(req.headers.authorization);
   if (!user) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
-  const rows = await query(
-    `SELECT t.*, COUNT(a.id)::int AS attempts_count
-     FROM monitoring_tests t
-     LEFT JOIN monitoring_attempts a ON a.test_id = t.id
-     GROUP BY t.id
-     ORDER BY t.created_at DESC`
-  );
+  const mid = schoolOf(user);
+  const rows = mid !== null
+    ? await query(
+        `SELECT t.*, COUNT(a.id)::int AS attempts_count
+         FROM monitoring_tests t
+         LEFT JOIN monitoring_attempts a ON a.test_id = t.id
+         WHERE t.maktab_id = $1
+         GROUP BY t.id
+         ORDER BY t.created_at DESC`,
+        [mid]
+      )
+    : await query(
+        `SELECT t.*, COUNT(a.id)::int AS attempts_count
+         FROM monitoring_tests t
+         LEFT JOIN monitoring_attempts a ON a.test_id = t.id
+         GROUP BY t.id
+         ORDER BY t.created_at DESC`
+      );
   res.json(rows);
 });
 
@@ -102,6 +113,7 @@ router.post("/monitoring/tests", async (req, res): Promise<void> => {
     return;
   }
   const d = parsed.data;
+  const mid = schoolOf(user);
 
   // Variantli bo'lsa har savolda kamida 2 variant va to'g'ri javob indeksi bo'lishi shart;
   // variantsiz bo'lsa to'g'ri javob matni bo'lishi shart.
@@ -121,26 +133,26 @@ router.post("/monitoring/tests", async (req, res): Promise<void> => {
     const test = await queryOne<{ id: string }>(
       `INSERT INTO monitoring_tests
          (title, subject, class_name, quarter, academic_year, duration_minutes, is_anonymous,
-          show_result_immediately, has_options, scheduled_open_at, status, created_by_login, timed, pause_seconds)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+          show_result_immediately, has_options, scheduled_open_at, status, created_by_login, timed, pause_seconds, maktab_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING id`,
       [d.title, d.subject, d.class_name ?? null, d.quarter, d.academic_year,
        d.duration_minutes, d.is_anonymous, d.show_result_immediately, d.has_options,
-       d.scheduled_open_at ?? null, "draft", user["login"] as string, d.timed, d.pause_seconds]
+       d.scheduled_open_at ?? null, "draft", user["login"] as string, d.timed, d.pause_seconds, mid ?? 3]
     );
     if (!test) { res.status(500).json({ error: "Test yaratilmadi" }); return; }
 
     for (let i = 0; i < d.questions.length; i++) {
       const q = d.questions[i]!;
       await query(
-        `INSERT INTO monitoring_questions (test_id, question, options, correct_index, correct_text, order_index, difficulty, time_seconds)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        `INSERT INTO monitoring_questions (test_id, question, options, correct_index, correct_text, order_index, difficulty, time_seconds, maktab_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [
           test.id, q.question,
           d.has_options ? JSON.stringify(q.options) : "[]",
           d.has_options ? q.correct_index : null,
           d.has_options ? null : q.correct_text!.trim(),
-          i, q.difficulty, q.time_seconds ?? null,
+          i, q.difficulty, q.time_seconds ?? null, mid ?? 3,
         ]
       );
     }
@@ -203,20 +215,40 @@ router.get("/monitoring/analytics/overview", async (req, res): Promise<void> => 
   const user = requireAnalyticsStaff(req.headers.authorization);
   if (!user) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
-  const overall = await queryOne<{ total_score: string; total_max: string; attempts: string }>(
-    `SELECT COALESCE(SUM(score),0) AS total_score, COALESCE(SUM(total),0) AS total_max, COUNT(*) AS attempts
-     FROM monitoring_attempts`
-  );
+  const mid = schoolOf(user);
 
-  const classRanking = await query<{ class_name: string; total_score: string; total_max: string; attempts: string }>(
-    `SELECT class_name, SUM(score) AS total_score, SUM(total) AS total_max, COUNT(*) AS attempts
-     FROM monitoring_attempts GROUP BY class_name ORDER BY class_name`
-  );
+  const overall = mid !== null
+    ? await queryOne<{ total_score: string; total_max: string; attempts: string }>(
+        `SELECT COALESCE(SUM(score),0) AS total_score, COALESCE(SUM(total),0) AS total_max, COUNT(*) AS attempts
+         FROM monitoring_attempts WHERE maktab_id = $1`,
+        [mid]
+      )
+    : await queryOne<{ total_score: string; total_max: string; attempts: string }>(
+        `SELECT COALESCE(SUM(score),0) AS total_score, COALESCE(SUM(total),0) AS total_max, COUNT(*) AS attempts
+         FROM monitoring_attempts`
+      );
 
-  const studentRanking = await query<{ student_login: string; student_name: string; class_name: string; total_score: string; total_max: string; attempts: string }>(
-    `SELECT student_login, student_name, class_name, SUM(score) AS total_score, SUM(total) AS total_max, COUNT(*) AS attempts
-     FROM monitoring_attempts GROUP BY student_login, student_name, class_name`
-  );
+  const classRanking = mid !== null
+    ? await query<{ class_name: string; total_score: string; total_max: string; attempts: string }>(
+        `SELECT class_name, SUM(score) AS total_score, SUM(total) AS total_max, COUNT(*) AS attempts
+         FROM monitoring_attempts WHERE maktab_id = $1 GROUP BY class_name ORDER BY class_name`,
+        [mid]
+      )
+    : await query<{ class_name: string; total_score: string; total_max: string; attempts: string }>(
+        `SELECT class_name, SUM(score) AS total_score, SUM(total) AS total_max, COUNT(*) AS attempts
+         FROM monitoring_attempts GROUP BY class_name ORDER BY class_name`
+      );
+
+  const studentRanking = mid !== null
+    ? await query<{ student_login: string; student_name: string; class_name: string; total_score: string; total_max: string; attempts: string }>(
+        `SELECT student_login, student_name, class_name, SUM(score) AS total_score, SUM(total) AS total_max, COUNT(*) AS attempts
+         FROM monitoring_attempts WHERE maktab_id = $1 GROUP BY student_login, student_name, class_name`,
+        [mid]
+      )
+    : await query<{ student_login: string; student_name: string; class_name: string; total_score: string; total_max: string; attempts: string }>(
+        `SELECT student_login, student_name, class_name, SUM(score) AS total_score, SUM(total) AS total_max, COUNT(*) AS attempts
+         FROM monitoring_attempts GROUP BY student_login, student_name, class_name`
+      );
 
   const classRows = classRanking
     .map(c => ({
@@ -252,21 +284,37 @@ router.get("/monitoring/analytics/class/:className", async (req, res): Promise<v
   if (!user) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
 
   const className = req.params["className"] as string;
+  const mid = schoolOf(user);
 
-  const subjectRows = await query<{ subject: string; total_score: string; total_max: string; attempts: string }>(
-    `SELECT t.subject, SUM(a.score) AS total_score, SUM(a.total) AS total_max, COUNT(*) AS attempts
-     FROM monitoring_attempts a JOIN monitoring_tests t ON t.id = a.test_id
-     WHERE a.class_name = $1
-     GROUP BY t.subject ORDER BY t.subject`,
-    [className]
-  );
+  const subjectRows = mid !== null
+    ? await query<{ subject: string; total_score: string; total_max: string; attempts: string }>(
+        `SELECT t.subject, SUM(a.score) AS total_score, SUM(a.total) AS total_max, COUNT(*) AS attempts
+         FROM monitoring_attempts a JOIN monitoring_tests t ON t.id = a.test_id
+         WHERE a.class_name = $1 AND a.maktab_id = $2
+         GROUP BY t.subject ORDER BY t.subject`,
+        [className, mid]
+      )
+    : await query<{ subject: string; total_score: string; total_max: string; attempts: string }>(
+        `SELECT t.subject, SUM(a.score) AS total_score, SUM(a.total) AS total_max, COUNT(*) AS attempts
+         FROM monitoring_attempts a JOIN monitoring_tests t ON t.id = a.test_id
+         WHERE a.class_name = $1
+         GROUP BY t.subject ORDER BY t.subject`,
+        [className]
+      );
 
-  const studentRows = await query<{ student_login: string; student_name: string; total_score: string; total_max: string; attempts: string }>(
-    `SELECT student_login, student_name, SUM(score) AS total_score, SUM(total) AS total_max, COUNT(*) AS attempts
-     FROM monitoring_attempts WHERE class_name = $1
-     GROUP BY student_login, student_name`,
-    [className]
-  );
+  const studentRows = mid !== null
+    ? await query<{ student_login: string; student_name: string; total_score: string; total_max: string; attempts: string }>(
+        `SELECT student_login, student_name, SUM(score) AS total_score, SUM(total) AS total_max, COUNT(*) AS attempts
+         FROM monitoring_attempts WHERE class_name = $1 AND maktab_id = $2
+         GROUP BY student_login, student_name`,
+        [className, mid]
+      )
+    : await query<{ student_login: string; student_name: string; total_score: string; total_max: string; attempts: string }>(
+        `SELECT student_login, student_name, SUM(score) AS total_score, SUM(total) AS total_max, COUNT(*) AS attempts
+         FROM monitoring_attempts WHERE class_name = $1
+         GROUP BY student_login, student_name`,
+        [className]
+      );
 
   const subjects = subjectRows.map(s => ({
     subject: s.subject,
@@ -299,19 +347,35 @@ router.get("/monitoring/student-home", async (req, res): Promise<void> => {
   const classNameVal = (user["class_name"] as string) ?? "";
   const loginVal = user["login"] as string;
 
+  const mid = schoolOf(user);
+
   // Ochiq va hali yechilmagan testlar (eng yaqin — birinchisi)
-  const openTests = await query<{
-    id: string; title: string; subject: string; quarter: number;
-    duration_minutes: number; is_anonymous: boolean; opens_at: string | null;
-  }>(
-    `SELECT t.id, t.title, t.subject, t.quarter, t.duration_minutes, t.is_anonymous, t.opens_at
-     FROM monitoring_tests t
-     WHERE t.status = 'open'
-       AND (t.class_name IS NULL OR t.class_name = $1)
-       AND NOT EXISTS (SELECT 1 FROM monitoring_attempts a WHERE a.test_id = t.id AND a.student_login = $2)
-     ORDER BY t.opens_at ASC NULLS LAST, t.created_at DESC`,
-    [classNameVal, loginVal]
-  );
+  const openTests = mid !== null
+    ? await query<{
+        id: string; title: string; subject: string; quarter: number;
+        duration_minutes: number; is_anonymous: boolean; opens_at: string | null;
+      }>(
+        `SELECT t.id, t.title, t.subject, t.quarter, t.duration_minutes, t.is_anonymous, t.opens_at
+         FROM monitoring_tests t
+         WHERE t.status = 'open'
+           AND (t.class_name IS NULL OR t.class_name = $1)
+           AND NOT EXISTS (SELECT 1 FROM monitoring_attempts a WHERE a.test_id = t.id AND a.student_login = $2)
+           AND t.maktab_id = $3
+         ORDER BY t.opens_at ASC NULLS LAST, t.created_at DESC`,
+        [classNameVal, loginVal, mid]
+      )
+    : await query<{
+        id: string; title: string; subject: string; quarter: number;
+        duration_minutes: number; is_anonymous: boolean; opens_at: string | null;
+      }>(
+        `SELECT t.id, t.title, t.subject, t.quarter, t.duration_minutes, t.is_anonymous, t.opens_at
+         FROM monitoring_tests t
+         WHERE t.status = 'open'
+           AND (t.class_name IS NULL OR t.class_name = $1)
+           AND NOT EXISTS (SELECT 1 FROM monitoring_attempts a WHERE a.test_id = t.id AND a.student_login = $2)
+         ORDER BY t.opens_at ASC NULLS LAST, t.created_at DESC`,
+        [classNameVal, loginVal]
+      );
 
   const questionCounts = await query<{ test_id: string; cnt: string }>(
     `SELECT test_id, COUNT(*) AS cnt FROM monitoring_questions
@@ -321,17 +385,30 @@ router.get("/monitoring/student-home", async (req, res): Promise<void> => {
   const qCountMap = new Map(questionCounts.map(q => [q.test_id, Number(q.cnt)]));
 
   // Yaqinlashib kelayotgan (rejalashtirilgan, hali ochilmagan) testlar
-  const scheduledTests = await query<{
-    id: string; title: string; subject: string; quarter: number;
-    duration_minutes: number; scheduled_open_at: string;
-  }>(
-    `SELECT t.id, t.title, t.subject, t.quarter, t.duration_minutes, t.scheduled_open_at
-     FROM monitoring_tests t
-     WHERE t.status = 'draft' AND t.scheduled_open_at IS NOT NULL
-       AND (t.class_name IS NULL OR t.class_name = $1)
-     ORDER BY t.scheduled_open_at ASC`,
-    [classNameVal]
-  );
+  const scheduledTests = mid !== null
+    ? await query<{
+        id: string; title: string; subject: string; quarter: number;
+        duration_minutes: number; scheduled_open_at: string;
+      }>(
+        `SELECT t.id, t.title, t.subject, t.quarter, t.duration_minutes, t.scheduled_open_at
+         FROM monitoring_tests t
+         WHERE t.status = 'draft' AND t.scheduled_open_at IS NOT NULL
+           AND (t.class_name IS NULL OR t.class_name = $1)
+           AND t.maktab_id = $2
+         ORDER BY t.scheduled_open_at ASC`,
+        [classNameVal, mid]
+      )
+    : await query<{
+        id: string; title: string; subject: string; quarter: number;
+        duration_minutes: number; scheduled_open_at: string;
+      }>(
+        `SELECT t.id, t.title, t.subject, t.quarter, t.duration_minutes, t.scheduled_open_at
+         FROM monitoring_tests t
+         WHERE t.status = 'draft' AND t.scheduled_open_at IS NOT NULL
+           AND (t.class_name IS NULL OR t.class_name = $1)
+         ORDER BY t.scheduled_open_at ASC`,
+        [classNameVal]
+      );
 
   // Yechilgan testlar — arxiv
   const archive = await query<{
@@ -377,17 +454,31 @@ router.get("/monitoring/active", async (req, res): Promise<void> => {
   const classNameVal = (user["class_name"] as string) ?? "";
   const loginVal = user["login"] as string;
 
-  const rows = await query(
-    `SELECT t.id, t.title, t.subject, t.quarter, t.duration_minutes, t.is_anonymous
-     FROM monitoring_tests t
-     WHERE t.status = 'open'
-       AND (t.class_name IS NULL OR t.class_name = $1)
-       AND NOT EXISTS (
-         SELECT 1 FROM monitoring_attempts a WHERE a.test_id = t.id AND a.student_login = $2
-       )
-     ORDER BY t.created_at DESC`,
-    [classNameVal, loginVal]
-  );
+  const mid = schoolOf(user);
+  const rows = mid !== null
+    ? await query(
+        `SELECT t.id, t.title, t.subject, t.quarter, t.duration_minutes, t.is_anonymous
+         FROM monitoring_tests t
+         WHERE t.status = 'open'
+           AND (t.class_name IS NULL OR t.class_name = $1)
+           AND NOT EXISTS (
+             SELECT 1 FROM monitoring_attempts a WHERE a.test_id = t.id AND a.student_login = $2
+           )
+           AND t.maktab_id = $3
+         ORDER BY t.created_at DESC`,
+        [classNameVal, loginVal, mid]
+      )
+    : await query(
+        `SELECT t.id, t.title, t.subject, t.quarter, t.duration_minutes, t.is_anonymous
+         FROM monitoring_tests t
+         WHERE t.status = 'open'
+           AND (t.class_name IS NULL OR t.class_name = $1)
+           AND NOT EXISTS (
+             SELECT 1 FROM monitoring_attempts a WHERE a.test_id = t.id AND a.student_login = $2
+           )
+         ORDER BY t.created_at DESC`,
+        [classNameVal, loginVal]
+      );
   res.json(rows);
 });
 
@@ -460,13 +551,14 @@ router.post("/monitoring/tests/:id/submit", async (req, res): Promise<void> => {
     breakdown.push({ question_id: a.question_id, correct: isCorrect });
   }
   const total = questions.length;
+  const mid = schoolOf(user);
 
   try {
     await query(
-      `INSERT INTO monitoring_attempts (test_id, student_login, student_name, class_name, answers, score, total)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      `INSERT INTO monitoring_attempts (test_id, student_login, student_name, class_name, answers, score, total, maktab_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
       [test.id, user["login"] as string, user["full_name"] as string, (user["class_name"] as string) ?? "",
-       JSON.stringify(parsed.data.answers), score, total]
+       JSON.stringify(parsed.data.answers), score, total, mid ?? 3]
     );
   } catch (err) {
     res.status(409).json({ error: "Siz bu testni allaqachon ishlagansiz", details: (err as Error).message });

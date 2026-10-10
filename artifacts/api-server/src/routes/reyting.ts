@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { query } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -8,30 +8,51 @@ const router: IRouter = Router();
 router.get("/reyting/students", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const mid = schoolOf(user);
 
   try {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const rows = await query<{
-      student_login: string; student_name: string; class_name: string;
-      avg_grade: string; total_grades: string; fives: string;
-    }>(
-      `SELECT
-         student_login,
-         student_name,
-         class_name,
-         ROUND(AVG(grade)::numeric, 2) AS avg_grade,
-         COUNT(*) AS total_grades,
-         COUNT(*) FILTER (WHERE grade = 5) AS fives
-       FROM grades
-       WHERE created_at >= $1
-       GROUP BY student_login, student_name, class_name
-       HAVING COUNT(*) >= 1
-       ORDER BY avg_grade DESC, fives DESC
-       LIMIT 50`,
-      [weekAgo.toISOString()]
-    );
+    const rows = mid !== null
+      ? await query<{
+          student_login: string; student_name: string; class_name: string;
+          avg_grade: string; total_grades: string; fives: string;
+        }>(
+          `SELECT
+             student_login,
+             student_name,
+             class_name,
+             ROUND(AVG(grade)::numeric, 2) AS avg_grade,
+             COUNT(*) AS total_grades,
+             COUNT(*) FILTER (WHERE grade = 5) AS fives
+           FROM grades
+           WHERE created_at >= $1 AND maktab_id = $2
+           GROUP BY student_login, student_name, class_name
+           HAVING COUNT(*) >= 1
+           ORDER BY avg_grade DESC, fives DESC
+           LIMIT 50`,
+          [weekAgo.toISOString(), mid]
+        )
+      : await query<{
+          student_login: string; student_name: string; class_name: string;
+          avg_grade: string; total_grades: string; fives: string;
+        }>(
+          `SELECT
+             student_login,
+             student_name,
+             class_name,
+             ROUND(AVG(grade)::numeric, 2) AS avg_grade,
+             COUNT(*) AS total_grades,
+             COUNT(*) FILTER (WHERE grade = 5) AS fives
+           FROM grades
+           WHERE created_at >= $1
+           GROUP BY student_login, student_name, class_name
+           HAVING COUNT(*) >= 1
+           ORDER BY avg_grade DESC, fives DESC
+           LIMIT 50`,
+          [weekAgo.toISOString()]
+        );
 
     res.json(rows.map((r, i) => ({
       rank: i + 1,
@@ -51,28 +72,47 @@ router.get("/reyting/students", async (req, res): Promise<void> => {
 router.get("/reyting/classes", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const mid = schoolOf(user);
 
   try {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const rows = await query<{
-      class_name: string; avg_grade: string; total_grades: string; fives: string; student_count: string;
-    }>(
-      `SELECT
-         class_name,
-         ROUND(AVG(grade)::numeric, 2) AS avg_grade,
-         COUNT(*) AS total_grades,
-         COUNT(*) FILTER (WHERE grade = 5) AS fives,
-         COUNT(DISTINCT student_login) AS student_count
-       FROM grades
-       WHERE created_at >= $1
-       GROUP BY class_name
-       HAVING COUNT(*) >= 1
-       ORDER BY avg_grade DESC, fives DESC
-       LIMIT 30`,
-      [weekAgo.toISOString()]
-    );
+    const rows = mid !== null
+      ? await query<{
+          class_name: string; avg_grade: string; total_grades: string; fives: string; student_count: string;
+        }>(
+          `SELECT
+             class_name,
+             ROUND(AVG(grade)::numeric, 2) AS avg_grade,
+             COUNT(*) AS total_grades,
+             COUNT(*) FILTER (WHERE grade = 5) AS fives,
+             COUNT(DISTINCT student_login) AS student_count
+           FROM grades
+           WHERE created_at >= $1 AND maktab_id = $2
+           GROUP BY class_name
+           HAVING COUNT(*) >= 1
+           ORDER BY avg_grade DESC, fives DESC
+           LIMIT 30`,
+          [weekAgo.toISOString(), mid]
+        )
+      : await query<{
+          class_name: string; avg_grade: string; total_grades: string; fives: string; student_count: string;
+        }>(
+          `SELECT
+             class_name,
+             ROUND(AVG(grade)::numeric, 2) AS avg_grade,
+             COUNT(*) AS total_grades,
+             COUNT(*) FILTER (WHERE grade = 5) AS fives,
+             COUNT(DISTINCT student_login) AS student_count
+           FROM grades
+           WHERE created_at >= $1
+           GROUP BY class_name
+           HAVING COUNT(*) >= 1
+           ORDER BY avg_grade DESC, fives DESC
+           LIMIT 30`,
+          [weekAgo.toISOString()]
+        );
 
     res.json(rows.map((r, i) => ({
       rank: i + 1,
@@ -91,24 +131,39 @@ router.get("/reyting/classes", async (req, res): Promise<void> => {
 router.get("/reyting/subjects", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const mid = schoolOf(user);
 
   try {
     const monthAgo = new Date();
     monthAgo.setDate(monthAgo.getDate() - 30);
 
-    const rows = await query<{
-      subject: string; student_login: string; student_name: string;
-      class_name: string; avg_grade: string; total_grades: string;
-    }>(
-      `SELECT DISTINCT ON (subject)
-         subject, student_login, student_name, class_name,
-         ROUND(AVG(grade) OVER (PARTITION BY subject, student_login)::numeric, 2) AS avg_grade,
-         COUNT(*) OVER (PARTITION BY subject, student_login) AS total_grades
-       FROM grades
-       WHERE created_at >= $1
-       ORDER BY subject, avg_grade DESC`,
-      [monthAgo.toISOString()]
-    );
+    const rows = mid !== null
+      ? await query<{
+          subject: string; student_login: string; student_name: string;
+          class_name: string; avg_grade: string; total_grades: string;
+        }>(
+          `SELECT DISTINCT ON (subject)
+             subject, student_login, student_name, class_name,
+             ROUND(AVG(grade) OVER (PARTITION BY subject, student_login)::numeric, 2) AS avg_grade,
+             COUNT(*) OVER (PARTITION BY subject, student_login) AS total_grades
+           FROM grades
+           WHERE created_at >= $1 AND maktab_id = $2
+           ORDER BY subject, avg_grade DESC`,
+          [monthAgo.toISOString(), mid]
+        )
+      : await query<{
+          subject: string; student_login: string; student_name: string;
+          class_name: string; avg_grade: string; total_grades: string;
+        }>(
+          `SELECT DISTINCT ON (subject)
+             subject, student_login, student_name, class_name,
+             ROUND(AVG(grade) OVER (PARTITION BY subject, student_login)::numeric, 2) AS avg_grade,
+             COUNT(*) OVER (PARTITION BY subject, student_login) AS total_grades
+           FROM grades
+           WHERE created_at >= $1
+           ORDER BY subject, avg_grade DESC`,
+          [monthAgo.toISOString()]
+        );
 
     res.json(rows.map(r => ({
       subject: r.subject,
@@ -129,6 +184,7 @@ router.get("/reyting/my", async (req, res): Promise<void> => {
   if (!user || user["role"] !== "student") { res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return; }
 
   const login = user["login"] as string;
+  const mid = schoolOf(user);
 
   try {
     const monthAgo = new Date();
@@ -151,14 +207,23 @@ router.get("/reyting/my", async (req, res): Promise<void> => {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const rankRows = await query<{ student_login: string; avg_grade: string }>(
-      `SELECT student_login, ROUND(AVG(grade)::numeric, 2) AS avg_grade
-       FROM grades WHERE created_at >= $1
-       GROUP BY student_login
-       HAVING COUNT(*) >= 1
-       ORDER BY avg_grade DESC`,
-      [weekAgo.toISOString()]
-    );
+    const rankRows = mid !== null
+      ? await query<{ student_login: string; avg_grade: string }>(
+          `SELECT student_login, ROUND(AVG(grade)::numeric, 2) AS avg_grade
+           FROM grades WHERE created_at >= $1 AND maktab_id = $2
+           GROUP BY student_login
+           HAVING COUNT(*) >= 1
+           ORDER BY avg_grade DESC`,
+          [weekAgo.toISOString(), mid]
+        )
+      : await query<{ student_login: string; avg_grade: string }>(
+          `SELECT student_login, ROUND(AVG(grade)::numeric, 2) AS avg_grade
+           FROM grades WHERE created_at >= $1
+           GROUP BY student_login
+           HAVING COUNT(*) >= 1
+           ORDER BY avg_grade DESC`,
+          [weekAgo.toISOString()]
+        );
 
     const myRank = rankRows.findIndex(r => r.student_login === login) + 1;
 
@@ -247,6 +312,7 @@ router.get("/reyting/export", async (req, res): Promise<void> => {
   if (!["admin", "director", "zam_direktor", "zavuch"].includes(role)) {
     res.status(403).json({ error: "Ruxsat yo'q" }); return;
   }
+  const mid = schoolOf(user);
 
   const { type, class_name, month, year } = req.query as Record<string, string>;
 
@@ -260,6 +326,7 @@ router.get("/reyting/export", async (req, res): Promise<void> => {
         where.push(`EXTRACT(MONTH FROM created_at) = $${params.length + 1}`); params.push(parseInt(month));
         where.push(`EXTRACT(YEAR FROM created_at) = $${params.length + 1}`); params.push(parseInt(year));
       }
+      if (mid !== null) { where.push(`maktab_id = $${params.length + 1}`); params.push(mid); }
       if (where.length) sql += " WHERE " + where.join(" AND ");
       sql += " ORDER BY class_name, student_name, created_at DESC";
       const rows = await query(sql, params);
@@ -273,15 +340,20 @@ router.get("/reyting/export", async (req, res): Promise<void> => {
         where.push(`EXTRACT(MONTH FROM date) = $${params.length + 1}`); params.push(parseInt(month));
         where.push(`EXTRACT(YEAR FROM date) = $${params.length + 1}`); params.push(parseInt(year));
       }
+      if (mid !== null) { where.push(`maktab_id = $${params.length + 1}`); params.push(mid); }
       if (where.length) sql += " WHERE " + where.join(" AND ");
       sql += " ORDER BY date DESC, student_name";
       const rows = await query(sql, params);
       res.json({ type: "attendance", data: rows });
     } else if (type === "students") {
-      const sql = class_name
-        ? "SELECT full_name, class_name, login, phone_number, TO_CHAR(registration_date, 'DD.MM.YYYY') as reg_date FROM users WHERE class_name = $1 ORDER BY class_name, full_name"
-        : "SELECT full_name, class_name, login, phone_number, TO_CHAR(registration_date, 'DD.MM.YYYY') as reg_date FROM users ORDER BY class_name, full_name";
-      const rows = await query(sql, class_name ? [class_name] : []);
+      let sql = "SELECT full_name, class_name, login, phone_number, TO_CHAR(registration_date, 'DD.MM.YYYY') as reg_date FROM users";
+      const params: unknown[] = [];
+      const where: string[] = [];
+      if (class_name) { where.push(`class_name = $${params.length + 1}`); params.push(class_name); }
+      if (mid !== null) { where.push(`maktab_id = $${params.length + 1}`); params.push(mid); }
+      if (where.length) sql += " WHERE " + where.join(" AND ");
+      sql += " ORDER BY class_name, full_name";
+      const rows = await query(sql, params);
       res.json({ type: "students", data: rows });
     } else {
       res.status(400).json({ error: "type: grades | attendance | students kerak" });
@@ -295,27 +367,46 @@ router.get("/reyting/export", async (req, res): Promise<void> => {
 router.get("/birthdays/today", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
   if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const mid = schoolOf(user);
 
   try {
     const today = new Date();
     const month = today.getMonth() + 1;
     const day = today.getDate();
 
-    const staffBdays = await query<{ full_name: string; role: string; birthday: string }>(
-      `SELECT full_name, role, birthday FROM staff
-       WHERE birthday IS NOT NULL
-         AND EXTRACT(MONTH FROM birthday) = $1
-         AND EXTRACT(DAY FROM birthday) = $2`,
-      [month, day]
-    );
+    const staffBdays = mid !== null
+      ? await query<{ full_name: string; role: string; birthday: string }>(
+          `SELECT full_name, role, birthday FROM staff
+           WHERE birthday IS NOT NULL
+             AND EXTRACT(MONTH FROM birthday) = $1
+             AND EXTRACT(DAY FROM birthday) = $2
+             AND maktab_id = $3`,
+          [month, day, mid]
+        )
+      : await query<{ full_name: string; role: string; birthday: string }>(
+          `SELECT full_name, role, birthday FROM staff
+           WHERE birthday IS NOT NULL
+             AND EXTRACT(MONTH FROM birthday) = $1
+             AND EXTRACT(DAY FROM birthday) = $2`,
+          [month, day]
+        );
 
-    const studentBdays = await query<{ full_name: string; class_name: string; birthday: string }>(
-      `SELECT full_name, class_name, birthday FROM users
-       WHERE birthday IS NOT NULL
-         AND EXTRACT(MONTH FROM birthday) = $1
-         AND EXTRACT(DAY FROM birthday) = $2`,
-      [month, day]
-    );
+    const studentBdays = mid !== null
+      ? await query<{ full_name: string; class_name: string; birthday: string }>(
+          `SELECT full_name, class_name, birthday FROM users
+           WHERE birthday IS NOT NULL
+             AND EXTRACT(MONTH FROM birthday) = $1
+             AND EXTRACT(DAY FROM birthday) = $2
+             AND maktab_id = $3`,
+          [month, day, mid]
+        )
+      : await query<{ full_name: string; class_name: string; birthday: string }>(
+          `SELECT full_name, class_name, birthday FROM users
+           WHERE birthday IS NOT NULL
+             AND EXTRACT(MONTH FROM birthday) = $1
+             AND EXTRACT(DAY FROM birthday) = $2`,
+          [month, day]
+        );
 
     const people = [
       ...staffBdays.map(s => ({ full_name: s.full_name, type: "staff" as const, info: s.role })),
