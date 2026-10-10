@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Camera, CheckCircle2, Loader2, ScanFace, ShieldCheck, SwitchCamera, Trash2, X } from "lucide-react";
+import { ArrowLeft, Camera, CheckCircle2, Image as ImageIcon, Loader2, ScanFace, ShieldCheck, SwitchCamera, Trash2, X } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
 import { api, beep, detectFaces, distance, hasSsd, loadFaceApi, startCamera, stopCamera, type FaceResult } from "@/lib/face";
@@ -34,6 +34,16 @@ const SAMPLES = POSES.length;
 const POSE_WAIT_MS = 2000; // shu vaqt ichida kerakli holat bo'lmasa — bor holatni olamiz (qotib qolmasin)
 const CHAIN_MAX = 0.62; // yangi namuna oldingilaridan biriga shunchalik yaqin bo'lishi kerak (o'sha odam)
 
+// Rasmdan ro'yxatga olish uchun: fayldan HTMLImageElement
+function fileToImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Rasmni ochib bo'lmadi"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onClose: () => void; onSaved: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -41,6 +51,7 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
   const samplesRef = useRef<number[][]>([]);
   const poseCtxRef = useRef<PoseCtx>({ yaw0: 0, pitch0: 0.45, side: 1 });
   const poseStartRef = useRef(0);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const [consent, setConsent] = useState(false);
   const [stage, setStage] = useState<"consent" | "loading" | "capture" | "saving" | "similar" | "error">("consent");
   const [progress, setProgress] = useState("");
@@ -152,6 +163,49 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
     }
   };
 
+  // ── Tayyor rasm(lar)dan tez ro'yxatga olish (kamera shart emas) ──
+  // Rasm faqat telefonda tahlil qilinadi — serverga RASM EMAS, faqat 128 sonli iz yuboriladi.
+  const handlePhotos = async (files: FileList) => {
+    const arr = Array.from(files).slice(0, 6);
+    if (!arr.length) return;
+    setStage("loading");
+    setProgress("Rasmlar tahlil qilinmoqda…");
+    try {
+      const fa = await loadFaceApi(setProgress);
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Rasmni tahlil qilib bo'lmadi");
+      const descs: number[][] = [];
+      let noFace = 0;
+      for (let i = 0; i < arr.length; i++) {
+        setProgress(`Rasm ${i + 1}/${arr.length} tekshirilmoqda…`);
+        let img: HTMLImageElement;
+        try { img = await fileToImage(arr[i]!); } catch { noFace++; continue; }
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        ctx.drawImage(img, 0, 0);
+        try { URL.revokeObjectURL(img.src); } catch { /* yo'q */ }
+        const faces = await detectFaces(fa, canvas, hasSsd(fa) ? "ssd" : "tiny", { inputSize: 512, maxFaces: 2, minScore: 0.4 });
+        if (!faces.length) { noFace++; continue; }
+        const d = faces[0]!.descriptor;
+        // Hamma rasm bitta odamniki bo'lsin (birinchidan juda uzoq bo'lsa — o'tkazib yuboramiz)
+        if (descs.length && distance(d, Float32Array.from(descs[0]!)) > 0.9) { noFace++; continue; }
+        descs.push(Array.from(d));
+      }
+      if (descs.length === 0) {
+        setError(`Rasm(lar)da yuz aniq topilmadi (${noFace} ta o'tkazib yuborildi). Yorug', to'g'ri qaragan, bitta odamli surat tanlang.`);
+        setStage("error");
+        return;
+      }
+      samplesRef.current = descs.slice(0, 8);
+      setCount(samplesRef.current.length);
+      await save();
+    } catch (e) {
+      setError((e as Error).message);
+      setStage("error");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="w-full sm:max-w-lg bg-background rounded-t-3xl sm:rounded-3xl overflow-hidden">
@@ -199,6 +253,9 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
               <div className="mt-3 text-sm text-slate-300 leading-relaxed">
                 Rasm saqlanmaydi — faqat yuzning raqamli izi (128 ta son). U faqat maktabga kirishda davomat uchun ishlatiladi va istalgan vaqtda o'chirilishi mumkin.
               </div>
+              <div className="mt-2 text-xs text-slate-400 leading-relaxed">
+                <b className="text-slate-300">Kamera</b> — 7 burchak, eng aniq. <b className="text-slate-300">Rasmdan</b> — tez: tayyor 1–3 ta suratni tanlang (surat ham saqlanmaydi, faqat iz olinadi).
+              </div>
               <label className="mt-4 flex items-start gap-3 cursor-pointer">
                 <input type="checkbox" className="mt-1 h-5 w-5 accent-cyan-400" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
                 <span className="text-sm">Ota-onasining (qonuniy vakilining) <b>roziligi olingan</b></span>
@@ -228,9 +285,22 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
 
         <div className="p-4 flex gap-2">
           {stage === "consent" && (
-            <Button className="flex-1" disabled={!consent} onClick={() => void begin()}>
-              <Camera className="w-4 h-4 mr-2" /> Kamerani yoqish
-            </Button>
+            <div className="flex-1 flex gap-2">
+              <Button className="flex-1" disabled={!consent} onClick={() => void begin()}>
+                <Camera className="w-4 h-4 mr-2" /> Kamera
+              </Button>
+              <Button variant="outline" className="flex-1" disabled={!consent} onClick={() => photoInputRef.current?.click()}>
+                <ImageIcon className="w-4 h-4 mr-2" /> Rasmdan
+              </Button>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => { const f = e.target.files; if (f?.length) void handlePhotos(f); e.target.value = ""; }}
+              />
+            </div>
           )}
           {stage === "similar" && (
             <>
