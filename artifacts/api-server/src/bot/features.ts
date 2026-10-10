@@ -21,7 +21,7 @@ import {
   type ChatPurpose, type LinkedChat,
 } from "../lib/tg-shared.js";
 import { createSessionStore } from "./session-store.js";
-import { addChannel, removeChannel } from "./settings.js";
+import { addChannel, removeChannel, loadSettings } from "./settings.js";
 import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify } from "../routes/faceid.js";
 
 // Kanal "maktab kanali" sifatida ulanganda — uni MAJBURIY a'zolik ro'yxatiga ham
@@ -961,7 +961,15 @@ function registerPrivate(priv: Composer<Context>): void {
       let extra = "";
       if (purpose === "school") {
         await makeChannelMandatory(ctx.api, chatId, title);
-        extra = "\n\n📢 Bu kanal endi <b>majburiy</b> — o'quvchilar botdan foydalanish uchun unga a'zo bo'lishi shart.";
+        // Majburiy a'zolik ishlashi uchun bot a'zolikni tekshira olishi SHART (kanalда admin bo'lishi).
+        let can = false;
+        try {
+          const me = await ctx.api.getChatMember(chatId, ctx.me.id);
+          can = me.status === "administrator" || me.status === "creator" || me.status === "member";
+        } catch { can = false; }
+        extra = can
+          ? "\n\n📢 Bu kanal endi <b>majburiy</b> — o'quvchilar botdan foydalanish uchun unga a'zo bo'lishi shart."
+          : "\n\n⚠️ <b>Diqqat:</b> bot bu kanalda a'zolikni tekshira olmayapti (admin emas). Majburiy a'zolik ishlashi uchun botni kanalga <b>ADMIN</b> qiling, so'ng <code>/majburiy</code> bilan tekshiring.";
       }
       await ctx.answerCallbackQuery("✅ Ulandi");
       await ctx.editMessageText(`✅ <b>${esc(title)}</b> ${purpose === "school" ? "maktab kanali" : "ustozlar guruhi"} sifatida ulandi.${extra}`, { parse_mode: "HTML" });
@@ -996,6 +1004,52 @@ function registerPrivate(priv: Composer<Context>): void {
     } catch {
       await ctx.reply("❌ Kanal topilmadi. Username to'g'riligini va bot admin ekanini tekshiring.");
     }
+  });
+
+  // /majburiy — majburiy a'zolik holatini ko'rsatadi va nega ishlamayotganini aytadi (diagnostika)
+  priv.command("majburiy", async (ctx) => {
+    const who = await whoIs(ctx.from!.id);
+    if (!isManagement(who)) { await ctx.reply("⛔ Faqat maktab rahbariyati uchun."); return; }
+    const chans = loadSettings().channels;
+    if (chans.length === 0) {
+      await ctx.reply(
+        "❌ <b>Hozircha majburiy kanal/guruh YO'Q.</b>\n\n" +
+        "Ro'yxat bo'sh — shuning uchun o'quvchilardan a'zolik <b>so'ralmaydi</b>.\n\n" +
+        "<b>Qanday qo'shiladi:</b>\n" +
+        "1️⃣ Botni kanal/guruhga <b>ADMIN</b> qilib qo'shing\n" +
+        "2️⃣ Shu yerda: <code>/kanal @kanal_nomi</code> (yoki <code>/kanal -100...</code>)\n\n" +
+        "⚠️ Faqat <b>«maktab kanali»</b> qilib ulangan kanal majburiy bo'ladi. Oddiy «sinf guruhi» majburiy emas.",
+        { parse_mode: "HTML" }
+      );
+      return;
+    }
+    const lines: string[] = [];
+    let okCount = 0;
+    for (const ch of chans) {
+      try {
+        const me = await ctx.api.getChatMember(ch.id, ctx.me.id);
+        if (me.status === "administrator" || me.status === "creator") {
+          lines.push(`✅ <b>${esc(ch.name)}</b> — bot admin, ishlaydi`);
+          okCount++;
+        } else if (me.status === "member") {
+          lines.push(`⚠️ <b>${esc(ch.name)}</b> — bot a'zo, lekin admin emas (kanal bo'lsa admin shart)`);
+          okCount++;
+        } else {
+          lines.push(`❌ <b>${esc(ch.name)}</b> — bot holati: <code>${me.status}</code> → ISHLAMAYDI`);
+        }
+      } catch {
+        lines.push(`❌ <b>${esc(ch.name)}</b> (<code>${ch.id}</code>) — bot tekshira olmayapti (admin emas/chatdan chiqarilgan) → bu kanal uchun majburiy a'zolik ISHLAMAYDI`);
+      }
+    }
+    await ctx.reply(
+      `📋 <b>Majburiy a'zolik holati</b> (${chans.length} ta)\n\n` +
+      lines.join("\n") +
+      `\n\n━━━━━━━━━━\n` +
+      (okCount > 0
+        ? "ℹ️ <b>Muhim:</b> majburiy a'zolik faqat oddiy <b>o'quvchilarga</b> ta'sir qiladi. <b>Admin akkaunt doim o'tkaziladi</b> — shuning uchun o'zingiz bilan sinasangiz a'zolik so'ralmaydi. Sinash uchun <b>oddiy o'quvchi akkaunti</b> bilan botga <code>/start</code> bosing."
+        : "❗️ Hech bir kanal to'g'ri sozlanmagan — ❌ larni to'g'rilang (botni ADMIN qiling), keyin qayta <code>/kanal</code> qiling."),
+      { parse_mode: "HTML" }
+    );
   });
 
   // ── Kutish holatidagi xabarlar (sinfga xabar / kanalga e'lon) ──────────────
