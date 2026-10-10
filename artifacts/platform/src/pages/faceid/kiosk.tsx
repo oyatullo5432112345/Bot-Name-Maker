@@ -73,6 +73,8 @@ interface RingState {
   confirmed: string | null;  // tasdiqlangan login
   confirmedName: string;
   rejectUntil: number;       // shu vaqtgacha "Rad etildi" ko'rsatiladi
+  sbox: Box | null;          // silliqlangan ramka — aylana yuzga tebranmay yopishadi
+  miss: number;              // ketma-ket mos kelmagan kadrlar
 }
 
 const QUEUE_KEY = "faceid_queue_v2";
@@ -92,7 +94,7 @@ type Precision = "yumshoq" | "standart" | "qattiq";
 interface PrecisionProfile { threshold: number; margin: number; votes: number; inputSize: number; label: string; note: string }
 const PRECISION: Record<Precision, PrecisionProfile> = {
   yumshoq:  { threshold: 0.52, margin: 0.07, votes: 2, inputSize: 256, label: "Yumshoq",  note: "Eng tez — 1-2 o'quvchi, yaxshi yorug'lik uchun" },
-  standart: { threshold: 0.48, margin: 0.10, votes: 2, inputSize: 320, label: "Standart", note: "Tavsiya — tez va aniq muvozanati (maktab eshigi)" },
+  standart: { threshold: 0.50, margin: 0.10, votes: 2, inputSize: 320, label: "Standart", note: "Tavsiya — tez va aniq muvozanati (maktab eshigi)" },
   qattiq:   { threshold: 0.45, margin: 0.13, votes: 3, inputSize: 448, label: "Qattiq",   note: "Eng aniq — ko'p o'quvchi, xato taniyishni minimal qiladi" },
 };
 const PRECISION_KEY = "faceid_precision";
@@ -115,9 +117,10 @@ const SLOW_MS = 320; // SSD kadri bundan sekin bo'lsa — Tez rejimga o'tamiz
 const RING_SEG = 128;        // aylana 128 ta chiziqdan iborat
 const CONFIRM_GREEN = 80;    // shuncha segment yashil bo'lsa — tanish (yuqori ishonch)
 const MAX_TRACK_MS = 5000;   // 5 soniyada 80 ga yetmasa — "Rad etildi", qaytadan
-const GREEN_STRONG = 13;     // juda aniq kadrda qo'shiladigan segmentlar
-const GREEN_WEAK = 7;        // oddiy mos kadrda
-const GREEN_DECAY = 5;       // mos kelmagan kadrda kamayadi
+const GREEN_STRONG = 24;     // juda aniq kadrda qo'shiladigan segmentlar — tez to'ladi
+const GREEN_WEAK = 14;       // oddiy mos kadrda ham sezilarli qo'shiladi
+const GREEN_DECAY = 3;       // mos kelmagan kadrda ozgina kamayadi (to'satdan tushmasin)
+const CAND_PENALTY = 15;     // nomzod almashganda kichik jarima (nolga tushirmaymiz)
 const REJECT_SHOW_MS = 1800; // "Rad etildi" shuncha ko'rinadi, keyin qayta urinish
 
 const COLORS = {
@@ -178,6 +181,16 @@ function readVoice(): boolean {
 }
 function shortName(n: string): string {
   return n.split(" ").slice(0, 2).join(" ");
+}
+
+// Ramkani kadrdan kadrga silliq ko'chirish — aylana yuzga tebranmay yopishsin
+function lerpBox(a: Box, b: Box, t: number): Box {
+  return {
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+    width: a.width + (b.width - a.width) * t,
+    height: a.height + (b.height - a.height) * t,
+  };
 }
 
 let toastSeq = 0;
@@ -493,8 +506,10 @@ export default function FaceKioskPage() {
       if (facingRef.current === "user") x = cw - x - w;
       const cx = x + w / 2;
       const cy = y + h / 2;
-      const outer = Math.max(w, h) * 0.62;
-      const inner = outer * 0.84;
+      // Aylana butun yuzni ichiga oladi: yarim diagonal — qutining burchaklari shu masofada.
+      const half = Math.hypot(w, h) / 2;
+      const inner = half * 1.06;   // ichki chekka yuz qutisidan tashqarida
+      const outer = half * 1.30;   // tashqi chekka — chiziqlar shu oraliqda
       const green = Math.max(0, Math.min(RING_SEG, it.green));
       const GREEN = "#34D399";
       const RED = it.state === "reject" ? "#EF4444" : "#F87171";
@@ -632,28 +647,40 @@ export default function FaceKioskPage() {
 
     for (const [face, track] of pairs) {
       let rs = ringRef.current.get(track.id);
-      if (!rs) { rs = { green: 0, cand: null, confirmed: null, confirmedName: "", rejectUntil: 0 }; ringRef.current.set(track.id, rs); }
+      if (!rs) { rs = { green: 0, cand: null, confirmed: null, confirmedName: "", rejectUntil: 0, sbox: null, miss: 0 }; ringRef.current.set(track.id, rs); }
       const m = matches.find((x) => x.face === face);
       const p = m?.p ?? null;
 
+      // Ramkani silliqlaymiz — aylana yuzga sapchimay yopishadi (birinchi kadrda darhol o'rnatiladi)
+      rs.sbox = rs.sbox ? lerpBox(rs.sbox, face.box, 0.4) : { ...face.box };
+      const sbox = rs.sbox;
+
       // Tasdiqlangan — to'liq yashil + ism
       if (rs.confirmed) {
-        items.push({ box: face.box, green: RING_SEG, state: "ok", text: shortName(rs.confirmedName) });
+        items.push({ box: sbox, green: RING_SEG, state: "ok", text: shortName(rs.confirmedName) });
         continue;
       }
       // Rad etilgan — qisqa "Rad etildi", keyin qayta urinishga tiklanadi
       if (rs.rejectUntil > now) {
-        items.push({ box: face.box, green: 0, state: "reject", text: "" });
+        items.push({ box: sbox, green: 0, state: "reject", text: "" });
         continue;
       }
-      if (rs.rejectUntil) { rs.rejectUntil = 0; rs.green = 0; rs.cand = null; track.first = now; }
+      if (rs.rejectUntil) { rs.rejectUntil = 0; rs.green = 0; rs.cand = null; rs.miss = 0; track.first = now; }
 
       if (p) {
-        const q = Math.max(0.35, Math.min(1, (th - m!.d) / th)); // moslik sifati (yaqinroq = tezroq to'ladi)
-        if (rs.cand !== p.login) { rs.cand = p.login; rs.green = rs.green * 0.5; } // nomzod almashsa — yarmiga
+        rs.miss = 0;
+        // Moslik sifati: yaqinroq yuz tezroq to'ldiradi (0.5..1 — hatto chetdagi moslik ham sezilarli)
+        const q = Math.max(0.5, Math.min(1, (th - m!.d) / th));
+        if (rs.cand !== p.login) {
+          // Nomzod almashsa — nolga tushirmaymiz, faqat kichik jarima (yangi yuz tez to'lsin)
+          rs.cand = p.login;
+          rs.green = Math.max(0, rs.green - CAND_PENALTY);
+        }
         rs.green = Math.min(RING_SEG, rs.green + (m!.strong ? GREEN_STRONG : GREEN_WEAK) * q);
       } else {
-        rs.green = Math.max(0, rs.green - GREEN_DECAY); // mos kelmasa — sekin kamayadi
+        // Bir kadr mos kelmasligi tabiiy (ko'z yumish, burilish) — faqat ketma-ket bo'lsa kamayadi
+        rs.miss++;
+        if (rs.miss > 1) rs.green = Math.max(0, rs.green - GREEN_DECAY);
       }
 
       // ≥80 yashil → tanish (1 tada)
@@ -663,15 +690,15 @@ export default function FaceKioskPage() {
           if (!((shownUntilRef.current.get(person.login) ?? 0) > now)) onRecognized(person, m?.d ?? 0.4);
           rs.confirmed = person.login;
           rs.confirmedName = person.name;
-          items.push({ box: face.box, green: RING_SEG, state: "ok", text: shortName(person.name) });
+          items.push({ box: sbox, green: RING_SEG, state: "ok", text: shortName(person.name) });
           continue;
         }
       }
 
-      // 5 soniyada 80 ga yetmasa → Rad etildi
+      // 5 soniyada 80 ga yetmasa → Rad etildi (qat'iy 5 soniya chegara)
       if (now - track.first >= MAX_TRACK_MS && rs.green < CONFIRM_GREEN) {
         rs.rejectUntil = now + REJECT_SHOW_MS;
-        items.push({ box: face.box, green: rs.green, state: "reject", text: "" });
+        items.push({ box: sbox, green: rs.green, state: "reject", text: "" });
         if (now - lastUnknownRef.current > UNKNOWN_GAP_MS) {
           lastUnknownRef.current = now;
           beep("error");
@@ -680,7 +707,7 @@ export default function FaceKioskPage() {
         continue;
       }
 
-      items.push({ box: face.box, green: Math.round(rs.green), state: "scan", text: "" });
+      items.push({ box: sbox, green: Math.round(rs.green), state: "scan", text: "" });
     }
 
     drawFaces(items);
