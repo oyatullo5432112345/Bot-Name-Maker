@@ -990,20 +990,41 @@ function registerPrivate(priv: Composer<Context>): void {
       return;
     }
     const id = arg.startsWith("@") || arg.startsWith("-") ? arg : `@${arg}`;
+    let chat;
     try {
-      const chat = await ctx.api.getChat(id);
+      chat = await ctx.api.getChat(id);
+    } catch {
+      await ctx.reply(
+        "❌ Kanal/guruh topilmadi.\n\n" +
+        "• Username to'g'rimi? Masalan: <code>/kanal @maktab3</code>\n" +
+        "• Yopiq kanal bo'lsa, username o'rniga uning <b>-100...</b> ID sini yuboring\n" +
+        "• Botni avval kanalga <b>admin</b> qilib qo'shing",
+        { parse_mode: "HTML" }
+      );
+      return;
+    }
+    try {
       const me = await ctx.api.getChatMember(chat.id, ctx.me.id);
-      if (me.status !== "administrator") {
-        await ctx.reply("❌ Bot bu kanalda admin emas. Avval botni kanalga admin qilib qo'shing.");
+      if (me.status !== "administrator" && me.status !== "creator") {
+        await ctx.reply(
+          `❌ Bot bu kanalda <b>admin emas</b> (holati: <code>${me.status}</code>).\n\n` +
+          "Kanal sozlamalari → Administratorlar → botni qo'shing, so'ng qayta <code>/kanal</code> yuboring.",
+          { parse_mode: "HTML" }
+        );
         return;
       }
-      const title = "title" in chat && chat.title ? chat.title : id;
-      await linkChat({ chatId: chat.id, chatType: chat.type, title, purpose: "school", linkedBy: ctx.from!.id });
-      await makeChannelMandatory(ctx.api, chat.id, title);
-      await ctx.reply(`✅ <b>${esc(title)}</b> maktab kanali sifatida ulandi.\nEndi saytdagi e'lonlar shu yerga chiqadi va bu kanal <b>majburiy a'zolik</b> bo'ldi — o'quvchilar unga a'zo bo'lishi shart.`, { parse_mode: "HTML" });
     } catch {
-      await ctx.reply("❌ Kanal topilmadi. Username to'g'riligini va bot admin ekanini tekshiring.");
+      await ctx.reply("❌ Bot a'zolikni tekshira olmadi — botni kanalga <b>admin</b> qilib qo'shganingizni tekshiring.", { parse_mode: "HTML" });
+      return;
     }
+    const title = "title" in chat && chat.title ? chat.title : id;
+    await linkChat({ chatId: chat.id, chatType: chat.type, title, purpose: "school", linkedBy: ctx.from!.id });
+    await makeChannelMandatory(ctx.api, chat.id, title);
+    await ctx.reply(
+      `✅ <b>${esc(title)}</b> maktab kanali sifatida <b>ulandi</b> va <b>MAJBURIY a'zolik</b> yoqildi.\n\n` +
+      "O'quvchilar endi unga a'zo bo'lishi shart. Tekshirish uchun: /majburiy",
+      { parse_mode: "HTML" }
+    );
   });
 
   // /majburiy — majburiy a'zolik holatini ko'rsatadi va nega ishlamayotganini aytadi (diagnostika)
@@ -1312,20 +1333,37 @@ function registerGroup(group: Composer<Context>): void {
 
     if (chat.type === "channel") {
       if (newStatus !== "administrator") return;
-      const adder = upd.from.id;
-      const who = await whoIs(adder);
-      const target = isManagement(who) ? adder : ADMIN_ID;
-      if (!target) return;
-      await ctx.api
-        .sendMessage(
-          target,
-          `📢 Bot <b>${esc(title)}</b> kanaliga admin qilindi.\n\nUni maktab kanali sifatida ulaymi? Ulansa, saytdagi e'lonlar, haftalik reyting va "📣 Kanalga e'lon" shu kanalga chiqadi.`,
-          {
-            parse_mode: "HTML",
-            reply_markup: new InlineKeyboard().text("🏫 Ha, maktab kanali", `f:lnk:school:${chat.id}`).row().text("❌ Yo'q", "f:noop"),
-          }
-        )
-        .catch(() => {});
+      const adder = upd.from?.id ?? 0;
+      const who = adder ? await whoIs(adder) : null;
+      // Rahbariyat yoki admin qo'shgan bo'lsa — DARHOL maktab kanali qilib ulaymiz
+      // va majburiy a'zolik qilamiz (tugma yo'qolib qolmasin — ko'p odam shunda uzilib qolardi).
+      if (isManagement(who)) {
+        await linkChat({ chatId: chat.id, chatType: chat.type, title, purpose: "school", linkedBy: adder }).catch(() => {});
+        await makeChannelMandatory(ctx.api, chat.id, title).catch(() => {});
+        if (adder) {
+          await ctx.api
+            .sendMessage(
+              adder,
+              `✅ <b>${esc(title)}</b> maktab kanali sifatida <b>ulandi</b> va <b>MAJBURIY a'zolik</b> qilib belgilandi.\n\nTekshirish: /majburiy`,
+              { parse_mode: "HTML" }
+            )
+            .catch(() => {});
+        }
+        return;
+      }
+      // Qo'shgan odam tanilmadi — super-adminga tasdiqlash tugmasini yuboramiz
+      if (ADMIN_ID) {
+        await ctx.api
+          .sendMessage(
+            ADMIN_ID,
+            `📢 Bot <b>${esc(title)}</b> kanaliga admin qilindi.\n\nUni maktab kanali sifatida ulaymi? Ulansa, saytdagi e'lonlar shu kanalga chiqadi va u majburiy a'zolik bo'ladi.`,
+            {
+              parse_mode: "HTML",
+              reply_markup: new InlineKeyboard().text("🏫 Ha, maktab kanali", `f:lnk:school:${chat.id}`).row().text("❌ Yo'q", "f:noop"),
+            }
+          )
+          .catch(() => {});
+      }
       return;
     }
 
