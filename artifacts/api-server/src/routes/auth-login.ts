@@ -14,7 +14,7 @@ import { Router, type IRouter, type Request } from "express";
 import crypto from "node:crypto";
 import { query, queryOne } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -194,7 +194,9 @@ router.post("/auth/face-login", async (req, res): Promise<void> => {
   }
 
   const results = ds.map(matchOne);
-  const ok = results.every((r) => r.login && r.best < th && r.second - r.best > 0.06);
+  // margin — 1-o'rin va 2-o'rin orasidagi farq. Kattaroq margin = o'xshash yuzlarni
+  // chalkashtirmaydi (tuman miqyosida o'quvchi ko'payganda xato kirishni kamaytiradi).
+  const ok = results.every((r) => r.login && r.best < th && r.second - r.best > 0.10);
   const sameLogin = results.every((r) => r.login === results[0]!.login);
   if (!ok || !sameLogin || !results[0]!.login) {
     res.status(401).json({ error: "Yuz tanilmadi. Qayta urinib ko'ring yoki 5 xonali ID bilan kiring." });
@@ -270,17 +272,21 @@ router.get("/auth/my-id", async (req, res): Promise<void> => {
 
 // GET /api/auth/login-ids?class_name=...  — rahbariyat/o'qituvchi uchun ID ro'yxati (tarqatish uchun)
 router.get("/auth/login-ids", async (req, res): Promise<void> => {
-  const u = getAuthUser(req.headers.authorization) as { role?: string; class_name?: string | null } | null;
+  const rawU = getAuthUser(req.headers.authorization);
+  const u = rawU as { role?: string; class_name?: string | null } | null;
   if (!u || !LIST_ROLES.includes(String(u.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(rawU); // null = admin (barcha maktablar)
   const className = String(req.query["class_name"] ?? "").trim();
   // Sinf rahbari / o'qituvchi faqat o'z sinfini ko'radi
   const scoped = ["sinf_rahbari", "teacher", "boshlangich_oqituvchi"].includes(String(u.role));
 
-  // Rahbariyat: "Xodimlar" guruhi — o'qituvchi/xodimlar IDlari
+  // Rahbariyat: "Xodimlar" guruhi — o'qituvchi/xodimlar IDlari (faqat o'z maktabi)
   if (!scoped && className === "Xodimlar") {
-    const staff = await query<{ id: string; full_name: string; login: string; login_id: string }>(
-      "SELECT id, full_name, login, login_id FROM staff ORDER BY full_name"
-    );
+    const staff = mid !== null
+      ? await query<{ id: string; full_name: string; login: string; login_id: string }>(
+          "SELECT id, full_name, login, login_id FROM staff WHERE maktab_id = $1 ORDER BY full_name", [mid])
+      : await query<{ id: string; full_name: string; login: string; login_id: string }>(
+          "SELECT id, full_name, login, login_id FROM staff ORDER BY full_name");
     const out: { full_name: string; login: string; login_id: string; class_name: string }[] = [];
     for (const r of staff) {
       const code = r.login_id || (await ensureLoginId("staff", r.id));
@@ -290,16 +296,21 @@ router.get("/auth/login-ids", async (req, res): Promise<void> => {
     return;
   }
 
-  // Rahbariyat: "Hamma sinflar" — barcha o'quvchilar
+  // Rahbariyat: "Hamma sinflar" — barcha o'quvchilar (o'z maktabi)
   const wantAll = !scoped && (className === "" || className === "__all__");
   const rows = wantAll
-    ? await query<{ id: string; full_name: string; login: string; login_id: string; class_name: string }>(
-        "SELECT id, full_name, login, login_id, class_name FROM users WHERE class_name <> '' ORDER BY class_name, full_name"
-      )
-    : await query<{ id: string; full_name: string; login: string; login_id: string; class_name: string }>(
-        "SELECT id, full_name, login, login_id, class_name FROM users WHERE class_name = $1 ORDER BY full_name",
-        [scoped ? (u.class_name ?? "") : className]
-      );
+    ? (mid !== null
+        ? await query<{ id: string; full_name: string; login: string; login_id: string; class_name: string }>(
+            "SELECT id, full_name, login, login_id, class_name FROM users WHERE class_name <> '' AND maktab_id = $1 ORDER BY class_name, full_name", [mid])
+        : await query<{ id: string; full_name: string; login: string; login_id: string; class_name: string }>(
+            "SELECT id, full_name, login, login_id, class_name FROM users WHERE class_name <> '' ORDER BY class_name, full_name"))
+    : (mid !== null
+        ? await query<{ id: string; full_name: string; login: string; login_id: string; class_name: string }>(
+            "SELECT id, full_name, login, login_id, class_name FROM users WHERE class_name = $1 AND maktab_id = $2 ORDER BY full_name",
+            [scoped ? (u.class_name ?? "") : className, mid])
+        : await query<{ id: string; full_name: string; login: string; login_id: string; class_name: string }>(
+            "SELECT id, full_name, login, login_id, class_name FROM users WHERE class_name = $1 ORDER BY full_name",
+            [scoped ? (u.class_name ?? "") : className]));
   if (!wantAll && !(scoped ? u.class_name : className)) { res.status(400).json({ error: "Sinf tanlanmagan" }); return; }
 
   // Bo'sh IDlarni to'ldiramiz
@@ -313,12 +324,18 @@ router.get("/auth/login-ids", async (req, res): Promise<void> => {
 
 // POST /api/auth/regen-id  { role: "student"|"staff", id }  — IDni yangilash (rahbariyat)
 router.post("/auth/regen-id", async (req, res): Promise<void> => {
-  const u = getAuthUser(req.headers.authorization) as { role?: string } | null;
+  const rawU = getAuthUser(req.headers.authorization);
+  const u = rawU as { role?: string } | null;
   if (!u || !MANAGE.includes(String(u.role))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(rawU);
   const { role, id } = req.body as { role?: string; id?: string };
   const table = role === "staff" ? "staff" : "users";
   if (!id) { res.status(400).json({ error: "id kerak" }); return; }
-  const code = await genUniqueLoginId();
+  // Faqat o'z maktabidagi shaxs; kod ham o'sha maktab formatida
+  const row = await queryOne<{ maktab_id: number }>(`SELECT maktab_id FROM ${table} WHERE id = $1`, [id]);
+  if (!row) { res.status(404).json({ error: "Topilmadi" }); return; }
+  if (mid !== null && row.maktab_id !== mid) { res.status(403).json({ error: "Boshqa maktab" }); return; }
+  const code = await genUniqueLoginId(row.maktab_id);
   await query(`UPDATE ${table} SET login_id = $1 WHERE id = $2`, [code, id]);
   res.json({ ok: true, login_id: code });
 });

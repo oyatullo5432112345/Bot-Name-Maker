@@ -2,8 +2,9 @@ import { pool } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 
 export interface Channel {
-  id: string;
+  id: string;        // @username yoki -100... (getChatMember uchun)
   name: string;
+  link?: string;     // qo'shilish havolasi (obuna tugmasi uchun) — t.me/... yoki invite link
 }
 
 export interface PhoneMapping {

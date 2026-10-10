@@ -83,8 +83,12 @@ async function checkAllChannels(bot: Bot, userId: number): Promise<{ allJoined: 
       if (!["member", "administrator", "creator"].includes(member.status)) {
         missing.push(channel.id);
       }
-    } catch {
-      missing.push(channel.id);
+    } catch (err) {
+      // MUHIM: xato = botning o'zi kanalni tekshira olmayapti (bot admin emas yoki
+      // kanal topilmadi) — bu KONFIG muammosi, foydalanuvchi aybi emas. Shuning
+      // uchun foydalanuvchini BLOKLAMAYMIZ (o'tkazamiz). Aks holda noto'g'ri kanal
+      // butun botni "o'lik" qilib qo'yardi ("bari bekor").
+      logger.warn({ err, channel: channel.id }, "Majburiy kanalni tekshirib bo'lmadi — bot admin ekanini tekshiring");
     }
   }
   return { allJoined: missing.length === 0, missing };
@@ -96,9 +100,12 @@ function buildSubscribeKeyboard(missingChannels: string[]): InlineKeyboard {
   for (const chId of missingChannels) {
     const ch = settings.channels.find((c) => c.id === chId);
     const label = ch?.name ?? chId;
-    const link = chId.startsWith("@")
-      ? `https://t.me/${chId.slice(1)}`
-      : `https://t.me/c/${chId.replace("-100", "")}`;
+    // Saqlangan havola bo'lsa — o'shani ishlatamiz (yopiq kanal invite linki ham).
+    const link = ch?.link
+      ? ch.link
+      : chId.startsWith("@")
+        ? `https://t.me/${chId.slice(1)}`
+        : `https://t.me/c/${chId.replace("-100", "")}`;
     kb.url(`📢 ${label}`, link).row();
   }
   kb.text("A'zo bo'ldim ✅", "check_membership");

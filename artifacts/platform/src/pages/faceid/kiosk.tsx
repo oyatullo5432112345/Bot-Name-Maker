@@ -79,11 +79,13 @@ const VOTE_WINDOW_MS = 1500; // tasdiqlash uchun ovozlar shu oraliqda yig'iladi
 // Shuning uchun: masofa chegarasi (threshold), 1- va 2-o'rin orasidagi farq (margin)
 // va tasdiq uchun kerakli ovozlar (votes) — qanchalik qat'iy bo'lsa, xato shunchalik kam.
 type Precision = "yumshoq" | "standart" | "qattiq";
-interface PrecisionProfile { threshold: number; margin: number; votes: number; label: string; note: string }
+// inputSize — topuvchining kirish o'lchami: kichik = TEZ, katta = ANIQ.
+// Shu bilan "Yumshoq" tez ishlaydi, "Qattiq" eng aniq (yon tomon/uzoqdan).
+interface PrecisionProfile { threshold: number; margin: number; votes: number; inputSize: number; label: string; note: string }
 const PRECISION: Record<Precision, PrecisionProfile> = {
-  yumshoq:  { threshold: 0.50, margin: 0.06, votes: 2, label: "Yumshoq",  note: "Tez taniydi — kam o'quvchi yoki bitta sinf eshigi uchun" },
-  standart: { threshold: 0.47, margin: 0.10, votes: 3, label: "Standart", note: "Maktab uchun tavsiya — aniqlik va tezlik muvozanati" },
-  qattiq:   { threshold: 0.44, margin: 0.13, votes: 4, label: "Qattiq",   note: "Eng aniq — ko'p o'quvchi, xato taniyishni minimal qiladi" },
+  yumshoq:  { threshold: 0.50, margin: 0.06, votes: 2, inputSize: 288, label: "Yumshoq",  note: "Eng tez — kam o'quvchi yoki bitta sinf eshigi uchun" },
+  standart: { threshold: 0.47, margin: 0.10, votes: 3, inputSize: 416, label: "Standart", note: "Maktab uchun tavsiya — aniqlik va tezlik muvozanati" },
+  qattiq:   { threshold: 0.44, margin: 0.13, votes: 4, inputSize: 512, label: "Qattiq",   note: "Eng aniq — ko'p o'quvchi, xato taniyishni minimal qiladi" },
 };
 const PRECISION_KEY = "faceid_precision";
 function readPrecision(): Precision {
@@ -669,7 +671,7 @@ export default function FaceKioskPage() {
         const det = detRef.current;
         let faces: FaceResult[];
         try {
-          faces = await detectFaces(fa, video, det, { inputSize: 416, maxFaces: 6, minScore: det === "ssd" ? 0.4 : 0.45 });
+          faces = await detectFaces(fa, video, det, { inputSize: precisionRef.current.inputSize, maxFaces: 6, minScore: det === "ssd" ? 0.4 : 0.45 });
         } catch (e) {
           if (det === "ssd") setDetector("tiny", false); // SSD ishlamasa — zaxira
           throw e;

@@ -21,7 +21,27 @@ import {
   type ChatPurpose, type LinkedChat,
 } from "../lib/tg-shared.js";
 import { createSessionStore } from "./session-store.js";
+import { addChannel, removeChannel } from "./settings.js";
 import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify } from "../routes/faceid.js";
+
+// Kanal "maktab kanali" sifatida ulanganda — uni MAJBURIY a'zolik ro'yxatiga ham
+// qo'shadi (o'quvchilar a'zo bo'lishi shart bo'ladi). Qo'shilish havolasini ham
+// hisoblaydi: ochiq kanal → t.me/username; yopiq → invite link (bot admin bo'lgani uchun oladi).
+async function makeChannelMandatory(api: any, chatId: number, title: string): Promise<void> {
+  let link: string | undefined;
+  try {
+    const chat = await api.getChat(chatId);
+    if (chat?.username) link = `https://t.me/${chat.username}`;
+  } catch { /* jim */ }
+  if (!link) {
+    try {
+      const inv = await api.exportChatInviteLink(chatId); // bot admin bo'lsa oladi
+      if (inv) link = inv;
+    } catch { /* havolasiz davom etamiz */ }
+  }
+  // id = raqamli chat id (getChatMember ham, uzish ham shu bilan ishlaydi)
+  addChannel({ id: String(chatId), name: title, link });
+}
 import { registerGames, resetGameSetup } from "./games.js";
 
 // ─── Sozlamalar ──────────────────────────────────────────────────────────────
@@ -917,6 +937,7 @@ function registerPrivate(priv: Composer<Context>): void {
     const allowed = isManagement(who) || (!!who && !!linked?.class_id && (await canUseClass(who, linked.class_id)));
     if (!allowed) { await ctx.answerCallbackQuery("⛔"); return; }
     await unlinkChat(chatId);
+    removeChannel(String(chatId)); // majburiy a'zolik ro'yxatidan ham olib tashlaymiz
     await ctx.answerCallbackQuery("Uzildi");
     if (linked) await sendToChat(chatId, "ℹ️ Bu guruh maktab platformasidan uzildi.");
     if (isManagement(who)) {
@@ -937,8 +958,13 @@ function registerPrivate(priv: Composer<Context>): void {
       const chat = await ctx.api.getChat(chatId);
       const title = "title" in chat && chat.title ? chat.title : String(chatId);
       await linkChat({ chatId, chatType: chat.type, title, purpose, linkedBy: ctx.from.id });
+      let extra = "";
+      if (purpose === "school") {
+        await makeChannelMandatory(ctx.api, chatId, title);
+        extra = "\n\n📢 Bu kanal endi <b>majburiy</b> — o'quvchilar botdan foydalanish uchun unga a'zo bo'lishi shart.";
+      }
       await ctx.answerCallbackQuery("✅ Ulandi");
-      await ctx.editMessageText(`✅ <b>${esc(title)}</b> ${purpose === "school" ? "maktab kanali" : "ustozlar guruhi"} sifatida ulandi.`, { parse_mode: "HTML" });
+      await ctx.editMessageText(`✅ <b>${esc(title)}</b> ${purpose === "school" ? "maktab kanali" : "ustozlar guruhi"} sifatida ulandi.${extra}`, { parse_mode: "HTML" });
     } catch {
       await ctx.answerCallbackQuery("❌ Chat topilmadi");
     }
@@ -965,7 +991,8 @@ function registerPrivate(priv: Composer<Context>): void {
       }
       const title = "title" in chat && chat.title ? chat.title : id;
       await linkChat({ chatId: chat.id, chatType: chat.type, title, purpose: "school", linkedBy: ctx.from!.id });
-      await ctx.reply(`✅ <b>${esc(title)}</b> maktab kanali sifatida ulandi.\nEndi saytdagi e'lonlar ham shu yerga avtomatik chiqadi.`, { parse_mode: "HTML" });
+      await makeChannelMandatory(ctx.api, chat.id, title);
+      await ctx.reply(`✅ <b>${esc(title)}</b> maktab kanali sifatida ulandi.\nEndi saytdagi e'lonlar shu yerga chiqadi va bu kanal <b>majburiy a'zolik</b> bo'ldi — o'quvchilar unga a'zo bo'lishi shart.`, { parse_mode: "HTML" });
     } catch {
       await ctx.reply("❌ Kanal topilmadi. Username to'g'riligini va bot admin ekanini tekshiring.");
     }
