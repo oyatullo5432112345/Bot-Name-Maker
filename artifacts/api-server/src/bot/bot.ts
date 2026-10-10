@@ -1228,7 +1228,7 @@ export function createBot(): Bot {
     const magicToken = createMagicToken(payload);
     const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
     const kb = new InlineKeyboard()
-      .url("🚀 Parolsiz kirish (1 bosish)", loginUrl).row()
+      .url("🚀 Platformaga kirish", loginUrl).row()
       .text("🔙 Orqaga", "ob:student");
 
     const esc = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
