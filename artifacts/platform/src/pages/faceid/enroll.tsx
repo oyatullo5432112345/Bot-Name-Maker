@@ -31,7 +31,7 @@ const POSES: { hint: string; ok: (f: FaceResult, c: PoseCtx) => boolean }[] = [
   { hint: "Biroz pastga qarang", ok: (f, c) => f.pitch - c.pitch0 >= 0.04 },
 ];
 const SAMPLES = POSES.length;
-const POSE_WAIT_MS = 3000; // shu vaqt ichida kerakli holat bo'lmasa — bor holatni olamiz (qotib qolmasin)
+const POSE_WAIT_MS = 2000; // shu vaqt ichida kerakli holat bo'lmasa — bor holatni olamiz (qotib qolmasin)
 const CHAIN_MAX = 0.62; // yangi namuna oldingilaridan biriga shunchalik yaqin bo'lishi kerak (o'sha odam)
 
 function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onClose: () => void; onSaved: () => void }) {
@@ -83,7 +83,7 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
     try {
       const n = samplesRef.current.length;
       const pose = POSES[n]!;
-      const faces = await detectFaces(fa, video, hasSsd(fa) ? "ssd" : "tiny", { inputSize: 416, maxFaces: 3, minScore: 0.5 });
+      const faces = await detectFaces(fa, video, "tiny", { inputSize: 320, maxFaces: 2, minScore: 0.5 });
       const face = faces[0];
       const big = !!face && face.box.width >= video.videoWidth * 0.22;
       const crowd = !!face && faces.length > 1 && faces[1]!.box.width > face.box.width * 0.6;
@@ -111,8 +111,8 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
           return;
         }
         setHint(POSES[k]!.hint);
-        poseStartRef.current = Date.now() + 500;
-        setTimeout(() => void captureLoop(fa), 500); // namunalar orasida qisqa pauza
+        poseStartRef.current = Date.now() + 350;
+        setTimeout(() => void captureLoop(fa), 350); // namunalar orasida qisqa pauza
         return;
       }
       setHint(

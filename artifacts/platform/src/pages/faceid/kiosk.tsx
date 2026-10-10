@@ -83,9 +83,9 @@ type Precision = "yumshoq" | "standart" | "qattiq";
 // Shu bilan "Yumshoq" tez ishlaydi, "Qattiq" eng aniq (yon tomon/uzoqdan).
 interface PrecisionProfile { threshold: number; margin: number; votes: number; inputSize: number; label: string; note: string }
 const PRECISION: Record<Precision, PrecisionProfile> = {
-  yumshoq:  { threshold: 0.50, margin: 0.06, votes: 2, inputSize: 288, label: "Yumshoq",  note: "Eng tez — kam o'quvchi yoki bitta sinf eshigi uchun" },
-  standart: { threshold: 0.47, margin: 0.10, votes: 3, inputSize: 416, label: "Standart", note: "Maktab uchun tavsiya — aniqlik va tezlik muvozanati" },
-  qattiq:   { threshold: 0.44, margin: 0.13, votes: 4, inputSize: 512, label: "Qattiq",   note: "Eng aniq — ko'p o'quvchi, xato taniyishni minimal qiladi" },
+  yumshoq:  { threshold: 0.52, margin: 0.07, votes: 2, inputSize: 256, label: "Yumshoq",  note: "Eng tez — 1-2 o'quvchi, yaxshi yorug'lik uchun" },
+  standart: { threshold: 0.48, margin: 0.10, votes: 2, inputSize: 320, label: "Standart", note: "Tavsiya — tez va aniq muvozanati (maktab eshigi)" },
+  qattiq:   { threshold: 0.45, margin: 0.13, votes: 3, inputSize: 448, label: "Qattiq",   note: "Eng aniq — ko'p o'quvchi, xato taniyishni minimal qiladi" },
 };
 const PRECISION_KEY = "faceid_precision";
 function readPrecision(): Precision {
@@ -273,7 +273,9 @@ export default function FaceKioskPage() {
   const camIdRef = useRef<string | null>(null); // tanlangan kamera (veb-kamera uchun)
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
   const [manualDet] = useState(readDetector);
-  const detRef = useRef<Detector>(manualDet ?? "ssd");
+  // Standart — TEZ topuvchi (tiny): eshik oldidagi to'g'ri yuzlarни tez taniydi.
+  // Aniqlik kerak bo'lsa (yon tomon/ko'p odam) — "Aniq" tugmasi bilan SSD'ga o'tiladi.
+  const detRef = useRef<Detector>(manualDet ?? "tiny");
   const manualDetRef = useRef<boolean>(manualDet !== null);
   const perfRef = useRef({ ema: 0, frames: 0, shownAt: 0, faces: 0 });
   const precisionRef = useRef<PrecisionProfile>(PRECISION[readPrecision()]);
@@ -671,7 +673,7 @@ export default function FaceKioskPage() {
         const det = detRef.current;
         let faces: FaceResult[];
         try {
-          faces = await detectFaces(fa, video, det, { inputSize: precisionRef.current.inputSize, maxFaces: 6, minScore: det === "ssd" ? 0.4 : 0.45 });
+          faces = await detectFaces(fa, video, det, { inputSize: precisionRef.current.inputSize, maxFaces: 4, minScore: det === "ssd" ? 0.4 : 0.45 });
         } catch (e) {
           if (det === "ssd") setDetector("tiny", false); // SSD ishlamasa — zaxira
           throw e;
