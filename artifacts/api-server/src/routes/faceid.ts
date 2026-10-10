@@ -66,13 +66,14 @@ void query(FACE_SCHEMA_SQL)
 
 export interface FaceSettings {
   late_after: string; // "08:00" — shundan keyin kelsa "kech qoldi"
-  notify: boolean; // o'quvchiga Telegram xabar
+  notify: boolean; // o'quvchiga (ota-onasiga) shaxsiy Telegram xabar
+  notify_group: boolean; // har bir o'quvchi kir/chiqishini O'Z SINF GURUHIGA darhol, alohida post qilish (vaqti bilan)
   threshold: number; // moslik chegarasi (kichik = qat'iyroq)
   min_stay: number; // kelganidan keyin necha daqiqadan so'ng skanerlash "ketdi" deb hisoblanadi
   default_end: string; // "13:30" — dars jadvali yo'q bo'lsa, darslar tugash vaqti (shundan oldin ketsa "erta")
 }
 
-const DEFAULT_SETTINGS: FaceSettings = { late_after: "08:00", notify: true, threshold: 0.48, min_stay: 20, default_end: "13:30" };
+const DEFAULT_SETTINGS: FaceSettings = { late_after: "08:00", notify: true, notify_group: true, threshold: 0.48, min_stay: 20, default_end: "13:30" };
 
 async function getSettings(): Promise<FaceSettings> {
   const row = await queryOne<{ data: Partial<FaceSettings> }>("SELECT data FROM face_settings WHERE id = 1").catch(() => null);
@@ -278,6 +279,7 @@ router.post("/faceid/settings", async (req, res): Promise<void> => {
   const next: FaceSettings = {
     late_after: typeof b.late_after === "string" && /^\d{2}:\d{2}$/.test(b.late_after) ? b.late_after : cur.late_after,
     notify: typeof b.notify === "boolean" ? b.notify : cur.notify,
+    notify_group: typeof b.notify_group === "boolean" ? b.notify_group : cur.notify_group,
     threshold: typeof b.threshold === "number" && b.threshold >= 0.3 && b.threshold <= 0.65 ? b.threshold : cur.threshold,
     min_stay: typeof b.min_stay === "number" && b.min_stay >= 1 && b.min_stay <= 480 ? Math.round(b.min_stay) : cur.min_stay,
     default_end: typeof b.default_end === "string" && /^\d{2}:\d{2}$/.test(b.default_end) ? b.default_end : cur.default_end,
@@ -659,6 +661,35 @@ type ScanResult = {
   lessons_end?: string | null;
 };
 
+/**
+ * Bitta o'quvchining kir/chiqishini O'Z SINF GURUHIGA darhol, alohida xabar qilib
+ * yuboradi (vaqti bilan). Faqat o'quvchilar uchun — xodimlar (kind="staff") o'tkazib
+ * yuboriladi. Sinf guruhi ulanmagan bo'lsa — jim o'tadi. Fire-and-forget (javobni
+ * kutmaydi), shuning uchun kiosk tez ishlayveradi.
+ */
+async function postClassGroup(
+  st: FacePerson,
+  mid: number | null,
+  kind: "in" | "out",
+  time: string,
+  flags: { late?: boolean; early?: boolean; excused?: boolean } = {}
+): Promise<void> {
+  if (st.kind !== "student" || !st.class_name) return;
+  const cls = mid !== null
+    ? await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1 AND maktab_id = $2", [st.class_name, mid])
+    : await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [st.class_name]);
+  if (!cls) return;
+  const chats = await getClassChats(cls.id);
+  if (chats.length === 0) return;
+  const text = kind === "in"
+    ? `${flags.late ? "⏰" : "✅"} <b>${esc(st.full_name)}</b> maktabga keldi — <b>${time}</b>${flags.late ? " (kech qoldi)" : ""}`
+    : `🏠 <b>${esc(st.full_name)}</b> maktabdan ketdi — <b>${time}</b>${flags.excused ? " (ruxsat bilan)" : flags.early ? " (erta)" : ""}`;
+  for (const ch of chats) {
+    await sendToChat(ch.chat_id, text);
+    await sleep(50);
+  }
+}
+
 async function handleScan(
   login: string,
   mode: ScanMode,
@@ -735,6 +766,7 @@ async function handleScan(
           : `✅ Maktabga keldingiz: ${time}. Xayrli kun!`
       );
     }
+    if (settings.notify_group) void postClassGroup(st, mid, "in", time, { late: status === "late" });
     return { ...base, event: "in", time, status };
   }
 
@@ -758,6 +790,7 @@ async function handleScan(
   if (settings.notify && isRealTelegramId(st.telegram_id)) {
     void notifyUser(st.telegram_id, `🏠 Maktabdan chiqdingiz: ${time}${early ? ` (darslar ${end} da tugaydi)` : ""}. Yaxshi dam oling!`);
   }
+  if (settings.notify_group) void postClassGroup(st, mid, "out", time, { early });
   return { ...base, event: "out", time, early, arrived: row?.arrived ?? null, lessons_end: end };
 }
 
@@ -861,6 +894,7 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
          checked_at = COALESCE($5::timestamptz, NOW()), status = $6, student_name = EXCLUDED.student_name`,
       [student_login, person.full_name, person.class_name, today, ts, status, mid ?? 3]
     );
+    if (settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "in", shownTime, { late: status === "late" });
     res.json({ ok: true, status });
     return;
   }
@@ -876,6 +910,7 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
        left_at = COALESCE($5::timestamptz, NOW()), left_early = $6, excused = $7`,
     [student_login, person.full_name, person.class_name, today, ts, early, excused, mid ?? 3]
   );
+  if (settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "out", shownTime, { early, excused });
   res.json({ ok: true, early, excused, lessons_end: end });
 });
 
