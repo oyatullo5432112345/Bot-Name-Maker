@@ -22,7 +22,7 @@ import {
 import { createMagicToken, verifyPassword } from "../routes/auth.js";
 import { registerTelegramFeatures, sendMainMenu } from "./features.js";
 import { generateCertificatePNG, todayUzDate } from "../lib/certificate-generator.js";
-import { claimJob, uzDateStr } from "../lib/tg-shared.js";
+import { claimJob, uzDateStr, isRealTelegramId, sleep } from "../lib/tg-shared.js";
 import { createSessionStore } from "./session-store.js";
 import { initSettings } from "./settings.js";
 
@@ -422,6 +422,95 @@ function buildRoleSelectionKb(): InlineKeyboard {
     .text("👔 Rahbar (Direktor / O'quv ishlari mudiri / MMTB)", "reg_role:management");
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  YANGI, SODDA ONBOARDING (majburiy obunadan keyin)
+//   • O'quvchi  → sinf tanlash → ism tanlash → F.I.O + 5-xonali ID + PAROLSIZ kirish
+//   • O'qituvchi → to'g'ridan 5-xonali kod kiritish sahifasiga (saytga) yo'naltirish
+// ═══════════════════════════════════════════════════════════════════════════
+function buildOnboardRoleKb(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("👨‍🎓 O'quvchiman", "ob:student").row()
+    .text("👨‍🏫 O'qituvchi / xodimman", "ob:teacher");
+}
+
+interface OBClass { id: string; name: string; maktab_id: number | null; school: string }
+
+async function obListClasses(): Promise<OBClass[]> {
+  try {
+    return await query<OBClass>(
+      `SELECT c.id, c.name, c.maktab_id, COALESCE(m.nom, '') AS school
+         FROM classes c LEFT JOIN maktablar m ON m.id = c.maktab_id
+        WHERE c.name <> '' ORDER BY c.maktab_id, c.name`
+    );
+  } catch {
+    return await query<OBClass>(
+      `SELECT id, name, NULL::int AS maktab_id, '' AS school FROM classes WHERE name <> '' ORDER BY name`
+    ).catch(() => [] as OBClass[]);
+  }
+}
+
+async function obListStudents(classId: string): Promise<{ login: string; full_name: string }[]> {
+  const cls = await queryOne<{ name: string; maktab_id: number | null }>(
+    "SELECT name, maktab_id FROM classes WHERE id = $1",
+    [classId]
+  ).catch(() =>
+    queryOne<{ name: string; maktab_id: number | null }>(
+      "SELECT name, NULL::int AS maktab_id FROM classes WHERE id = $1",
+      [classId]
+    ).catch(() => null)
+  );
+  if (!cls) return [];
+  if (typeof cls.maktab_id === "number") {
+    const r = await query<{ login: string; full_name: string }>(
+      "SELECT login, full_name FROM users WHERE class_name = $1 AND maktab_id = $2 ORDER BY full_name",
+      [cls.name, cls.maktab_id]
+    ).catch(() => null);
+    if (r) return r;
+  }
+  return await query<{ login: string; full_name: string }>(
+    "SELECT login, full_name FROM users WHERE class_name = $1 ORDER BY full_name",
+    [cls.name]
+  ).catch(() => []);
+}
+
+function buildClassPageKb(all: OBClass[], page: number): InlineKeyboard {
+  const multiSchool = new Set(all.map((c) => c.maktab_id)).size > 1;
+  const start = page * OB_PAGE_SIZE;
+  const slice = all.slice(start, start + OB_PAGE_SIZE);
+  const label = (c: OBClass) => (multiSchool && c.school ? `${c.school} · ${c.name}` : c.name).slice(0, 40);
+  const kb = new InlineKeyboard();
+  for (let i = 0; i < slice.length; i += 2) {
+    const a = slice[i]!;
+    const b = slice[i + 1];
+    kb.text(label(a), `ob:c:${a.id}`);
+    if (b) kb.text(label(b), `ob:c:${b.id}`);
+    kb.row();
+  }
+  const hasMore = start + OB_PAGE_SIZE < all.length;
+  const navs: [string, string][] = [];
+  if (page > 0) navs.push(["⬅️ Oldingi", `ob:cp:${page - 1}`]);
+  if (hasMore) navs.push(["Keyingi ➡️", `ob:cp:${page + 1}`]);
+  for (const [t, d] of navs) kb.text(t, d);
+  if (navs.length) kb.row();
+  kb.text("🔙 Orqaga", "ob:back");
+  return kb;
+}
+
+function buildStudentPageKb(classId: string, all: { login: string; full_name: string }[], page: number): InlineKeyboard {
+  const start = page * OB_PAGE_SIZE;
+  const slice = all.slice(start, start + OB_PAGE_SIZE);
+  const kb = new InlineKeyboard();
+  for (const s of slice) kb.text(s.full_name.slice(0, 60), `ob:p:${s.login}`).row();
+  const hasMore = start + OB_PAGE_SIZE < all.length;
+  const navs: [string, string][] = [];
+  if (page > 0) navs.push(["⬅️ Oldingi", `ob:sp:${classId}:${page - 1}`]);
+  if (hasMore) navs.push(["Keyingi ➡️", `ob:sp:${classId}:${page + 1}`]);
+  for (const [t, d] of navs) kb.text(t, d);
+  if (navs.length) kb.row();
+  kb.text("🔙 Sinflar", "ob:student");
+  return kb;
+}
+
 export function createBot(): Bot {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN kerak");
@@ -567,14 +656,11 @@ export function createBot(): Bot {
       return;
     }
 
-    // Bog'lanmagan → platformaga KIRISH (ro'yxatdan o'tish olib tashlangan)
-    const regKb = new InlineKeyboard()
-      .url("🚀 Platformaga kirish", `${WEBSITE_URL}/login`);
+    // Bog'lanmagan → rol tanlash (o'quvchi / o'qituvchi)
     await ctx.reply(
-      "🌐 *Toshloq tuman platformasi*\n\n" +
-      "Platformaga kirish uchun maktab bergan *Kirish ID* dan foydalaning\\.\n" +
-      "Kirish ID ni sinf rahbari yoki admindan olib, quyidagi tugma orqali kiring 👇",
-      { parse_mode: "MarkdownV2", reply_markup: regKb }
+      "🎓 *Toshloq tuman platformasi*\n\n" +
+      "Platformaga kirish uchun avval o'zingizni tanlang — siz kimsiz? 👇",
+      { parse_mode: "Markdown", reply_markup: buildOnboardRoleKb() }
     );
 
     // Admin bildirishnomasi
@@ -993,15 +1079,12 @@ export function createBot(): Bot {
         reply_markup: buildWelcomeKeyboard(),
       });
     } else {
-      // Bog'lanmagan → ro'yxatdan o'tish EMAS, to'g'ridan platformaga KIRISH
-      const kb = new InlineKeyboard()
-        .url("🚀 Platformaga kirish", `${WEBSITE_URL}/login`);
+      // Bog'lanmagan → rol tanlash (o'quvchi / o'qituvchi)
       await ctx.reply(
         "✅ A'zo bo'ldingiz!\n\n" +
-        "🎓 *Toshloq tumani 3-maktab — TALIM PLATFORM*\n\n" +
-        "Platformaga kirish uchun maktab bergan *Kirish ID* dan foydalaning.\n" +
-        "Kirish ID ni sinf rahbari yoki admindan olib, quyidagi tugma orqali kiring 👇",
-        { parse_mode: "Markdown", reply_markup: kb }
+        "🎓 *Toshloq tuman platformasi*\n\n" +
+        "Endi o'zingizni tanlang — siz kimsiz? 👇",
+        { parse_mode: "Markdown", reply_markup: buildOnboardRoleKb() }
       );
     }
   });
@@ -1027,6 +1110,181 @@ export function createBot(): Bot {
     userStates.set(userId, { type: "idle" });
     await ctx.answerCallbackQuery();
     await ctx.editMessageText("❌ Bekor qilindi.");
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  YANGI ONBOARDING callback'lari (ob:*)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Rol tanlashga qaytish
+  bot.callbackQuery("ob:back", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(
+      "🎓 *Toshloq tuman platformasi*\n\nSiz kimsiz? Quyidan tanlang 👇",
+      { parse_mode: "Markdown", reply_markup: buildOnboardRoleKb() }
+    ).catch(() => {});
+  });
+
+  // O'qituvchi → to'g'ridan 5-xonali kod kiritish sahifasiga
+  bot.callbackQuery("ob:teacher", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const kb = new InlineKeyboard()
+      .url("🔑 5-xonali kodni kiritish", `${WEBSITE_URL}/login`).row()
+      .text("🔙 Orqaga", "ob:back");
+    await ctx.editMessageText(
+      "👨‍🏫 *O'qituvchi / xodim sifatida kirish*\n\n" +
+      "Quyidagi tugmani bosing va sizga berilgan *5-xonali kodingizni* kiriting 👇",
+      { parse_mode: "Markdown", reply_markup: kb }
+    ).catch(() => {});
+  });
+
+  // O'quvchi → sinflar ro'yxati
+  bot.callbackQuery("ob:student", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const all = await obListClasses();
+    if (all.length === 0) {
+      await ctx.editMessageText("ℹ️ Sinflar ro'yxati hozircha bo'sh. Admin bilan bog'laning.", {
+        reply_markup: new InlineKeyboard().text("🔙 Orqaga", "ob:back"),
+      }).catch(() => {});
+      return;
+    }
+    await ctx.editMessageText("🏫 *Sinfingizni tanlang:*", {
+      parse_mode: "Markdown",
+      reply_markup: buildClassPageKb(all, 0),
+    }).catch(() => {});
+  });
+
+  // Sinflar sahifasi
+  bot.callbackQuery(/^ob:cp:(\d+)$/, async (ctx) => {
+    const page = parseInt(ctx.match[1] ?? "0", 10);
+    await ctx.answerCallbackQuery();
+    const all = await obListClasses();
+    await ctx.editMessageReplyMarkup({ reply_markup: buildClassPageKb(all, page) }).catch(() => {});
+  });
+
+  // Sinf tanlandi → o'quvchilar ro'yxati
+  bot.callbackQuery(/^ob:c:(.+)$/, async (ctx) => {
+    const classId = ctx.match[1]!;
+    await ctx.answerCallbackQuery();
+    const students = await obListStudents(classId);
+    if (students.length === 0) {
+      await ctx.editMessageText("ℹ️ Bu sinfda o'quvchi topilmadi.", {
+        reply_markup: new InlineKeyboard().text("🔙 Sinflar", "ob:student"),
+      }).catch(() => {});
+      return;
+    }
+    await ctx.editMessageText("👤 *Ro'yxatdan o'z ism-familiyangizni toping va tanlang:*", {
+      parse_mode: "Markdown",
+      reply_markup: buildStudentPageKb(classId, students, 0),
+    }).catch(() => {});
+  });
+
+  // O'quvchilar sahifasi
+  bot.callbackQuery(/^ob:sp:(.+):(\d+)$/, async (ctx) => {
+    const classId = ctx.match[1]!;
+    const page = parseInt(ctx.match[2] ?? "0", 10);
+    await ctx.answerCallbackQuery();
+    const students = await obListStudents(classId);
+    await ctx.editMessageReplyMarkup({ reply_markup: buildStudentPageKb(classId, students, page) }).catch(() => {});
+  });
+
+  // O'quvchi tanlandi → F.I.O + 5-xonali ID + PAROLSIZ kirish
+  bot.callbackQuery(/^ob:p:(.+)$/, async (ctx) => {
+    const login = ctx.match[1]!;
+    await ctx.answerCallbackQuery();
+    const u = await queryOne<{ full_name: string; login: string; class_name: string | null; maktab_id: number | null }>(
+      "SELECT full_name, login, class_name, maktab_id FROM users WHERE login = $1",
+      [login]
+    ).catch(() =>
+      queryOne<{ full_name: string; login: string; class_name: string | null; maktab_id: number | null }>(
+        "SELECT full_name, login, class_name, NULL::int AS maktab_id FROM users WHERE login = $1",
+        [login]
+      ).catch(() => null)
+    );
+    if (!u) {
+      await ctx.editMessageText("❌ O'quvchi topilmadi. Qaytadan urinib ko'ring.", {
+        reply_markup: new InlineKeyboard().text("🔙 Sinflar", "ob:student"),
+      }).catch(() => {});
+      return;
+    }
+    const tgId = ctx.from.id;
+    // Bu Telegram akkauntni shu o'quvchiga bog'laymiz (kelgusi /start va xabarlar uchun)
+    await query("UPDATE users SET telegram_id = $1 WHERE login = $2", [tgId, login]).catch(() => {});
+
+    let classId: string | null = null;
+    if (u.class_name) {
+      const c = typeof u.maktab_id === "number"
+        ? await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1 AND maktab_id = $2", [u.class_name, u.maktab_id]).catch(() => null)
+        : await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [u.class_name]).catch(() => null);
+      classId = c?.id ?? null;
+    }
+
+    const payload: Record<string, unknown> = {
+      id: String(tgId), role: "student", full_name: u.full_name,
+      login: u.login, class_name: u.class_name ?? "", class_id: classId, telegram_id: tgId,
+    };
+    if (typeof u.maktab_id === "number") payload["maktab_id"] = u.maktab_id;
+
+    const magicToken = createMagicToken(payload);
+    const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
+    const kb = new InlineKeyboard()
+      .url("🚀 Parolsiz kirish (1 bosish)", loginUrl).row()
+      .text("🔙 Orqaga", "ob:student");
+
+    const esc = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+    await ctx.editMessageText(
+      `✅ *${esc(u.full_name)}*\n` +
+      `🏫 ${esc(u.class_name ?? "—")}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `🆔 *5\\-xonali ID:* \`${esc(u.login)}\`\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `Quyidagi tugma orqali *parolsiz*, to'g'ridan\\-to'g'ri kiring 👇\n` +
+      `_(Havola 15 daqiqa amal qiladi)_`,
+      { parse_mode: "MarkdownV2", reply_markup: kb }
+    ).catch(() => {});
+    await sendMainMenu(ctx, tgId).catch(() => {});
+  });
+
+  // ─── Admin: hamma foydalanuvchi + guruhlarga "majburiy obuna" xabari ─────────
+  bot.command(["majburiy_yubor", "eslatma"], async (ctx) => {
+    if (!isAdmin(ctx.from?.id ?? 0)) { await ctx.reply("⛔ Faqat admin uchun."); return; }
+    const chans = loadSettings().channels;
+    if (chans.length === 0) {
+      await ctx.reply("❌ Majburiy kanal yo'q. Avval /kanal bilan kanal/guruh ulang, so'ng qayta urinib ko'ring.");
+      return;
+    }
+    const names = chans.map((c) => `• ${c.name}`).join("\n");
+    const text =
+      "📢 <b>Diqqat!</b>\n\n" +
+      "Toshloq tuman platformasidan foydalanish uchun quyidagi kanal(lar)ga a'zo bo'lishingiz <b>shart</b> 👇\n\n" +
+      names;
+    const kb = buildSubscribeKeyboard(chans.map((c) => c.id));
+
+    const [usersR, staffR, groupsR] = await Promise.all([
+      query<{ telegram_id: number }>("SELECT DISTINCT telegram_id FROM users WHERE telegram_id IS NOT NULL").catch(() => [] as { telegram_id: number }[]),
+      query<{ telegram_id: number }>("SELECT DISTINCT telegram_id FROM staff WHERE telegram_id IS NOT NULL").catch(() => [] as { telegram_id: number }[]),
+      query<{ chat_id: number }>("SELECT chat_id FROM tg_chats").catch(() => [] as { chat_id: number }[]),
+    ]);
+    const ids = new Set<number>();
+    for (const r of [...usersR, ...staffR]) if (isRealTelegramId(r.telegram_id)) ids.add(Number(r.telegram_id));
+
+    await ctx.reply(`⏳ Yuborilmoqda... (${ids.size} foydalanuvchi, ${groupsR.length} guruh). Biroz kuting.`);
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      try {
+        await bot.api.sendMessage(id, text, { parse_mode: "HTML", reply_markup: kb, link_preview_options: { is_disabled: true } });
+        ok++;
+      } catch { fail++; }
+      await sleep(45);
+    }
+    for (const g of groupsR) {
+      try {
+        await bot.api.sendMessage(g.chat_id, text, { parse_mode: "HTML", reply_markup: kb, link_preview_options: { is_disabled: true } });
+        ok++;
+      } catch { fail++; }
+      await sleep(45);
+    }
+    await ctx.reply(`✅ Tayyor!\n\n📤 Yuborildi: <b>${ok}</b>\n❌ Yuborilmadi (bloklagan yoki chiqib ketgan): <b>${fail}</b>`, { parse_mode: "HTML" });
   });
 
   // ─── Onboarding: rol tanlash → shaxsiy mahfiy kod so'rash ───────────────────

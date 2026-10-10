@@ -773,6 +773,63 @@ function StudentGradesWidget({ login }: { login: string }) {
   );
 }
 
+type MyAttendance = {
+  today: { date: string; arrived: string | null; left: string | null; status: string; early: boolean; excused: boolean } | null;
+  recent: Array<{ date: string; arrived: string | null; left: string | null; status: string; early: boolean; excused: boolean }>;
+};
+
+function MyAttendanceWidget() {
+  const { data } = useQuery<MyAttendance | null>({
+    queryKey: ["my-faceid"],
+    queryFn: async () => {
+      const t = localStorage.getItem("talim_auth_token");
+      const r = await fetch(`${API_BASE}/faceid/my`, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+      if (!r.ok) return null;
+      return r.json() as Promise<MyAttendance>;
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  const today = data?.today ?? null;
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm font-medium">
+          <ScanFace className="w-4 h-4" />
+          Bugungi davomat
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {!today || (!today.arrived && !today.left) ? (
+          <p className="text-sm text-muted-foreground py-2">Bugun hali belgilanmadi</p>
+        ) : (
+          <div className="flex gap-6">
+            <div>
+              <p className="text-xs text-muted-foreground">Keldi</p>
+              <p className="font-bold text-lg tabular-nums text-emerald-600">
+                {today.arrived ?? "—"}
+                {today.status === "late" && today.arrived && (
+                  <span className="text-xs font-medium text-amber-600 ml-1">kech</span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Ketdi</p>
+              <p className="font-bold text-lg tabular-nums text-blue-600">
+                {today.left ?? "—"}
+                {today.early && today.left && (
+                  <span className="text-xs font-medium text-amber-600 ml-1">erta</span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function StudentDashboard() {
   const { user } = useAuth();
   const [sinfRahbari, setSinfRahbari] = useState<string | null>(null);
@@ -810,6 +867,7 @@ function StudentDashboard() {
   return (
     <div className="space-y-4">
       <CountdownBanner />
+      <MyAttendanceWidget />
 
       <Card>
         <CardHeader>

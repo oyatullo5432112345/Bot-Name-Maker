@@ -1139,4 +1139,31 @@ router.post("/faceid/notify-unexcused", async (req, res): Promise<void> => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  O'QUVCHI — O'Z DAVOMATI (bosh sahifada "qachon keldi/ketdi")
+// ═══════════════════════════════════════════════════════════════════════════
+// GET /api/faceid/my — kirgan foydalanuvchining o'z kir/chiqishi (bugun + oxirgi 14 kun)
+router.get("/faceid/my", async (req, res): Promise<void> => {
+  const u = getAuthUser(req.headers.authorization) as AuthUser | null;
+  if (!u) { res.status(401).json({ error: "Avtorizatsiya talab qilinadi" }); return; }
+  const login = String(u.login ?? "");
+  if (!login) { res.json({ today: null, recent: [] }); return; }
+  const today = uzDateStr();
+  const rows = await query<{ date: string; arrived: string | null; left: string | null; status: string; early: boolean; excused: boolean }>(
+    `SELECT to_char(date, 'YYYY-MM-DD') AS date,
+            to_char(checked_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS arrived,
+            to_char(left_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS "left",
+            status,
+            COALESCE(left_early, false) AS early,
+            COALESCE(excused, false) AS excused
+       FROM face_checkins
+      WHERE student_login = $1
+      ORDER BY date DESC LIMIT 14`,
+    [login]
+  ).catch(() => [] as { date: string; arrived: string | null; left: string | null; status: string; early: boolean; excused: boolean }[]);
+  const todayRow = rows.find((r) => r.date === today) ?? null;
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ today: todayRow, recent: rows });
+});
+
 export default router;
