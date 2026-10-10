@@ -63,8 +63,16 @@ interface ScanReply {
 
 interface DrawItem {
   box: Box;
-  color: string;
+  green: number;             // 0..128 — yashil segmentlar soni
+  state: "scan" | "ok" | "reject";
   text: string;
+}
+interface RingState {
+  green: number;             // joriy yashil daraja (0..128)
+  cand: string | null;       // to'planayotgan nomzod (login)
+  confirmed: string | null;  // tasdiqlangan login
+  confirmedName: string;
+  rejectUntil: number;       // shu vaqtgacha "Rad etildi" ko'rsatiladi
 }
 
 const QUEUE_KEY = "faceid_queue_v2";
@@ -102,6 +110,15 @@ const UNKNOWN_AFTER_MS = 1800; // shuncha vaqt tanilmasa — "Tanilmadi"
 const UNKNOWN_GAP_MS = 3000;
 const MAX_TOASTS = 4;
 const SLOW_MS = 320; // SSD kadri bundan sekin bo'lsa — Tez rejimga o'tamiz
+
+// ── 128-chiziqli aylana (yuz izi = 128 son) ──
+const RING_SEG = 128;        // aylana 128 ta chiziqdan iborat
+const CONFIRM_GREEN = 80;    // shuncha segment yashil bo'lsa — tanish (yuqori ishonch)
+const MAX_TRACK_MS = 5000;   // 5 soniyada 80 ga yetmasa — "Rad etildi", qaytadan
+const GREEN_STRONG = 13;     // juda aniq kadrda qo'shiladigan segmentlar
+const GREEN_WEAK = 7;        // oddiy mos kadrda
+const GREEN_DECAY = 5;       // mos kelmagan kadrda kamayadi
+const REJECT_SHOW_MS = 1800; // "Rad etildi" shuncha ko'rinadi, keyin qayta urinish
 
 const COLORS = {
   ok: "#34D399",
@@ -263,6 +280,7 @@ export default function FaceKioskPage() {
   const modeRef = useRef<Mode>(readMode());
   const tracksRef = useRef<Track[]>([]);
   const votesRef = useRef(new VoteBook(VOTE_WINDOW_MS));
+  const ringRef = useRef(new Map<number, RingState>()); // track.id → aylana holati
   const shownUntilRef = useRef(new Map<string, number>()); // login → shu vaqtgacha qayta ko'rsatilmaydi
   const lastUnknownRef = useRef(0);
   const lastFastRef = useRef(0); // "tez o'tib ketdi" ogohlantirishi (throttle)
@@ -466,31 +484,49 @@ export default function FaceKioskPage() {
     const scale = Math.max(cw / video.videoWidth, ch / video.videoHeight);
     const ox = (cw - video.videoWidth * scale) / 2;
     const oy = (ch - video.videoHeight * scale) / 2;
+    ctx.lineCap = "round";
     for (const it of items) {
       let x = it.box.x * scale + ox;
       const y = it.box.y * scale + oy;
       const w = it.box.width * scale;
       const h = it.box.height * scale;
       if (facingRef.current === "user") x = cw - x - w;
-      const c = Math.min(w, h) * 0.22;
-      ctx.strokeStyle = it.color;
-      ctx.lineWidth = 4;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(x, y + c); ctx.lineTo(x, y); ctx.lineTo(x + c, y);
-      ctx.moveTo(x + w - c, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + c);
-      ctx.moveTo(x + w, y + h - c); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - c, y + h);
-      ctx.moveTo(x + c, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - c);
-      ctx.stroke();
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      const outer = Math.max(w, h) * 0.62;
+      const inner = outer * 0.84;
+      const green = Math.max(0, Math.min(RING_SEG, it.green));
+      const GREEN = "#34D399";
+      const RED = it.state === "reject" ? "#EF4444" : "#F87171";
+      // 128 ta chiziq — o'ng tomondan (0°) soat yo'nalishida (pastga)
+      for (let i = 0; i < RING_SEG; i++) {
+        const a = (i / RING_SEG) * Math.PI * 2;
+        const filled = it.state === "ok" || (it.state === "scan" && i < green);
+        ctx.strokeStyle = it.state === "reject" ? RED : filled ? GREEN : RED;
+        ctx.lineWidth = filled ? 3.4 : 2.2;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        ctx.beginPath();
+        ctx.moveTo(cx + ca * inner, cy + sa * inner);
+        ctx.lineTo(cx + ca * outer, cy + sa * outer);
+        ctx.stroke();
+      }
+      if (it.state === "reject") {
+        ctx.fillStyle = "#FCA5A5";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = `800 ${Math.max(13, outer * 0.2)}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+        ctx.fillText("Rad etildi", cx, cy);
+        ctx.textAlign = "left";
+      }
       if (it.text) {
-        const fs = Math.max(13, Math.min(22, w * 0.13));
+        const fs = Math.max(14, Math.min(24, w * 0.14));
         ctx.font = `700 ${fs}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
         const tw = ctx.measureText(it.text).width;
         const ph = fs + 10;
         const pw = tw + 18;
-        const px = Math.min(Math.max(4, x + w / 2 - pw / 2), cw - pw - 4);
-        const py = Math.max(4, y - ph - 8);
-        ctx.fillStyle = it.color;
+        const px = Math.min(Math.max(4, cx - pw / 2), cw - pw - 4);
+        const py = Math.min(ch - ph - 4, cy + outer + 8);
+        ctx.fillStyle = it.state === "ok" ? GREEN : "#22D3EE";
         pill(ctx, px, py, pw, ph, ph / 2);
         ctx.fill();
         ctx.fillStyle = "#05070F";
@@ -584,60 +620,67 @@ export default function FaceKioskPage() {
     const now = Date.now();
     const minFace = Math.max(56, Math.min(video.videoWidth, video.videoHeight) * 0.08);
     const usable = faces.filter((f) => f.box.width >= minFace);
-    const small = faces.filter((f) => f.box.width < minFace);
     const { tracks, pairs, expired } = associate(tracksRef.current, usable, now, TRACK_TTL_MS);
     tracksRef.current = tracks;
-    votesRef.current.prune(now);
     perfRef.current.faces = faces.length;
-
-    // "Tez o'tib ketdi": yuz ko'rindi-yu, tanishga ulgurmay yo'qoldi → ogohlantirish
-    const missed = expired.some((t) => !t.matched && t.frames >= 3);
-    if (missed && now - lastFastRef.current > 4000) {
-      lastFastRef.current = now;
-      beep("error");
-      if (voiceRef.current) speak("Sekinroq, qaytadan qarang");
-    }
+    for (const t of expired) ringRef.current.delete(t.id); // tugagan kuzatuvlar aylanasini tozalaymiz
 
     // Chegara: server sozlamasi va aniqlik profilidan — qaysi qat'iyroq bo'lsa (kichikroq)
     const th = Math.min(settingsRef.current.threshold, precisionRef.current.threshold);
     const matches = matchFrame(usable, indexRef.current, th, precisionRef.current.margin);
-    const items: DrawItem[] = small.map((f) => ({ box: f.box, color: COLORS.small, text: "" }));
+    const items: DrawItem[] = [];
 
     for (const [face, track] of pairs) {
+      let rs = ringRef.current.get(track.id);
+      if (!rs) { rs = { green: 0, cand: null, confirmed: null, confirmedName: "", rejectUntil: 0 }; ringRef.current.set(track.id, rs); }
       const m = matches.find((x) => x.face === face);
       const p = m?.p ?? null;
-      if (m && p) {
-        track.matched = true;
-        track.logins = track.logins.filter((l) => now - l.t < VOTE_WINDOW_MS);
-        const conflict = track.logins.some((l) => l.login !== p.login);
-        track.logins.push({ login: p.login, t: now });
-        if ((shownUntilRef.current.get(p.login) ?? 0) > now) {
-          items.push({ box: face.box, color: COLORS.ok, text: shortName(p.name) });
-          continue;
-        }
-        if (conflict) {
-          // Shu yuz yaqinda boshqa o'quvchiga ham o'xshadi — shoshilmaymiz
-          items.push({ box: face.box, color: COLORS.wait, text: "…" });
-          continue;
-        }
-        const total = votesRef.current.add(p.login, m.strong ? 2 : 1, now);
-        if (total >= precisionRef.current.votes) {
-          votesRef.current.clear(p.login);
-          onRecognized(p, m.d);
-          items.push({ box: face.box, color: COLORS.ok, text: shortName(p.name) });
-        } else {
-          items.push({ box: face.box, color: COLORS.wait, text: "…" });
-        }
-      } else {
-        if (!track.matched && !track.unknownShown && track.frames >= 3 && now - track.first > UNKNOWN_AFTER_MS) {
-          track.unknownShown = true;
-          if (now - lastUnknownRef.current > UNKNOWN_GAP_MS) {
-            lastUnknownRef.current = now;
-            addToast({ kind: "unknown", login: "", name: "", cls: "", time: "" }, 1600);
-          }
-        }
-        items.push({ box: face.box, color: COLORS.unknown, text: track.unknownShown ? "Tanilmadi" : "" });
+
+      // Tasdiqlangan — to'liq yashil + ism
+      if (rs.confirmed) {
+        items.push({ box: face.box, green: RING_SEG, state: "ok", text: shortName(rs.confirmedName) });
+        continue;
       }
+      // Rad etilgan — qisqa "Rad etildi", keyin qayta urinishga tiklanadi
+      if (rs.rejectUntil > now) {
+        items.push({ box: face.box, green: 0, state: "reject", text: "" });
+        continue;
+      }
+      if (rs.rejectUntil) { rs.rejectUntil = 0; rs.green = 0; rs.cand = null; track.first = now; }
+
+      if (p) {
+        const q = Math.max(0.35, Math.min(1, (th - m!.d) / th)); // moslik sifati (yaqinroq = tezroq to'ladi)
+        if (rs.cand !== p.login) { rs.cand = p.login; rs.green = rs.green * 0.5; } // nomzod almashsa — yarmiga
+        rs.green = Math.min(RING_SEG, rs.green + (m!.strong ? GREEN_STRONG : GREEN_WEAK) * q);
+      } else {
+        rs.green = Math.max(0, rs.green - GREEN_DECAY); // mos kelmasa — sekin kamayadi
+      }
+
+      // ≥80 yashil → tanish (1 tada)
+      if (rs.cand && rs.green >= CONFIRM_GREEN) {
+        const person = peopleRef.current.find((pp) => pp.login === rs!.cand);
+        if (person) {
+          if (!((shownUntilRef.current.get(person.login) ?? 0) > now)) onRecognized(person, m?.d ?? 0.4);
+          rs.confirmed = person.login;
+          rs.confirmedName = person.name;
+          items.push({ box: face.box, green: RING_SEG, state: "ok", text: shortName(person.name) });
+          continue;
+        }
+      }
+
+      // 5 soniyada 80 ga yetmasa → Rad etildi
+      if (now - track.first >= MAX_TRACK_MS && rs.green < CONFIRM_GREEN) {
+        rs.rejectUntil = now + REJECT_SHOW_MS;
+        items.push({ box: face.box, green: rs.green, state: "reject", text: "" });
+        if (now - lastUnknownRef.current > UNKNOWN_GAP_MS) {
+          lastUnknownRef.current = now;
+          beep("error");
+          addToast({ kind: "unknown", login: "", name: "", cls: "", time: "" }, 1600);
+        }
+        continue;
+      }
+
+      items.push({ box: face.box, green: Math.round(rs.green), state: "scan", text: "" });
     }
 
     drawFaces(items);
@@ -685,7 +728,9 @@ export default function FaceKioskPage() {
       /* bitta kadr xatosi — davom etamiz */
     }
     if (worked) trackPerf(performance.now() - t0);
-    setTimeout(() => void loop(), LOOP_GAP_MS);
+    // Sekin qurilmada kadrlar orasida ko'proq nafas — ekran "qotib" qolmasin
+    const gap = perfRef.current.ema > 280 ? 60 : LOOP_GAP_MS;
+    setTimeout(() => void loop(), gap);
   };
 
   const requestWake = async () => {
