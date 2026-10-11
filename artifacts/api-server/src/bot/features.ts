@@ -22,7 +22,7 @@ import {
 } from "../lib/tg-shared.js";
 import { createSessionStore } from "./session-store.js";
 import { addChannel, removeChannel, loadSettings } from "./settings.js";
-import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify, faceidArrivedCount, faceidArchiveToTelegram } from "../routes/faceid.js";
+import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify, faceidArrivedCount, faceidArchiveToTelegram, faceidChronicNotify } from "../routes/faceid.js";
 
 // Kanal "maktab kanali" sifatida ulanganda — uni MAJBURIY a'zolik ro'yxatiga ham
 // qo'shadi (o'quvchilar a'zo bo'lishi shart bo'ladi). Qo'shilish havolasini ham
@@ -1639,10 +1639,11 @@ function startScheduler(): void {
       if (schoolDay && inWindow(hour, min, 8, 0) && (await claimJob(`faceid-arrived:${date}`))) {
         await faceidArrivedCount().catch((err) => logger.warn({ err }, "faceid 08:00 kelganlar soni"));
       }
-      // Face ID — 10:00: to'liq xulosa (keldi/kech/sababli/sababsiz) sinf + maktab guruhiga
+      // Face ID — 10:00: to'liq xulosa (keldi/kech/sababli/sababsiz) + muntazam kelmaydiganlar
       if (schoolDay && inWindow(hour, min, 10, 0) && (await claimJob(`faceid-summary:${date}`))) {
         await faceidGroupSummary().catch((err) => logger.warn({ err }, "faceid 10:00 to'liq xulosa"));
         await faceidUnexcusedNotify().catch((err) => logger.warn({ err }, "faceid sababsizlar (o'qituvchilarga)"));
+        await faceidChronicNotify().catch((err) => logger.warn({ err }, "faceid muntazam kelmaydiganlar"));
       }
       // Face ID — 14:30: kun yakuni (ketgan/qochgan/javob so'ragan) + kunlik arxiv (Word) Telegramga
       if (schoolDay && inWindow(hour, min, 14, 30) && (await claimJob(`faceid-departures:${date}`))) {
