@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS face_settings (
   id         SMALLINT PRIMARY KEY,
   data       JSONB NOT NULL DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- "Muntazam kelmaydigan" o'quvchilar — doimiy belgi (yil oxirigacha).
+CREATE TABLE IF NOT EXISTS face_chronic (
+  student_login TEXT PRIMARY KEY,
+  class_name    TEXT NOT NULL DEFAULT '',
+  note          TEXT NOT NULL DEFAULT '',
+  marked_by     TEXT NOT NULL DEFAULT '',
+  until         DATE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  maktab_id     INTEGER
 );`;
 
 void query(FACE_SCHEMA_SQL)
@@ -103,6 +113,24 @@ function authAs(req: Request, roles: string[]): AuthUser | null {
 function uzTime(): string {
   const { hour, min } = uzHourMin();
   return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+/**
+ * Telegram xabarlari faqat o'quv kuni (Dushanba–Shanba) va faol oynada (06:00–14:30)
+ * yuboriladi. Sinov paytida (kech/yakshanba) kamera ishlaydi, lekin hech qanday
+ * xabar/post ketmaydi — guruhlar va ota-onalar bezovta bo'lmaydi.
+ */
+function messagingAllowed(s: FaceSettings): boolean {
+  const day = uzDay(); // 0=Yakshanba ... 6=Shanba
+  if (day === 0) return false; // Yakshanba — dam olish, xabar yo'q
+  const hm = uzTime();
+  return hm >= s.open_from && hm <= s.close_after;
+}
+
+/** O'quv yili oxiri (taxminiy, O'zbekiston): 1-sentabrdan keyin — kelgusi 31-may; aks holda shu yil 31-may. */
+function schoolYearEnd(today: string): string {
+  const [y, m] = today.split("-").map(Number) as [number, number];
+  return m >= 9 ? `${y + 1}-05-31` : `${y}-05-31`;
 }
 
 function isDescriptor(d: unknown): d is number[] {
@@ -745,13 +773,8 @@ async function handleScan(
   const today = uzDateStr();
   const time = uzTime();
   const settings = await getSettings();
-
-  // ── Kunlik oyna: 06:00 dan oldin — hali ochilmagan; 14:30 dan keyin — yopilgan.
-  // Xodimlar (o'qituvchi) uchun cheklov yo'q — ular istalgan vaqt kirib chiqishi mumkin.
-  if (st.kind === "student") {
-    if (time < settings.open_from) return { name: st.full_name, class_name: st.class_name, event: "closed", time, reason: "before" };
-    if (time > settings.close_after) return { name: st.full_name, class_name: st.class_name, event: "closed", time, reason: "after" };
-  }
+  // Kamera istalgan vaqt ishlaydi (sinov uchun), lekin xabarlar faqat faol oynada ketadi.
+  const canMsg = messagingAllowed(settings);
   const row = await queryOne<{ arrived: string | null; arrived_ms: number | null; left: string | null; left_ms: number | null; status: string }>(
     `SELECT to_char(checked_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS arrived,
             (EXTRACT(EPOCH FROM checked_at) * 1000)::float8 AS arrived_ms,
@@ -807,7 +830,7 @@ async function handleScan(
       ).catch((err) => logger.warn({ err }, "Face ID: davomatga yozilmadi"));
     }
 
-    if (settings.notify && isRealTelegramId(st.telegram_id)) {
+    if (canMsg && settings.notify && isRealTelegramId(st.telegram_id)) {
       void notifyUser(
         st.telegram_id,
         status === "late"
@@ -815,7 +838,7 @@ async function handleScan(
           : `✅ Maktabga keldingiz: ${time}. Xayrli kun!`
       );
     }
-    if (settings.notify_group) void postClassGroup(st, mid, "in", time, { late: status === "late" });
+    if (canMsg && settings.notify_group) void postClassGroup(st, mid, "in", time, { late: status === "late" });
     return { ...base, event: "in", time, status };
   }
 
@@ -836,10 +859,10 @@ async function handleScan(
     ).catch(() => {});
   }
 
-  if (settings.notify && isRealTelegramId(st.telegram_id)) {
+  if (canMsg && settings.notify && isRealTelegramId(st.telegram_id)) {
     void notifyUser(st.telegram_id, `🏠 Maktabdan chiqdingiz: ${time}${early ? ` (darslar ${end} da tugaydi)` : ""}. Yaxshi dam oling!`);
   }
-  if (settings.notify_group) void postClassGroup(st, mid, "out", time, { early });
+  if (canMsg && settings.notify_group) void postClassGroup(st, mid, "out", time, { early });
   return { ...base, event: "out", time, early, arrived: row?.arrived ?? null, lessons_end: end };
 }
 
@@ -887,9 +910,11 @@ router.get("/faceid/today", async (req, res): Promise<void> => {
             fc.status,
             to_char(fc.left_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS "left",
             COALESCE(fc.left_early, false) AS early,
-            COALESCE(fc.excused, false) AS excused
+            COALESCE(fc.excused, false) AS excused,
+            (ch.student_login IS NOT NULL) AS chronic
        FROM ${isStaff ? "staff" : "users"} s
        LEFT JOIN face_checkins fc ON fc.student_login = s.login AND fc.date = $1::date
+       LEFT JOIN face_chronic ch ON ch.student_login = s.login AND (ch.until IS NULL OR ch.until >= $1::date)
       ${where}
       ORDER BY s.full_name`;
   const rows = await query(sql, params);
@@ -934,7 +959,7 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
          excuse_reason = EXCLUDED.excuse_reason, excused_by = EXCLUDED.excused_by`,
       [student_login, person.full_name, person.class_name, today, excuseReason, byName, mid ?? 3]
     );
-    if (person.kind === "student") {
+    if (messagingAllowed(settings) && person.kind === "student") {
       void postClassGroupExcused(person, mid, excuseReason, byName);
       if (isRealTelegramId(person.telegram_id)) {
         void notifyUser(
@@ -957,7 +982,7 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
          checked_at = COALESCE($5::timestamptz, NOW()), status = $6, student_name = EXCLUDED.student_name`,
       [student_login, person.full_name, person.class_name, today, ts, status, mid ?? 3]
     );
-    if (settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "in", shownTime, { late: status === "late" });
+    if (messagingAllowed(settings) && settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "in", shownTime, { late: status === "late" });
     res.json({ ok: true, status });
     return;
   }
@@ -973,8 +998,34 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
        left_at = COALESCE($5::timestamptz, NOW()), left_early = $6, excused = $7`,
     [student_login, person.full_name, person.class_name, today, ts, early, excused, mid ?? 3]
   );
-  if (settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "out", shownTime, { early, excused });
+  if (messagingAllowed(settings) && settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "out", shownTime, { early, excused });
   res.json({ ok: true, early, excused, lessons_end: end });
+});
+
+// POST /api/faceid/chronic { student_login, on, note? } — "Muntazam kelmaydigan" belgisi (yil oxirigacha)
+router.post("/faceid/chronic", async (req, res): Promise<void> => {
+  const u = authAs(req, ENROLL);
+  if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const { student_login, on, note } = req.body as { student_login?: string; on?: boolean; note?: string };
+  if (!student_login) { res.status(400).json({ error: "student_login kerak" }); return; }
+  const person = await findPerson(student_login);
+  if (!person) { res.status(404).json({ error: "Topilmadi" }); return; }
+  if (!canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
+  const mid = schoolOf(u);
+  if (on === false) {
+    await query("DELETE FROM face_chronic WHERE student_login = $1", [student_login]);
+    res.json({ ok: true, chronic: false });
+    return;
+  }
+  const until = schoolYearEnd(uzDateStr());
+  await query(
+    `INSERT INTO face_chronic (student_login, class_name, note, marked_by, until, maktab_id)
+     VALUES ($1, $2, $3, $4, $5::date, $6)
+     ON CONFLICT (student_login) DO UPDATE SET
+       class_name = EXCLUDED.class_name, note = EXCLUDED.note, marked_by = EXCLUDED.marked_by, until = EXCLUDED.until`,
+    [student_login, person.class_name, String(note ?? "").trim().slice(0, 300), String(u.full_name ?? u.login ?? ""), until, mid ?? 3]
+  );
+  res.json({ ok: true, chronic: true, until });
 });
 
 // POST /api/faceid/checkin — eski versiya bilan moslik (faqat "keldi")
@@ -1112,6 +1163,33 @@ export async function faceidGroupSummary(): Promise<{ classes: number; sent: num
     }
     const text = lines.join("\n");
     for (const ch of schoolChats) { if (await sendToChat(ch.chat_id, text)) sent++; done++; await sleep(80); }
+  }
+  return { classes: done, sent };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  10:00 — "MUNTAZAM KELMAYDIGAN" o'quvchilar har kuni sinf guruhiga eslatiladi
+// ═══════════════════════════════════════════════════════════════════════════
+export async function faceidChronicNotify(): Promise<{ classes: number; sent: number }> {
+  const today = uzDateStr();
+  const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' ORDER BY name");
+  let sent = 0, done = 0;
+  for (const c of classes) {
+    const chats = await getClassChats(c.id);
+    if (chats.length === 0) continue;
+    const rows = await query<{ full_name: string; note: string }>(
+      `SELECT u.full_name, COALESCE(ch.note, '') AS note
+         FROM face_chronic ch JOIN users u ON u.login = ch.student_login
+        WHERE ch.class_name = $1 AND (ch.until IS NULL OR ch.until >= $2::date)
+        ORDER BY u.full_name`,
+      [c.name, today]
+    );
+    if (rows.length === 0) continue;
+    const text =
+      `🔁 <b>${esc(c.name)} — muntazam kelmaydigan o'quvchilar (nazoratda)</b>\n\n` +
+      rows.slice(0, 60).map((r, i) => `${i + 1}. ${esc(r.full_name)}${r.note ? ` — ${esc(r.note)}` : ""}`).join("\n") +
+      `\n\n<i>Bu o'quvchilarga alohida e'tibor qarating.</i>`;
+    for (const ch of chats) { if (await sendToChat(ch.chat_id, text)) sent++; done++; await sleep(80); }
   }
   return { classes: done, sent };
 }
@@ -1377,6 +1455,7 @@ interface ArchiveData {
   counts: { total: number; arrived: number; excusedAbsent: number; unexcusedAbsent: number; leftEarly: number; excusedOut: number };
   excused: { class_name: string; full_name: string; reason: string }[];
   unexcused: { class_name: string; full_name: string; hours: number }[];
+  chronic: { class_name: string; full_name: string; note: string }[];
   quarterStart: string;
 }
 
@@ -1441,9 +1520,19 @@ async function collectArchive(date: string): Promise<ArchiveData> {
   }
   const unexcused = unexcusedRows.map((r) => ({ class_name: r.class_name, full_name: r.full_name, hours: hoursByLogin.get(r.login) ?? 0 }));
 
+  // Muntazam kelmaydigan o'quvchilar (yil oxirigacha faol belgi)
+  const chronic = await query<{ class_name: string; full_name: string; note: string }>(
+    `SELECT ch.class_name, u.full_name, COALESCE(ch.note, '') AS note
+       FROM face_chronic ch JOIN users u ON u.login = ch.student_login
+      WHERE (ch.until IS NULL OR ch.until >= $1::date)
+      ORDER BY ch.class_name, u.full_name`,
+    [date]
+  ).catch(() => [] as { class_name: string; full_name: string; note: string }[]);
+
   return {
     date,
     quarterStart,
+    chronic,
     counts: {
       total, arrived, excusedAbsent,
       unexcusedAbsent: Math.max(0, total - arrived - excusedAbsent),
@@ -1484,6 +1573,12 @@ function renderArchiveDoc(a: ArchiveData): string {
       `</table>`
     : `<p class="muted">Sababsiz kelmaganlar yo'q.</p>`;
 
+  const chronicTable = a.chronic.length
+    ? `<table class="list">${head(["#", "Sinf", "Familya, ism", "Izoh"])}` +
+      a.chronic.map((e, i) => row([String(i + 1), esc(e.class_name), esc(e.full_name), esc(e.note || "—")])).join("") +
+      `</table>`
+    : `<p class="muted">Muntazam kelmaydigan deb belgilangan o'quvchilar yo'q.</p>`;
+
   return `<!doctype html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="utf-8"><title>Davomat ${dateStr}</title>
@@ -1509,6 +1604,8 @@ function renderArchiveDoc(a: ArchiveData): string {
   ${excusedTable}
   <h2>Sababsiz kelmaganlar (chorakda qoldirilgan soat — ${qStr} dan)</h2>
   ${unexcusedTable}
+  <h2>Muntazam kelmaydigan o'quvchilar (nazoratda)</h2>
+  ${chronicTable}
   <div class="foot">Avtomatik yaratildi — Ta'lim platformasi, Face ID davomat tizimi.</div>
 </body></html>`;
 }
