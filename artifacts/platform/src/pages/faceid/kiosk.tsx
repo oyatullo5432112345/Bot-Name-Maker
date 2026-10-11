@@ -127,8 +127,9 @@ const SLOW_MS = 320; // SSD kadri bundan sekin bo'lsa — Tez rejimga o'tamiz
 const RING_SEG = 128;        // aylana 128 ta chiziqdan iborat
 const CONFIRM_GREEN = 80;    // shuncha segment yashil bo'lsa — tanish (yuqori ishonch)
 const MAX_TRACK_MS = 5000;   // 5 soniyada 80 ga yetmasa — "Rad etildi", qaytadan
-const GREEN_STRONG = 24;     // juda aniq kadrda qo'shiladigan segmentlar — tez to'ladi
-const GREEN_WEAK = 14;       // oddiy mos kadrda ham sezilarli qo'shiladi
+const GREEN_SEEN = 40;       // yuz ko'rinishi bilanoq shuncha yashil (boshlang'ich)
+const GREEN_STRONG = 24;     // (eski) — endi ishlatilmaydi, yashil ishonch ko'rsatkichi bo'ldi
+const GREEN_WEAK = 14;       // (eski)
 const GREEN_DECAY = 3;       // mos kelmagan kadrda ozgina kamayadi (to'satdan tushmasin)
 const CAND_PENALTY = 15;     // nomzod almashganda kichik jarima (nolga tushirmaymiz)
 const REJECT_SHOW_MS = 1800; // "Rad etildi" shuncha ko'rinadi, keyin qayta urinish
@@ -709,38 +710,38 @@ export default function FaceKioskPage() {
       }
       if (rs.rejectUntil) { rs.rejectUntil = 0; rs.green = 0; rs.cand = null; rs.miss = 0; track.first = now; }
 
+      // ── TANISH: to'rtburchakdagidek TEZ. Yashil aylana — faqat ishonch KO'RSATKICHI
+      //    (tanishni sekinlashtiradigan "80 yashil yig'ilsin" sharti olib tashlandi).
+      let target = GREEN_SEEN; // yuz ko'rindi → 40
       if (p) {
         rs.miss = 0;
-        // Moslik sifati: yaqinroq yuz tezroq to'ldiradi (0.5..1 — hatto chetdagi moslik ham sezilarli)
-        const q = Math.max(0.5, Math.min(1, (th - m!.d) / th));
-        if (rs.cand !== p.login) {
-          // Nomzod almashsa — nolga tushirmaymiz, faqat kichik jarima (yangi yuz tez to'lsin)
-          rs.cand = p.login;
-          rs.green = Math.max(0, rs.green - CAND_PENALTY);
+        rs.cand = p.login;
+        const q = Math.max(0, Math.min(1, (th - m!.d) / th)); // moslik sifati 0..1 (tiniqroq = kattaroq)
+        target = GREEN_SEEN + q * (RING_SEG - GREEN_SEEN) * 0.9; // 40 dan deyarli to'liqqacha
+
+        // Darhol tasdiq: bitta juda aniq kadr (strong) YOKI yetarli ovoz (2-3) — to'rtburchak mantig'i
+        const votes = votesRef.current.add(p.login, m!.strong ? 2 : 1, now);
+        if (m!.strong || votes >= precisionRef.current.votes) {
+          const person = peopleRef.current.find((pp) => pp.login === p.login);
+          if (person) {
+            if (!((shownUntilRef.current.get(person.login) ?? 0) > now)) onRecognized(person, m!.d);
+            rs.confirmed = person.login;
+            rs.confirmedName = person.name;
+            items.push({ box: sbox, green: RING_SEG, state: "ok", text: shortName(person.name) });
+            continue;
+          }
         }
-        rs.green = Math.min(RING_SEG, rs.green + (m!.strong ? GREEN_STRONG : GREEN_WEAK) * q);
       } else {
-        // Bir kadr mos kelmasligi tabiiy (ko'z yumish, burilish) — faqat ketma-ket bo'lsa kamayadi
         rs.miss++;
-        if (rs.miss > 1) rs.green = Math.max(0, rs.green - GREEN_DECAY);
+        if (rs.miss > 2) target = Math.max(0, GREEN_SEEN - 15); // mos kelmasa — pastroq
       }
+      // Yashilni maqsadга tez (silliq) yaqinlashtiramiz
+      rs.green = rs.green + (target - rs.green) * 0.6;
 
-      // ≥80 yashil → tanish (1 tada)
-      if (rs.cand && rs.green >= CONFIRM_GREEN) {
-        const person = peopleRef.current.find((pp) => pp.login === rs!.cand);
-        if (person) {
-          if (!((shownUntilRef.current.get(person.login) ?? 0) > now)) onRecognized(person, m?.d ?? 0.4);
-          rs.confirmed = person.login;
-          rs.confirmedName = person.name;
-          items.push({ box: sbox, green: RING_SEG, state: "ok", text: shortName(person.name) });
-          continue;
-        }
-      }
-
-      // 5 soniyada 80 ga yetmasa → Rad etildi (qat'iy 5 soniya chegara)
-      if (now - track.first >= MAX_TRACK_MS && rs.green < CONFIRM_GREEN) {
+      // Qat'iy 5 soniya: tasdiqlanmasa → Rad etildi
+      if (now - track.first >= MAX_TRACK_MS) {
         rs.rejectUntil = now + REJECT_SHOW_MS;
-        items.push({ box: sbox, green: rs.green, state: "reject", text: "" });
+        items.push({ box: sbox, green: Math.round(rs.green), state: "reject", text: "" });
         if (now - lastUnknownRef.current > UNKNOWN_GAP_MS) {
           lastUnknownRef.current = now;
           beep("error");
