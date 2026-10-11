@@ -8,10 +8,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX } from "lucide-react";
+import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX, Download } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
-import { api } from "@/lib/face";
+import { api, API_BASE, authHeaders } from "@/lib/face";
 
 interface ClassRow { class_name: string }
 interface TodayRow {
@@ -29,6 +29,7 @@ export default function FaceTodayPage() {
   const [time, setTime] = useState("");
   const [busy, setBusy] = useState("");
   const [search, setSearch] = useState("");
+  const [dl, setDl] = useState(false);
 
   const classes = useQuery<ClassRow[]>({
     queryKey: ["faceid-classes-today"],
@@ -48,9 +49,16 @@ export default function FaceTodayPage() {
 
   // MUHIM: bu funksiya bosilganda ishlashi uchun FUNKSIYA qaytaradi (darhol ishga tushmaydi)
   const act = (login: string, action: "in" | "out" | "out_excused" | "clear" | "absent_excused", name: string) => async () => {
+    // "Sababli (kelmadi)" — sababini so'raymiz; u sinf guruhiga va o'quvchiga xabar bilan boradi
+    let reason: string | undefined;
+    if (action === "absent_excused") {
+      const r = window.prompt(`${name} — bugun sababli (kela olmaydi).\nSababini yozing (guruhga shu matn chiqadi):`, "");
+      if (r === null) return; // bekor qilindi
+      reason = r.trim() || undefined;
+    }
     setBusy(`${login}:${action}`);
     try {
-      await api("/faceid/manual", { method: "POST", body: JSON.stringify({ student_login: login, action, time: time || undefined }) });
+      await api("/faceid/manual", { method: "POST", body: JSON.stringify({ student_login: login, action, time: time || undefined, reason }) });
       const msg = action === "in" ? "keldi" : action === "out" ? "ketdi" : action === "out_excused" ? "ruxsat bilan ketdi" : action === "absent_excused" ? "sababli (kelmadi)" : "tozalandi";
       toast({ title: `${name}: ${msg}` });
       void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
@@ -59,16 +67,40 @@ export default function FaceTodayPage() {
     } finally { setBusy(""); }
   };
 
+  // Kunlik davomat hisoboti (Word .doc) — faqat rahbariyat yuklab oladi
+  const downloadArchive = async () => {
+    setDl(true);
+    try {
+      const d = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+      const res = await fetch(`${API_BASE}/faceid/archive?date=${d}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`Xatolik (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `davomat-${d}.doc`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
+    } finally { setDl(false); }
+  };
+
   const rows = (list.data ?? []).filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="space-y-4 max-w-3xl">
       <div className="flex items-center gap-3">
         {isManager && <Link href="/faceid"><Button variant="ghost" size="icon"><ArrowLeft className="w-5 h-5" /></Button></Link>}
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-bold flex items-center gap-2"><Clock className="w-5 h-5 text-primary" /> Bugungi davomat — qo'lda</h1>
           <p className="text-sm text-muted-foreground">Ruxsat bilan erta ketgan yoki Face ID ishlamagan holatlarni to'g'rilash</p>
         </div>
+        {isManager && (
+          <Button variant="outline" size="sm" onClick={() => void downloadArchive()} disabled={dl} className="shrink-0">
+            {dl ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Download className="w-4 h-4 mr-1" />}
+            Kunlik hisobot (Word)
+          </Button>
+        )}
       </div>
 
       <Card>

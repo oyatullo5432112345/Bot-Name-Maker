@@ -22,6 +22,9 @@ interface Settings {
   notify: boolean;
   threshold: number;
   min_stay: number;
+  open_from: string;   // "06:00" — Face ID shu vaqtdan ochiladi
+  close_after: string; // "14:30" — shu vaqtdan keyin yopiladi
+  late_until: string;  // "10:00" — shu vaqtgacha kelsa "kech keldi"
 }
 
 type Mode = "auto" | "in" | "out";
@@ -83,6 +86,13 @@ const DET_KEY = "faceid_detector"; // qo'lda tanlangan: "ssd" | "tiny"
 const VOICE_KEY = "faceid_voice"; // ovoz yoqilgan/o'chirilgan
 const LOOP_GAP_MS = 10; // kadrlar orasidagi pauza (tezlikni aniqlashning o'zi belgilaydi)
 const VOTE_WINDOW_MS = 1500; // tasdiqlash uchun ovozlar shu oraliqda yig'iladi
+const ANNOUNCE_KEY = "faceid_announced"; // 08:00 "Darslar boshlandi" e'loni — kuniga bir marta
+const ANNOUNCE_MS = 5000; // e'lon paytida skaner shuncha vaqt pauza qiladi
+
+// "HH:MM" → daqiqa; vaqt oynasini solishtirish uchun
+function toMin(hm: string): number { const [h, m] = hm.split(":").map(Number); return (h || 0) * 60 + (m || 0); }
+// O'zbekiston sanasi (YYYY-MM-DD) — e'lon kuniga bir marta chiqishi uchun
+function uzToday(): string { try { return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" }); } catch { return new Date().toISOString().slice(0, 10); } }
 
 // ── Aniqlik darajasi (butun maktab miqyosida xato taniyishni kamaytirish) ──
 // O'quvchilar soni oshgani sari ikki odamning yuz izi bir-biriga yaqinlashadi.
@@ -287,13 +297,16 @@ export default function FaceKioskPage() {
   const faceapiRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
   const peopleRef = useRef<KPerson[]>([]);
   const indexRef = useRef<FaceIndex<KPerson>>(buildIndex<KPerson>([]));
-  const settingsRef = useRef<Settings>({ late_after: "08:00", notify: true, threshold: 0.48, min_stay: 20 });
+  const settingsRef = useRef<Settings>({ late_after: "08:00", notify: true, threshold: 0.48, min_stay: 20, open_from: "06:00", close_after: "14:30", late_until: "10:00" });
   const skewRef = useRef(0); // server soati − qurilma soati
   const startsRef = useRef<Record<string, string>>({}); // sinf → birinchi dars boshlanishi (2 smena uchun)
   const modeRef = useRef<Mode>(readMode());
   const tracksRef = useRef<Track[]>([]);
   const votesRef = useRef(new VoteBook(VOTE_WINDOW_MS));
   const ringRef = useRef(new Map<number, RingState>()); // track.id → aylana holati
+  const dayOpenRef = useRef(true); // 06:00–14:30 oralig'ida ochiq
+  const pauseUntilRef = useRef(0); // shu vaqtgacha skaner pauza (08:00 e'loni)
+  const announcedRef = useRef<string>(""); // 08:00 e'loni berilgan sana
   const shownUntilRef = useRef(new Map<string, number>()); // login → shu vaqtgacha qayta ko'rsatilmaydi
   const lastUnknownRef = useRef(0);
   const lastFastRef = useRef(0); // "tez o'tib ketdi" ogohlantirishi (throttle)
@@ -325,6 +338,8 @@ export default function FaceKioskPage() {
   const [counts, setCounts] = useState({ arrived: 0, left: 0, enrolled: 0 });
   const [pending, setPending] = useState(readQueue().length);
   const [clock, setClock] = useState(uzClock(true));
+  const [dayWindow, setDayWindow] = useState<{ open: boolean; text: string }>({ open: true, text: "" });
+  const [announce, setAnnounce] = useState(""); // 08:00 "Darslar boshlandi" banneri
   const [online, setOnline] = useState(navigator.onLine);
   const [voice, setVoiceState] = useState(voiceRef.current);
   const [perf, setPerf] = useState<{ det: Detector; fps: number; faces: number; auto: boolean }>({
@@ -412,7 +427,31 @@ export default function FaceKioskPage() {
         }
       }
     })();
-    const t = setInterval(() => setClock(uzClock(true)), 1000);
+    try { announcedRef.current = localStorage.getItem(ANNOUNCE_KEY) ?? ""; } catch { /* localStorage yo'q */ }
+    const tick = () => {
+      setClock(uzClock(true));
+      const s = settingsRef.current;
+      const hm = uzClock(false); // "HH:MM"
+      const nowMin = toMin(hm);
+      const open = nowMin >= toMin(s.open_from) && nowMin <= toMin(s.close_after);
+      dayOpenRef.current = open;
+      const text = open ? "" : nowMin < toMin(s.open_from) ? `Face ID hali boshlanmagan` : `Bugungi davomat yopildi`;
+      setDayWindow((p) => (p.open === open && p.text === text ? p : { open, text }));
+      // 08:00 — "Darslar boshlandi": 5 soniya pauza + ovoz (kuniga bir marta, faqat ishlab turganda)
+      const today = uzToday();
+      if (runningRef.current && open && announcedRef.current !== today &&
+          nowMin >= toMin(s.late_after) && nowMin < toMin(s.late_after) + 5) {
+        announcedRef.current = today;
+        try { localStorage.setItem(ANNOUNCE_KEY, today); } catch { /* localStorage yo'q */ }
+        pauseUntilRef.current = Date.now() + ANNOUNCE_MS;
+        setAnnounce("Darslar boshlandi");
+        beep("ok");
+        if (voiceRef.current) speak("Darslar boshlandi. Dars vaqti!");
+        setTimeout(() => setAnnounce(""), ANNOUNCE_MS);
+      }
+    };
+    tick();
+    const t = setInterval(tick, 1000);
     const refresh = setInterval(() => void loadPeople().catch(() => {}), 5 * 60 * 1000);
     const on = () => setOnline(true);
     const off = () => setOnline(false);
@@ -584,7 +623,7 @@ export default function FaceKioskPage() {
       p.arrived_ms = now + skewRef.current;
       addToast({ kind: late ? "late" : "in", ...base, time }, 2800);
       beep(late ? "late" : "ok");
-      if (voiceRef.current) speak(late ? `${first}, kechikdingiz` : `${first}, xush kelibsiz`);
+      if (voiceRef.current) speak(late ? `${first}, kech keldingiz` : `${first}, keldingiz, xush kelibsiz`);
       pushEvent({ name: p.name, class_name: p.class_name, time, kind: late ? "late" : "in" });
     } else {
       p.left = time;
@@ -734,6 +773,14 @@ export default function FaceKioskPage() {
   // ── Asosiy sikl
   const loop = async () => {
     if (!runningRef.current) return;
+    // Kun yopiq (06:00–14:30 tashqarisida) yoki 08:00 e'lon pauzasi — skaner to'xtaydi
+    if (!dayOpenRef.current || Date.now() < pauseUntilRef.current) {
+      drawFaces([]);
+      tracksRef.current = [];
+      ringRef.current.clear();
+      setTimeout(() => void loop(), 400);
+      return;
+    }
     const video = videoRef.current;
     const fa = faceapiRef.current;
     const t0 = performance.now();
@@ -943,6 +990,31 @@ export default function FaceKioskPage() {
         <div className="absolute top-36 sm:top-40 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-amber-500/20 border border-amber-400/40 px-4 py-1.5 text-sm text-amber-200 whitespace-nowrap">
           <WifiOff className="w-4 h-4" />
           {online ? `${pending} ta belgi yuborilmoqda…` : `Internet yo'q — ${pending} ta belgi saqlandi, keyin yuboriladi`}
+        </div>
+      )}
+
+      {/* 08:00 — Darslar boshlandi (5 soniya pauza + ovoz) */}
+      {phase === "running" && announce && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/75 backdrop-blur">
+          <div className="text-center px-8">
+            <div className="text-6xl sm:text-8xl mb-4">🔔</div>
+            <div className="text-4xl sm:text-6xl font-black text-cyan-300 animate-pulse">{announce}</div>
+            <div className="mt-4 text-lg sm:text-2xl text-slate-200">Dars vaqti — Face ID bir lahzaga to'xtadi</div>
+          </div>
+        </div>
+      )}
+
+      {/* Kun yopiq — 06:00 dan oldin yoki 14:30 dan keyin */}
+      {phase === "running" && !dayWindow.open && !announce && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center p-6">
+          <div className="max-w-md w-full rounded-3xl bg-[#0D1430]/92 border border-white/10 p-8 text-center backdrop-blur">
+            <Clock className="w-14 h-14 mx-auto text-amber-300" />
+            <div className="mt-4 text-2xl sm:text-3xl font-bold">{dayWindow.text}</div>
+            <div className="mt-2 text-slate-300">
+              Face ID <b className="text-slate-100">{settingsRef.current.open_from}–{settingsRef.current.close_after}</b> oralig'ida ishlaydi
+            </div>
+            <div className="mt-1 text-sm text-slate-400">Joriy vaqt: {clock}</div>
+          </div>
         </div>
       )}
 
