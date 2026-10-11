@@ -22,7 +22,7 @@ import {
 } from "../lib/tg-shared.js";
 import { createSessionStore } from "./session-store.js";
 import { addChannel, removeChannel, loadSettings } from "./settings.js";
-import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify } from "../routes/faceid.js";
+import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify, faceidArrivedCount, faceidArchiveToTelegram } from "../routes/faceid.js";
 
 // Kanal "maktab kanali" sifatida ulanganda — uni MAJBURIY a'zolik ro'yxatiga ham
 // qo'shadi (o'quvchilar a'zo bo'lishi shart bo'ladi). Qo'shilish havolasini ham
@@ -1635,17 +1635,19 @@ function startScheduler(): void {
       if (schoolDay && inWindow(hour, min, 15, 30) && (await claimJob(`att-remind:${date}`))) {
         await jobAttendanceReminder(date);
       }
-      // Face ID — ertalabki davomat (kelganlar) xulosasi sinf guruhlariga (soat 9:00)
-      if (schoolDay && inWindow(hour, min, 9, 0) && (await claimJob(`faceid-summary:${date}`))) {
-        await faceidGroupSummary().catch((err) => logger.warn({ err }, "faceid kunlik xulosa"));
+      // Face ID — 08:00: darslar boshlandi, maktab guruhiga kelganlar soni (qisqa snapshot)
+      if (schoolDay && inWindow(hour, min, 8, 0) && (await claimJob(`faceid-arrived:${date}`))) {
+        await faceidArrivedCount().catch((err) => logger.warn({ err }, "faceid 08:00 kelganlar soni"));
       }
-      // Face ID — sababsiz kelmaganlar: sinf rahbari, fan o'qituvchilari, direktor, MMTB, zavuch (9:30)
-      if (schoolDay && inWindow(hour, min, 9, 30) && (await claimJob(`faceid-unexcused:${date}`))) {
-        await faceidUnexcusedNotify().catch((err) => logger.warn({ err }, "faceid sababsizlar"));
+      // Face ID — 10:00: to'liq xulosa (keldi/kech/sababli/sababsiz) sinf + maktab guruhiga
+      if (schoolDay && inWindow(hour, min, 10, 0) && (await claimJob(`faceid-summary:${date}`))) {
+        await faceidGroupSummary().catch((err) => logger.warn({ err }, "faceid 10:00 to'liq xulosa"));
+        await faceidUnexcusedNotify().catch((err) => logger.warn({ err }, "faceid sababsizlar (o'qituvchilarga)"));
       }
-      // Face ID — kun oxiri (ketganlar) xulosasi sinf guruhlariga (soat 14:00)
-      if (schoolDay && inWindow(hour, min, 14, 0) && (await claimJob(`faceid-departures:${date}`))) {
-        await faceidDepartureSummary().catch((err) => logger.warn({ err }, "faceid ketganlar xulosa"));
+      // Face ID — 14:30: kun yakuni (ketgan/qochgan/javob so'ragan) + kunlik arxiv (Word) Telegramga
+      if (schoolDay && inWindow(hour, min, 14, 30) && (await claimJob(`faceid-departures:${date}`))) {
+        await faceidDepartureSummary().catch((err) => logger.warn({ err }, "faceid 14:30 kun yakuni"));
+        await faceidArchiveToTelegram().catch((err) => logger.warn({ err }, "faceid kunlik arxiv"));
       }
       if (day === 6 && inWindow(hour, min, 16, 0) && (await claimJob(`weekly:${date}`))) {
         await jobWeeklyTop();
