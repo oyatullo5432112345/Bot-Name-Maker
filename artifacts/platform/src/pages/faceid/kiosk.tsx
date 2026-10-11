@@ -103,9 +103,9 @@ type Precision = "yumshoq" | "standart" | "qattiq";
 // Shu bilan "Yumshoq" tez ishlaydi, "Qattiq" eng aniq (yon tomon/uzoqdan).
 interface PrecisionProfile { threshold: number; margin: number; votes: number; inputSize: number; label: string; note: string }
 const PRECISION: Record<Precision, PrecisionProfile> = {
-  yumshoq:  { threshold: 0.52, margin: 0.07, votes: 2, inputSize: 256, label: "Yumshoq",  note: "Eng tez — 1-2 o'quvchi, yaxshi yorug'lik uchun" },
-  standart: { threshold: 0.50, margin: 0.10, votes: 2, inputSize: 320, label: "Standart", note: "Tavsiya — tez va aniq muvozanati (maktab eshigi)" },
-  qattiq:   { threshold: 0.45, margin: 0.13, votes: 3, inputSize: 448, label: "Qattiq",   note: "Eng aniq — ko'p o'quvchi, xato taniyishni minimal qiladi" },
+  yumshoq:  { threshold: 0.60, margin: 0.04, votes: 2, inputSize: 320, label: "Yumshoq",  note: "Eng oson taniydi — 1-3 o'quvchi, sinov uchun" },
+  standart: { threshold: 0.56, margin: 0.06, votes: 2, inputSize: 320, label: "Standart", note: "Tavsiya — tez va ishonchli (maktab eshigi)" },
+  qattiq:   { threshold: 0.50, margin: 0.10, votes: 3, inputSize: 448, label: "Qattiq",   note: "Eng aniq — ko'p o'quvchi, xato taniyishni minimal qiladi" },
 };
 const PRECISION_KEY = "faceid_precision";
 function readPrecision(): Precision {
@@ -546,9 +546,10 @@ export default function FaceKioskPage() {
       const cx = x + w / 2;
       const cy = y + h / 2;
       // Aylana butun yuzni ichiga oladi: yarim diagonal — qutining burchaklari shu masofada.
-      const half = Math.hypot(w, h) / 2;
-      const inner = half * 1.06;   // ichki chekka yuz qutisidan tashqarida
-      const outer = half * 1.30;   // tashqi chekka — chiziqlar shu oraliqda
+      // Aylana yuzга yopishib turadi — katta emas, ingichka halqa (yuz ichida qoladi)
+      const base = Math.max(w, h) * 0.5;
+      const inner = base * 1.18;   // ichki chekka — yuzni o'rab turadi
+      const outer = base * 1.42;   // tashqi chekka — ortiqcha katta emas
       const green = Math.max(0, Math.min(RING_SEG, it.green));
       const GREEN = "#34D399";
       const RED = it.state === "reject" ? "#EF4444" : "#F87171";
@@ -680,7 +681,9 @@ export default function FaceKioskPage() {
     for (const t of expired) ringRef.current.delete(t.id); // tugagan kuzatuvlar aylanasini tozalaymiz
 
     // Chegara: server sozlamasi va aniqlik profilidan — qaysi qat'iyroq bo'lsa (kichikroq)
-    const th = Math.min(settingsRef.current.threshold, precisionRef.current.threshold);
+    // Taniyish chegarasi — aniqlik profili belgilaydi (server sozlamasi bilan cheklamaymiz,
+    // aks holda 0.48 juda qat'iy bo'lib, aniq yuzni ham "topmadi" qilardi).
+    const th = precisionRef.current.threshold;
     const matches = matchFrame(usable, indexRef.current, th, precisionRef.current.margin);
     const items: DrawItem[] = [];
 
