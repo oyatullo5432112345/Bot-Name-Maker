@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX, Download } from "lucide-react";
+import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX, Download, Repeat } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
 import { api, API_BASE, authHeaders } from "@/lib/face";
@@ -18,6 +18,7 @@ interface TodayRow {
   login: string; full_name: string;
   arrived: string | null; status: string | null;
   left: string | null; early: boolean; excused: boolean;
+  chronic: boolean;
 }
 
 export default function FaceTodayPage() {
@@ -61,6 +62,24 @@ export default function FaceTodayPage() {
       await api("/faceid/manual", { method: "POST", body: JSON.stringify({ student_login: login, action, time: time || undefined, reason }) });
       const msg = action === "in" ? "keldi" : action === "out" ? "ketdi" : action === "out_excused" ? "ruxsat bilan ketdi" : action === "absent_excused" ? "sababli (kelmadi)" : "tozalandi";
       toast({ title: `${name}: ${msg}` });
+      void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
+    } finally { setBusy(""); }
+  };
+
+  // "Muntazam kelmaydigan" belgisi (yil oxirigacha) — har kuni 10:00 da sinf guruhiga eslatiladi
+  const toggleChronic = (login: string, name: string, on: boolean) => async () => {
+    let note: string | undefined;
+    if (on) {
+      const r = window.prompt(`${name} — "Muntazam kelmaydigan" deb belgilansinmi?\nIzoh (ixtiyoriy):`, "");
+      if (r === null) return;
+      note = r.trim() || undefined;
+    }
+    setBusy(`${login}:chronic`);
+    try {
+      await api("/faceid/chronic", { method: "POST", body: JSON.stringify({ student_login: login, on, note }) });
+      toast({ title: `${name}: ${on ? "muntazam deb belgilandi" : "muntazamdan chiqarildi"}` });
       void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
     } catch (e) {
       toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
@@ -135,7 +154,10 @@ export default function FaceTodayPage() {
             <div key={r.login} className="rounded-xl border bg-card px-4 py-3">
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">{r.full_name}</div>
+                  <div className="font-medium truncate flex items-center gap-2">
+                    {r.full_name}
+                    {r.chronic && <span className="text-[10px] font-bold uppercase tracking-wide text-rose-600 bg-rose-500/10 border border-rose-500/30 rounded px-1.5 py-0.5">Muntazam</span>}
+                  </div>
                   <div className="text-xs mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
                     {r.arrived ? (
                       <span className={r.status === "late" ? "text-amber-500" : "text-emerald-600 dark:text-emerald-400"}>
@@ -164,6 +186,9 @@ export default function FaceTodayPage() {
                 </Button>
                 <Button size="sm" variant="outline" className="text-indigo-600" disabled={b} onClick={act(r.login, "absent_excused", r.full_name)}>
                   <UserX className="w-3.5 h-3.5 mr-1" /> Sababli (kelmadi)
+                </Button>
+                <Button size="sm" variant="outline" className={r.chronic ? "text-rose-600" : "text-muted-foreground"} disabled={b} onClick={toggleChronic(r.login, r.full_name, !r.chronic)}>
+                  <Repeat className="w-3.5 h-3.5 mr-1" /> {r.chronic ? "Muntazamdan chiqarish" : "Muntazam"}
                 </Button>
                 {(r.arrived || r.left) && (
                   <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={b} onClick={act(r.login, "clear", r.full_name)}>

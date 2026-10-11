@@ -773,8 +773,8 @@ export default function FaceKioskPage() {
   // ── Asosiy sikl
   const loop = async () => {
     if (!runningRef.current) return;
-    // Kun yopiq (06:00–14:30 tashqarisida) yoki 08:00 e'lon pauzasi — skaner to'xtaydi
-    if (!dayOpenRef.current || Date.now() < pauseUntilRef.current) {
+    // 08:00 e'lon pauzasi — skaner 5 soniya to'xtaydi (kamera oynadan tashqarida ham ishlayveradi)
+    if (Date.now() < pauseUntilRef.current) {
       drawFaces([]);
       tracksRef.current = [];
       ringRef.current.clear();
@@ -1004,17 +1004,11 @@ export default function FaceKioskPage() {
         </div>
       )}
 
-      {/* Kun yopiq — 06:00 dan oldin yoki 14:30 dan keyin */}
+      {/* Faol oynadan (06:00–14:30) tashqarida: kamera ishlaydi, lekin Telegram xabar yuborilmaydi (sinov rejimi) */}
       {phase === "running" && !dayWindow.open && !announce && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center p-6">
-          <div className="max-w-md w-full rounded-3xl bg-[#0D1430]/92 border border-white/10 p-8 text-center backdrop-blur">
-            <Clock className="w-14 h-14 mx-auto text-amber-300" />
-            <div className="mt-4 text-2xl sm:text-3xl font-bold">{dayWindow.text}</div>
-            <div className="mt-2 text-slate-300">
-              Face ID <b className="text-slate-100">{settingsRef.current.open_from}–{settingsRef.current.close_after}</b> oralig'ida ishlaydi
-            </div>
-            <div className="mt-1 text-sm text-slate-400">Joriy vaqt: {clock}</div>
-          </div>
+        <div className="absolute top-28 sm:top-32 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full bg-indigo-500/20 border border-indigo-400/40 px-4 py-1.5 text-xs sm:text-sm text-indigo-100 whitespace-nowrap backdrop-blur">
+          <Clock className="w-4 h-4 shrink-0" />
+          Sinov rejimi · kamera ishlaydi, xabar yuborilmaydi
         </div>
       )}
 
