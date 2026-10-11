@@ -2,7 +2,7 @@
 // Bu fayl bot.ts ga bog'liq emas — routes/ ichidan ham xavfsiz import qilinadi
 // (aylanma import bo'lmaydi). Xabar yuborish grammy `Api` orqali.
 
-import { Api } from "grammy";
+import { Api, InputFile } from "grammy";
 import { query, queryOne } from "./db.js";
 import { logger } from "./logger.js";
 
@@ -175,6 +175,23 @@ export async function sendToChat(
       link_preview_options: { is_disabled: true },
       ...extra,
     });
+    return true;
+  } catch (err) {
+    await handleSendError(chatId, err);
+    return false;
+  }
+}
+
+/** Faylni (masalan kunlik hisobot .doc) Telegram chatга hujjat sifatida yuboradi — arxiv o'chmaydi. */
+export async function sendDocumentToChat(
+  chatId: number,
+  buffer: Buffer,
+  filename: string,
+  caption = ""
+): Promise<boolean> {
+  if (!tgApi) return false;
+  try {
+    await tgApi.sendDocument(chatId, new InputFile(buffer, filename), caption ? { caption, parse_mode: "HTML" } : {});
     return true;
   } catch (err) {
     await handleSendError(chatId, err);
