@@ -109,7 +109,8 @@ export default function ClassesList() {
   const deleteMutation = useDeleteClass();
   const assignMutation = useAssignTeacher();
 
-  const isAdmin = user?.role === "admin";
+  // Direktor va rahbariyat ham o'z maktabiga sinf qo'sha/boshqara oladi
+  const isAdmin = ["admin", "director", "zam_direktor", "zavuch"].includes(user?.role ?? "");
 
   // Sinf rahbarlari: barcha xodimlar sinf rahbari bo'la oladi
   const sinfRahbarlari = staff;
