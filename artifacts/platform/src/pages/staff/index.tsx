@@ -359,7 +359,8 @@ export default function StaffList() {
     setTogglingId(null);
   };
 
-  const isAdmin = user?.role === "admin" || user?.role === "mudir";
+  // Direktor va rahbariyat ham o'z maktabi xodimlarini boshqaradi (qo'shish/tahrir/o'chirish)
+  const isAdmin = ["admin", "mudir", "director", "zam_direktor", "zavuch"].includes(user?.role ?? "");
 
   // Barcha fanlar ro'yxatini yig'ish (o'qituvchilarning subjects dan)
   const allSubjects = Array.from(new Set(

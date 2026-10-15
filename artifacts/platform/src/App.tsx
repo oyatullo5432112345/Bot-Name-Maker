@@ -137,15 +137,15 @@ function Router() {
 
       <Route path="/students"><ProtectedRoute component={StudentsList} roles={["admin","director","mudir","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/students/id-card"><ProtectedRoute component={StudentIdCard} /></Route>
-      <Route path="/students/new"><ProtectedRoute component={NewStudent} roles={["admin"]} /></Route>
-      <Route path="/students/bulk-new"><ProtectedRoute component={BulkNewStudents} roles={["admin"]} /></Route>
+      <Route path="/students/new"><ProtectedRoute component={NewStudent} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
+      <Route path="/students/bulk-new"><ProtectedRoute component={BulkNewStudents} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
 
       <Route path="/classes"><ProtectedRoute component={ClassesList} roles={["admin","director","mudir","zam_direktor","zavuch"]} /></Route>
 
-      <Route path="/staff"><ProtectedRoute component={StaffList} roles={["admin"]} /></Route>
-      <Route path="/staff/new"><ProtectedRoute component={NewStaff} roles={["admin"]} /></Route>
-      <Route path="/staff/bulk-new"><ProtectedRoute component={BulkNewStaff} roles={["admin"]} /></Route>
-      <Route path="/staff/:id/subjects"><ProtectedRoute component={StaffSubjectsPage} roles={["admin"]} /></Route>
+      <Route path="/staff"><ProtectedRoute component={StaffList} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
+      <Route path="/staff/new"><ProtectedRoute component={NewStaff} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
+      <Route path="/staff/bulk-new"><ProtectedRoute component={BulkNewStaff} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
+      <Route path="/staff/:id/subjects"><ProtectedRoute component={StaffSubjectsPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
 
       <Route path="/darslik/new"><ProtectedRoute component={NewDarslikPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/darslik"><ProtectedRoute component={DarslikPage} /></Route>

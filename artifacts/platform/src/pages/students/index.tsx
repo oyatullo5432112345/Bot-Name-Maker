@@ -77,6 +77,8 @@ export default function StudentsList() {
   };
 
   const isAdmin = user?.role === "admin";
+  // Direktor va rahbariyat ham o'z maktabiga o'quvchi qo'sha oladi
+  const canManage = ["admin", "director", "zam_direktor", "zavuch"].includes(user?.role ?? "");
 
   const [grantingLogin, setGrantingLogin] = useState<string | null>(null);
   const getToken = () => localStorage.getItem("talim_auth_token");
@@ -127,7 +129,7 @@ export default function StudentsList() {
           </p>
         </div>
         
-        {isAdmin && (
+        {canManage && (
           <div className="flex gap-2">
             <Button variant="outline" asChild>
               <Link href="/students/bulk-new">
