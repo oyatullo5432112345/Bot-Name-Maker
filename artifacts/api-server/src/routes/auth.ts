@@ -150,18 +150,6 @@ export function getAuthUser(authHeader: string | undefined): Record<string, unkn
   return parseToken(token);
 }
 
-// ─── KO'P MAKTABLI IZOLYATSIYA ───────────────────────────────────────────────
-//  schoolOf: foydalanuvchi qaysi maktabni ko'radi.
-//   • admin (tuman super-admini) → null = BARCHA maktablar (filtr yo'q)
-//   • boshqalar → o'z maktab_id si (eski tokenda yo'q bo'lsa 3 — hozirgi maktab)
-//  Har bir route SELECT/INSERT/UPDATE/DELETE da shu bilan filtrlanadi.
-export function schoolOf(user: Record<string, unknown> | null | undefined): number | null {
-  if (!user) return null;
-  if ((user["role"] as string) === "admin") return null;
-  const m = user["maktab_id"];
-  return typeof m === "number" ? m : 3;
-}
-
 import type { Request, Response, NextFunction } from "express";
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
@@ -196,7 +184,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       class_name: null,
       class_id: null,
       telegram_id: null,
-      maktab_id: null, // tuman super-admini — barcha maktablar (token ichida qoladi)
+      maktab_id: null,
     };
     const token = createToken(payload);
     res.setHeader("X-Auth-Token", token);
@@ -204,7 +192,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  type StaffRow = { id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean; pro_expires_at?: string | null; maktab_id?: number | null };
+  type StaffRow = { id: string; full_name: string; role: string; class_id: string | null; login: string; password: string; telegram_id: number | null; subjects?: string[] | null; can_teach?: boolean; pro_expires_at?: string | null; maktab_id?: string | null };
 
   const staff = await queryOne<StaffRow>(
     "SELECT id, full_name, role, class_id, login, password, telegram_id, subjects, can_teach, pro_expires_at, maktab_id FROM staff WHERE LOWER(login) = LOWER($1)",
@@ -236,7 +224,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       subjects,
       can_teach: staff.can_teach ?? false,
       pro_expires_at: (staff as Record<string, unknown>)["pro_expires_at"] as string | null ?? null,
-      maktab_id: staff.role === "admin" ? null : (staff.maktab_id ?? 3),
+      maktab_id: staff.maktab_id ?? null,
     };
     const token = createToken(payload);
     res.setHeader("X-Auth-Token", token);
@@ -244,7 +232,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  type StudentRow = { id: string; telegram_id: number; full_name: string; class_name: string; login: string; password: string; pro_expires_at?: string | null; maktab_id?: number | null };
+  type StudentRow = { id: string; telegram_id: number; full_name: string; class_name: string; login: string; password: string; pro_expires_at?: string | null; maktab_id?: string | null };
 
   const student = await queryOne<StudentRow>(
     "SELECT id, telegram_id, full_name, class_name, login, password, pro_expires_at, maktab_id FROM users WHERE LOWER(login) = LOWER($1)",
@@ -268,7 +256,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       class_id: cls?.id ?? null,
       telegram_id: student.telegram_id,
       pro_expires_at: (student as Record<string, unknown>)["pro_expires_at"] as string | null ?? null,
-      maktab_id: student.maktab_id ?? 3,
+      maktab_id: student.maktab_id ?? null,
     };
     const token = createToken(payload);
     res.setHeader("X-Auth-Token", token);
@@ -437,7 +425,7 @@ router.post("/auth/register-staff", async (req, res): Promise<void> => {
     if (existingRole) {
       const roleNames: Record<string, string> = {
         director: "Direktor", mudir: "Obidov Boburjon",
-        zam_direktor: "MMTB", zavuch: "O'quv ishlari mudiri", kutubxonachi: "Kutubxonachi",
+        zam_direktor: "Direktor o'rinbosari", zavuch: "Zavuch", kutubxonachi: "Kutubxonachi",
       };
       res.status(400).json({ error: `${roleNames[role] ?? role} allaqachon ro'yxatdan o'tgan` });
       return;
@@ -540,20 +528,7 @@ router.get("/auth/bot-login", async (req, res): Promise<void> => {
     return;
   }
 
-  // maktab_id ni token ichiga qo'shamiz (bot payloadida bo'lmasligi mumkin) —
-  // login bo'yicha DB dan qidiramiz. Admin → null (barcha maktablar).
-  const p = entry.payload as Record<string, unknown>;
-  let maktab_id: number | null = (typeof p["maktab_id"] === "number" ? (p["maktab_id"] as number) : null);
-  if (maktab_id === null && p["role"] !== "admin" && typeof p["login"] === "string") {
-    const row = await queryOne<{ maktab_id: number }>(
-      p["role"] === "student"
-        ? "SELECT maktab_id FROM users WHERE login = $1"
-        : "SELECT maktab_id FROM staff WHERE login = $1",
-      [p["login"]],
-    ).catch(() => null);
-    maktab_id = row?.maktab_id ?? 3;
-  }
-  const authToken = createToken({ ...entry.payload, maktab_id });
+  const authToken = createToken(entry.payload);
   res.json(LoginResponse.parse({ ...entry.payload, token: authToken }));
 });
 

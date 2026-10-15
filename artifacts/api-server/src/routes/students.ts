@@ -11,8 +11,9 @@ import {
   UpdateStudentResponse,
   DeleteStudentParams,
 } from "@workspace/api-zod";
-import { requireAuth, hashPassword, getAuthUser, schoolOf } from "./auth.js";
+import { requireAuth, hashPassword } from "./auth.js";
 import { genUniqueLoginId } from "./auth-login.js";
+import { callerScope, DEFAULT_MAKTAB_ID } from "./maktablar.js";
 
 const router: IRouter = Router();
 
@@ -20,17 +21,17 @@ const SELECT = "telegram_id::float8 AS telegram_id, full_name, phone_number, cla
 // Ro'yxatda parol JO'NATILMAYDI (xavfsizlik) — '' bilan almashtiriladi
 const LIST_SELECT = "telegram_id::float8 AS telegram_id, full_name, phone_number, class_name, login, '' AS password, registration_date::text AS registration_date";
 
-// GET /api/students — faqat o'z maktabi (admin → barcha)
+// GET /api/students
 router.get("/students", requireAuth, async (req, res): Promise<void> => {
-  const mid = schoolOf(getAuthUser(req.headers.authorization));
   const qp = ListStudentsQueryParams.safeParse(req.query);
+  const { maktabId, isSuper } = callerScope(req);
   try {
     const where: string[] = [];
     const vals: unknown[] = [];
-    if (mid !== null) { where.push(`maktab_id = $${vals.length + 1}`); vals.push(mid); }
+    if (!isSuper) { where.push(`maktab_id = $${vals.length + 1}`); vals.push(maktabId); }
     if (qp.success && qp.data.class_name) { where.push(`class_name = $${vals.length + 1}`); vals.push(qp.data.class_name); }
-    const wsql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    const rows = await query(`SELECT ${LIST_SELECT} FROM users ${wsql} ORDER BY registration_date DESC`, vals);
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const rows = await query(`SELECT ${LIST_SELECT} FROM users ${whereSql} ORDER BY registration_date DESC`, vals);
     res.json(ListStudentsResponse.parse(rows));
   } catch {
     res.status(500).json({ error: "Ma'lumotlarni olishda xatolik" });
@@ -39,13 +40,13 @@ router.get("/students", requireAuth, async (req, res): Promise<void> => {
 
 // POST /api/students/bulk
 router.post("/students/bulk", requireAuth, async (req, res): Promise<void> => {
-  const mid = schoolOf(getAuthUser(req.headers.authorization)) ?? 3; // yaratuvchining maktabi
   const { students } = req.body as { students: { full_name: string; phone_number?: string; class_name: string }[] };
   if (!Array.isArray(students) || students.length === 0) {
     res.status(400).json({ error: "students massivi bo'sh" });
     return;
   }
 
+  const insertMaktab = callerScope(req).maktabId ?? DEFAULT_MAKTAB_ID;
   const created: { full_name: string; login: string; password: string; login_id: string; class_name: string }[] = [];
   const errors: { full_name: string; error: string }[] = [];
 
@@ -56,11 +57,11 @@ router.post("/students/bulk", requireAuth, async (req, res): Promise<void> => {
     const password = Math.floor(10000 + Math.random() * 90000).toString();
     const telegram_id = Date.now() + Math.floor(Math.random() * 10000);
     try {
-      const login_id = await genUniqueLoginId(mid);
+      const login_id = await genUniqueLoginId();
       const passwordHash = await hashPassword(password);
       await query(
-        "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, login_id, maktab_id, registration_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-        [telegram_id, s.full_name, s.phone_number || "", s.class_name, login, passwordHash, login_id, mid, new Date().toISOString()]
+        "INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, login_id, registration_date, maktab_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+        [telegram_id, s.full_name, s.phone_number || "", s.class_name, login, passwordHash, login_id, new Date().toISOString(), insertMaktab]
       );
       created.push({ full_name: s.full_name, login, password, login_id, class_name: s.class_name });
     } catch {
@@ -79,8 +80,8 @@ router.post("/students", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const mid = schoolOf(getAuthUser(req.headers.authorization)) ?? 3; // yaratuvchining maktabi
   const { full_name, phone_number, class_name } = parsed.data;
+  const insertMaktab = callerScope(req).maktabId ?? DEFAULT_MAKTAB_ID;
   const parts = full_name.trim().toLowerCase().split(" ");
   const base = parts[0] ?? "user";
   const login = `${base}${Math.floor(100 + Math.random() * 900)}`;
@@ -88,21 +89,19 @@ router.post("/students", requireAuth, async (req, res): Promise<void> => {
   const telegram_id = Date.now();
 
   try {
-    const login_id = await genUniqueLoginId(mid);
+    const login_id = await genUniqueLoginId();
     const passwordHash = await hashPassword(password);
     const data = await queryOne(
-      `INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, login_id, maktab_id, registration_date)
+      `INSERT INTO users (telegram_id, full_name, phone_number, class_name, login, password, login_id, registration_date, maktab_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${SELECT}, login_id`,
-      [telegram_id, full_name, phone_number, class_name, login, passwordHash, login_id, mid, new Date().toISOString()]
+      [telegram_id, full_name, phone_number, class_name, login, passwordHash, login_id, new Date().toISOString(), insertMaktab]
     );
 
     if (!data) {
       res.status(500).json({ error: "O'quvchi qo'shishda xatolik" });
       return;
     }
-    // Parolning ASL (ochiq) ko'rinishini bir marta qaytaramiz — bazada esa xeshlangan.
-    // (Avval xeshni qaytarardi — admin yangi o'quvchi parolini ko'ra olmasdi.)
-    res.status(201).json({ ...GetStudentResponse.parse(data), password, login_id });
+    res.status(201).json({ ...GetStudentResponse.parse(data), login_id });
   } catch (err) {
     const msg = (err as Error).message ?? "";
     if (msg.includes("unique") || msg.includes("duplicate")) {
@@ -121,10 +120,11 @@ router.get("/students/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const mid = schoolOf(getAuthUser(req.headers.authorization));
-  const data = mid !== null
-    ? await queryOne(`SELECT ${SELECT} FROM users WHERE telegram_id = $1 AND maktab_id = $2`, [params.data.id, mid])
-    : await queryOne(`SELECT ${SELECT} FROM users WHERE telegram_id = $1`, [params.data.id]);
+  const { maktabId, isSuper } = callerScope(req);
+  const data = await queryOne(
+    `SELECT ${SELECT} FROM users WHERE telegram_id = $1 ${isSuper ? "" : "AND maktab_id = $2"}`,
+    isSuper ? [params.data.id] : [params.data.id, maktabId]
+  );
   if (!data) {
     res.status(404).json({ error: "O'quvchi topilmadi" });
     return;
@@ -161,15 +161,14 @@ router.patch("/students/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(400).json({ error: "Yangilanadigan maydon yo'q" });
     return;
   }
-  const mid = schoolOf(getAuthUser(req.headers.authorization));
+  const { maktabId, isSuper } = callerScope(req);
   values.push(params.data.id);
-  const idParam = idx++;
-  let scope = "";
-  if (mid !== null) { scope = ` AND maktab_id = $${idx++}`; values.push(mid); }
+  let maktabGuard = "";
+  if (!isSuper) { maktabGuard = ` AND maktab_id = $${idx + 1}`; values.push(maktabId); }
 
   try {
     const data = await queryOne(
-      `UPDATE users SET ${setClauses.join(", ")} WHERE telegram_id = $${idParam}${scope} RETURNING ${SELECT}`,
+      `UPDATE users SET ${setClauses.join(", ")} WHERE telegram_id = $${idx}${maktabGuard} RETURNING ${SELECT}`,
       values
     );
     if (!data) {
@@ -189,9 +188,11 @@ router.delete("/students/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const mid = schoolOf(getAuthUser(req.headers.authorization));
-  if (mid !== null) await query("DELETE FROM users WHERE telegram_id = $1 AND maktab_id = $2", [params.data.id, mid]);
-  else await query("DELETE FROM users WHERE telegram_id = $1", [params.data.id]);
+  const { maktabId, isSuper } = callerScope(req);
+  await query(
+    `DELETE FROM users WHERE telegram_id = $1 ${isSuper ? "" : "AND maktab_id = $2"}`,
+    isSuper ? [params.data.id] : [params.data.id, maktabId]
+  );
   res.sendStatus(204);
 });
 

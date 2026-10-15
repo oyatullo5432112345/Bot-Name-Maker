@@ -8,8 +8,9 @@ import {
   UpdateStaffResponse,
   DeleteStaffParams,
 } from "@workspace/api-zod";
-import { requireAuth, hashPassword, getAuthUser, schoolOf } from "./auth.js";
+import { requireAuth, hashPassword } from "./auth.js";
 import { genUniqueLoginId } from "./auth-login.js";
+import { callerScope, DEFAULT_MAKTAB_ID } from "./maktablar.js";
 
 const router: IRouter = Router();
 
@@ -33,10 +34,11 @@ async function enrichStaff(staff: {
 // GET /api/staff/:id
 router.get("/staff/:id", requireAuth, async (req, res): Promise<void> => {
   const { id } = req.params;
-  const mid = schoolOf(getAuthUser(req.headers.authorization));
-  const data = mid !== null
-    ? await queryOne<Parameters<typeof enrichStaff>[0]>(`SELECT ${SELECT} FROM staff WHERE id = $1 AND maktab_id = $2`, [id, mid])
-    : await queryOne<Parameters<typeof enrichStaff>[0]>(`SELECT ${SELECT} FROM staff WHERE id = $1`, [id]);
+  const { maktabId, isSuper } = callerScope(req);
+  const data = await queryOne<Parameters<typeof enrichStaff>[0]>(
+    `SELECT ${SELECT} FROM staff WHERE id = $1 ${isSuper ? "" : "AND maktab_id = $2"}`,
+    isSuper ? [id] : [id, maktabId]
+  );
   if (!data) {
     res.status(404).json({ error: "Xodim topilmadi" });
     return;
@@ -45,13 +47,13 @@ router.get("/staff/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(enriched);
 });
 
-// GET /api/staff — faqat o'z maktabi (admin → barcha)
+// GET /api/staff — faqat tizimga kirganlar (direktor faqat o'z maktabi xodimlarini ko'radi)
 router.get("/staff", requireAuth, async (req, res): Promise<void> => {
+  const { maktabId, isSuper } = callerScope(req);
   try {
-    const mid = schoolOf(getAuthUser(req.headers.authorization));
-    const wsql = mid !== null ? "WHERE maktab_id = $1" : "";
-    const vals = mid !== null ? [mid] : [];
-    const rows = await query<Parameters<typeof enrichStaff>[0]>(`SELECT ${LIST_SELECT} FROM staff ${wsql} ORDER BY full_name`, vals);
+    const rows = isSuper
+      ? await query<Parameters<typeof enrichStaff>[0]>(`SELECT ${LIST_SELECT} FROM staff ORDER BY full_name`)
+      : await query<Parameters<typeof enrichStaff>[0]>(`SELECT ${LIST_SELECT} FROM staff WHERE maktab_id = $1 ORDER BY full_name`, [maktabId]);
     const enriched = await Promise.all(rows.map(d => enrichStaff(d)));
     res.json(ListStaffResponse.parse(enriched));
   } catch {
@@ -61,7 +63,6 @@ router.get("/staff", requireAuth, async (req, res): Promise<void> => {
 
 // POST /api/staff/bulk
 router.post("/staff/bulk", requireAuth, async (req, res): Promise<void> => {
-  const mid = schoolOf(getAuthUser(req.headers.authorization)) ?? 3;
   const { staff: items } = req.body as {
     staff: { full_name: string; role: string; subjects?: string[]; can_teach?: boolean }[];
   };
@@ -70,6 +71,7 @@ router.post("/staff/bulk", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
+  const insertMaktab = callerScope(req).maktabId ?? DEFAULT_MAKTAB_ID;
   const created: { full_name: string; login: string; password: string; login_id: string; role: string }[] = [];
   const errors: { full_name: string; error: string }[] = [];
 
@@ -78,15 +80,13 @@ router.post("/staff/bulk", requireAuth, async (req, res): Promise<void> => {
     const base = parts[0] ?? "staff";
     const login = `${base}${Math.floor(100 + Math.random() * 900)}`;
     const password = Math.floor(10000 + Math.random() * 90000).toString();
-    const can_teach = s.can_teach ?? (s.role === "teacher" || s.role === "sinf_rahbari" || s.role === "boshlangich_oqituvchi");
+    const can_teach = s.can_teach ?? (s.role === "teacher" || s.role === "sinf_rahbari");
     try {
-      const login_id = await genUniqueLoginId(mid);
+      const login_id = await genUniqueLoginId();
       const passwordHash = await hashPassword(password);
       await query(
         "INSERT INTO staff (full_name, role, login, password, login_id, telegram_id, subjects, can_teach, maktab_id) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8)",
-        // subjects — TEXT[] ustun: pg massivni o'zi to'g'ri yozadi. JSON.stringify QILMAYMIZ
-        // (aks holda "malformed array literal" xatosi va har bir qator xato bo'lib qoladi).
-        [s.full_name, s.role, login, passwordHash, login_id, Array.isArray(s.subjects) ? s.subjects : [], can_teach, mid]
+        [s.full_name, s.role, login, passwordHash, login_id, JSON.stringify(s.subjects ?? []), can_teach, insertMaktab]
       );
       created.push({ full_name: s.full_name, login, password, login_id, role: s.role });
     } catch (err) {
@@ -105,19 +105,19 @@ router.post("/staff", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
+  const insertMaktab = callerScope(req).maktabId ?? DEFAULT_MAKTAB_ID;
   const parts = parsed.data.full_name.trim().toLowerCase().split(" ");
   const base = parts[0] ?? "staff";
   const login = `${base}${Math.floor(100 + Math.random() * 900)}`;
   const password = Math.floor(100000 + Math.random() * 900000).toString();
-  const mid = schoolOf(getAuthUser(req.headers.authorization)) ?? 3; // yaratuvchining maktabi
 
   try {
-    const login_id = await genUniqueLoginId(mid);
+    const login_id = await genUniqueLoginId();
     const passwordHash = await hashPassword(password);
     const data = await queryOne<Parameters<typeof enrichStaff>[0]>(
       `INSERT INTO staff (full_name, role, class_id, login, password, login_id, telegram_id, subjects, can_teach, maktab_id)
        VALUES ($1,$2,$3,$4,$5,$6,NULL,'{}',false,$7) RETURNING ${SELECT}`,
-      [parsed.data.full_name, parsed.data.role, parsed.data.class_id ?? null, login, passwordHash, login_id, mid]
+      [parsed.data.full_name, parsed.data.role, parsed.data.class_id ?? null, login, passwordHash, login_id, insertMaktab]
     );
 
     if (!data) {
@@ -165,22 +165,18 @@ router.patch("/staff/:id", requireAuth, async (req, res): Promise<void> => {
     values.push(await hashPassword(String(raw["password"]).trim())); // xeshlab saqlaymiz
   }
   if (raw["can_teach"] !== undefined) { setClauses.push(`can_teach = $${idx++}`); values.push(raw["can_teach"]); }
-  if (raw["subjects"] !== undefined) { setClauses.push(`subjects = $${idx++}`); values.push(Array.isArray(raw["subjects"]) ? raw["subjects"] : []); }
+  if (raw["subjects"] !== undefined) { setClauses.push(`subjects = $${idx++}`); values.push(JSON.stringify(raw["subjects"])); }
   if (raw["birthday"] !== undefined) { setClauses.push(`birthday = $${idx++}`); values.push(raw["birthday"] || null); }
 
   if (setClauses.length === 0) {
     res.status(400).json({ error: "Yangilanadigan maydon yo'q" });
     return;
   }
-  const mid = schoolOf(getAuthUser(req.headers.authorization));
   values.push(params.data.id);
-  const idParam = idx++;
-  let scope = "";
-  if (mid !== null) { scope = ` AND maktab_id = $${idx++}`; values.push(mid); }
 
   try {
     const data = await queryOne<Parameters<typeof enrichStaff>[0]>(
-      `UPDATE staff SET ${setClauses.join(", ")} WHERE id = $${idParam}${scope} RETURNING ${SELECT}`,
+      `UPDATE staff SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING ${SELECT}`,
       values
     );
 
@@ -204,12 +200,6 @@ router.delete("/staff/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const mid = schoolOf(getAuthUser(req.headers.authorization));
-  // Boshqa maktab xodimiga tegmaslik: avval shu maktabda borligini tekshiramiz
-  if (mid !== null) {
-    const owned = await queryOne<{ id: string }>("SELECT id FROM staff WHERE id = $1 AND maktab_id = $2", [params.data.id, mid]);
-    if (!owned) { res.status(404).json({ error: "Xodim topilmadi" }); return; }
-  }
   try {
     await Promise.allSettled([
       query("DELETE FROM teacher_subjects WHERE teacher_id = $1", [params.data.id]),
