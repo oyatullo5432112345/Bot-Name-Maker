@@ -31,6 +31,10 @@ const WheelList = lazy(() => import("@/pages/games/wheel/index"));
 const WheelSpin = lazy(() => import("@/pages/games/wheel/spin"));
 const ZukkoLevels = lazy(() => import("@/pages/games/zukko/index"));
 const ZukkoPlay = lazy(() => import("@/pages/games/zukko/play"));
+const SayohatIndex = lazy(() => import("@/pages/sayohat/index"));
+const SayohatPlay = lazy(() => import("@/pages/sayohat/play"));
+const SayohatAdmin = lazy(() => import("@/pages/sayohat/admin"));
+const SayohatAdminQuestions = lazy(() => import("@/pages/sayohat/admin-questions"));
 const ProPage = lazy(() => import("@/pages/pro"));
 const DarslikPage = lazy(() => import("@/pages/darslik/index"));
 const NewDarslikPage = lazy(() => import("@/pages/darslik/new"));
@@ -42,6 +46,7 @@ const LibraryLoansPage = lazy(() => import("@/pages/library/loans"));
 const CertificatePage = lazy(() => import("@/pages/certificate"));
 
 const AdminResetPage = lazy(() => import("@/pages/admin/reset"));
+const MaktablarPage = lazy(() => import("@/pages/admin/maktablar"));
 const ReytingPage = lazy(() => import("@/pages/reyting/index"));
 const QollanmalarPage = lazy(() => import("@/pages/qollanmalar"));
 const OlimpiyadaPage = lazy(() => import("@/pages/olimpiada/index"));
@@ -60,7 +65,6 @@ const FaceKioskPage = lazy(() => import("@/pages/faceid/kiosk"));
 const FaceTodayPage = lazy(() => import("@/pages/faceid/today"));
 const LabPage = lazy(() => import("@/pages/lab/index"));
 const LoginIdsPage = lazy(() => import("@/pages/admin/login-ids"));
-const MaktablarPage = lazy(() => import("@/pages/admin/maktablar"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -131,7 +135,7 @@ function Router() {
         {user?.role === "mudir" ? <Redirect to="/olimpiada" /> : <ProtectedRoute component={Dashboard} />}
       </Route>
 
-      <Route path="/students"><ProtectedRoute component={StudentsList} roles={["admin","director","mudir","zam_direktor","zavuch","sinf_rahbari"]} /></Route>
+      <Route path="/students"><ProtectedRoute component={StudentsList} roles={["admin","director","mudir","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/students/id-card"><ProtectedRoute component={StudentIdCard} /></Route>
       <Route path="/students/new"><ProtectedRoute component={NewStudent} roles={["admin"]} /></Route>
       <Route path="/students/bulk-new"><ProtectedRoute component={BulkNewStudents} roles={["admin"]} /></Route>
@@ -143,12 +147,12 @@ function Router() {
       <Route path="/staff/bulk-new"><ProtectedRoute component={BulkNewStaff} roles={["admin"]} /></Route>
       <Route path="/staff/:id/subjects"><ProtectedRoute component={StaffSubjectsPage} roles={["admin"]} /></Route>
 
-      <Route path="/darslik/new"><ProtectedRoute component={NewDarslikPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/darslik/new"><ProtectedRoute component={NewDarslikPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/darslik"><ProtectedRoute component={DarslikPage} /></Route>
 
       <Route path="/baholash"><ProtectedRoute component={BaholashPage} /></Route>
       <Route path="/dars-jadvali"><ProtectedRoute component={DarsJadvaliPage} /></Route>
-      <Route path="/davomat"><ProtectedRoute component={DavomatPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/davomat"><ProtectedRoute component={DavomatPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
 
       <Route path="/library/new"><ProtectedRoute component={NewBookPage} roles={["admin","kutubxonachi"]} /></Route>
       <Route path="/library/loans"><ProtectedRoute component={LibraryLoansPage} roles={["admin","kutubxonachi"]} /></Route>
@@ -165,27 +169,31 @@ function Router() {
       <Route path="/tanga"><ProtectedRoute component={TangaPage} /></Route>
 
       <Route path="/monitoring/analytics"><ProtectedRoute component={MonitoringAnalytics} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
-      <Route path="/monitoring/admin"><ProtectedRoute component={MonitoringAdmin} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/monitoring/admin"><ProtectedRoute component={MonitoringAdmin} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/monitoring/:id"><ProtectedRoute component={MonitoringTake} /></Route>
       <Route path="/monitoring"><ProtectedRoute component={MonitoringIndex} /></Route>
 
       <Route path="/qollanmalar"><ProtectedRoute component={QollanmalarPage} /></Route>
       <Route path="/announcements"><ProtectedRoute component={AnnouncementsPage} /></Route>
       <Route path="/faceid/kiosk"><KioskRoute component={FaceKioskPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
-      <Route path="/faceid/enroll"><ProtectedRoute component={FaceEnrollPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari"]} /></Route>
-      <Route path="/faceid/today"><ProtectedRoute component={FaceTodayPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari"]} /></Route>
+      <Route path="/faceid/enroll"><ProtectedRoute component={FaceEnrollPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
+      <Route path="/faceid/today"><ProtectedRoute component={FaceTodayPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/faceid"><ProtectedRoute component={FaceIdPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
-      <Route path="/lab"><ProtectedRoute component={LabPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
-      <Route path="/admin/login-ids"><ProtectedRoute component={LoginIdsPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/lab"><ProtectedRoute component={LabPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
+      <Route path="/admin/login-ids"><ProtectedRoute component={LoginIdsPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/chat"><ProtectedRoute component={ChatPage} /></Route>
 
-      <Route path="/games/board/new"><ProtectedRoute component={BoardGameNew} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
-      <Route path="/games/board/:id"><ProtectedRoute component={BoardGamePlay} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
-      <Route path="/games/board"><ProtectedRoute component={BoardGameList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
-      <Route path="/games/wheel/:id"><ProtectedRoute component={WheelSpin} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
-      <Route path="/games/wheel"><ProtectedRoute component={WheelList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari"]} /></Route>
+      <Route path="/games/board/new"><ProtectedRoute component={BoardGameNew} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
+      <Route path="/games/board/:id"><ProtectedRoute component={BoardGamePlay} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
+      <Route path="/games/board"><ProtectedRoute component={BoardGameList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
+      <Route path="/games/wheel/:id"><ProtectedRoute component={WheelSpin} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
+      <Route path="/games/wheel"><ProtectedRoute component={WheelList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/games/zukko/:level"><ProtectedRoute component={ZukkoPlay} /></Route>
       <Route path="/games/zukko"><ProtectedRoute component={ZukkoLevels} /></Route>
+      <Route path="/sayohat/admin/savollar"><ProtectedRoute component={SayohatAdminQuestions} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
+      <Route path="/sayohat/admin"><ProtectedRoute component={SayohatAdmin} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
+      <Route path="/sayohat/:region"><ProtectedRoute component={SayohatPlay} /></Route>
+      <Route path="/sayohat"><ProtectedRoute component={SayohatIndex} /></Route>
       <Route path="/pro"><ProtectedRoute component={ProPage} /></Route>
       <Route path="/games"><ProtectedRoute component={GamesPage} /></Route>
 

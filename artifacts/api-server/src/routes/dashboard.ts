@@ -1,8 +1,7 @@
 import { Router, type IRouter } from "express";
 import { query, queryCount } from "../lib/db.js";
 import { GetDashboardStatsResponse, GetMyClassResponse } from "@workspace/api-zod";
-import { getAuthUser } from "./auth.js";
-import { callerScope } from "./maktablar.js";
+import { getAuthUser, schoolOf } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -15,19 +14,21 @@ function getDaysUntilSeptember(): number {
 
 // GET /api/dashboard/stats
 router.get("/dashboard/stats", async (req, res): Promise<void> => {
-  const hasToken = !!req.headers.authorization?.startsWith("Bearer ");
-  const { maktabId, isSuper } = callerScope(req);
-  const m = hasToken && !isSuper ? maktabId : null; // null = hammasi
-  const wUsers = m ? "WHERE maktab_id = $1" : "";
-  const wClasses = m ? "WHERE maktab_id = $1" : "";
-  const wStaff = m ? "WHERE maktab_id = $1" : "";
-  const p = m ? [m] : [];
   try {
+    const mid = schoolOf(getAuthUser(req.headers.authorization));
     const [total_students, total_classes, total_staff, classRows] = await Promise.all([
-      queryCount(`SELECT COUNT(*) FROM users ${wUsers}`, p),
-      queryCount(`SELECT COUNT(*) FROM classes ${wClasses}`, p),
-      queryCount(`SELECT COUNT(*) FROM staff ${wStaff}`, p),
-      query<{ class_name: string }>(`SELECT class_name FROM users ${wUsers}`, p),
+      mid !== null
+        ? queryCount("SELECT COUNT(*) FROM users WHERE maktab_id = $1", [mid])
+        : queryCount("SELECT COUNT(*) FROM users"),
+      mid !== null
+        ? queryCount("SELECT COUNT(*) FROM classes WHERE maktab_id = $1", [mid])
+        : queryCount("SELECT COUNT(*) FROM classes"),
+      mid !== null
+        ? queryCount("SELECT COUNT(*) FROM staff WHERE maktab_id = $1", [mid])
+        : queryCount("SELECT COUNT(*) FROM staff"),
+      mid !== null
+        ? query<{ class_name: string }>("SELECT class_name FROM users WHERE maktab_id = $1", [mid])
+        : query<{ class_name: string }>("SELECT class_name FROM users"),
     ]);
 
     const classCounts: Record<string, number> = {};
@@ -61,7 +62,6 @@ router.get("/dashboard/my-class", async (req, res): Promise<void> => {
 
   const class_name = user["class_name"] as string | null;
   const class_id = user["class_id"] as string | null;
-  const { maktabId, isSuper } = callerScope(req);
 
   if (!class_name) {
     res.json(GetMyClassResponse.parse({ class_name: "", class_id: null, students: [] }));
@@ -69,9 +69,10 @@ router.get("/dashboard/my-class", async (req, res): Promise<void> => {
   }
 
   try {
-    const students = isSuper
-      ? await query("SELECT * FROM users WHERE class_name = $1 ORDER BY full_name", [class_name])
-      : await query("SELECT * FROM users WHERE class_name = $1 AND maktab_id = $2 ORDER BY full_name", [class_name, maktabId]);
+    const mid = schoolOf(user);
+    const students = mid !== null
+      ? await query("SELECT * FROM users WHERE class_name = $1 AND maktab_id = $2 ORDER BY full_name", [class_name, mid])
+      : await query("SELECT * FROM users WHERE class_name = $1 ORDER BY full_name", [class_name]);
     res.json(GetMyClassResponse.parse({ class_name, class_id, students }));
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
