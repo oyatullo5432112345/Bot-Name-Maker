@@ -102,10 +102,17 @@ export async function getLinkedChat(chatId: number): Promise<LinkedChat | null> 
   );
 }
 
-export async function getChatsByPurpose(purpose: ChatPurpose): Promise<LinkedChat[]> {
+export async function getChatsByPurpose(purpose: ChatPurpose, maktabId?: number | null): Promise<LinkedChat[]> {
+  // maktabId berilsa — faqat o'sha maktab chatlari; berilmasa — hammasi (eski xatti-harakat)
+  if (maktabId == null) {
+    return query<LinkedChat>(
+      "SELECT chat_id, chat_type, title, purpose, class_id, settings FROM tg_chats WHERE purpose = $1",
+      [purpose]
+    );
+  }
   return query<LinkedChat>(
-    "SELECT chat_id, chat_type, title, purpose, class_id, settings FROM tg_chats WHERE purpose = $1",
-    [purpose]
+    "SELECT chat_id, chat_type, title, purpose, class_id, settings FROM tg_chats WHERE purpose = $1 AND maktab_id = $2",
+    [purpose, maktabId]
   );
 }
 
@@ -124,14 +131,22 @@ export async function linkChat(input: {
   classId?: string | null;
   linkedBy?: number | null;
 }): Promise<void> {
+  // Chat qaysi maktabga tegishli: bog'lagan xodimning maktabi (topilmasa 3-maktab)
+  let mid = 3;
+  if (input.linkedBy != null) {
+    const r = await queryOne<{ maktab_id: number }>(
+      "SELECT maktab_id FROM staff WHERE telegram_id = $1", [input.linkedBy]
+    ).catch(() => null);
+    if (r?.maktab_id != null) mid = r.maktab_id;
+  }
   await query(
-    `INSERT INTO tg_chats (chat_id, chat_type, title, purpose, class_id, linked_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO tg_chats (chat_id, chat_type, title, purpose, class_id, linked_by, maktab_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (chat_id) DO UPDATE
        SET chat_type = EXCLUDED.chat_type, title = EXCLUDED.title,
            purpose = EXCLUDED.purpose, class_id = EXCLUDED.class_id,
-           linked_by = EXCLUDED.linked_by`,
-    [input.chatId, input.chatType, input.title, input.purpose, input.classId ?? null, input.linkedBy ?? null]
+           linked_by = EXCLUDED.linked_by, maktab_id = EXCLUDED.maktab_id`,
+    [input.chatId, input.chatType, input.title, input.purpose, input.classId ?? null, input.linkedBy ?? null, mid]
   );
 }
 
@@ -278,6 +293,9 @@ CREATE TABLE IF NOT EXISTS tg_chats (
 
 CREATE INDEX IF NOT EXISTS idx_tg_chats_class_id ON tg_chats(class_id);
 CREATE INDEX IF NOT EXISTS idx_tg_chats_purpose  ON tg_chats(purpose);
+-- Ko'p-maktab: har bir bog'langan chat qaysi maktabga tegishli (eski chatlar → 3-maktab)
+ALTER TABLE tg_chats ADD COLUMN IF NOT EXISTS maktab_id INT NOT NULL DEFAULT 3;
+CREATE INDEX IF NOT EXISTS idx_tg_chats_maktab ON tg_chats(maktab_id);
 
 -- Rejalashtirilgan ishlar bir kunda ikki marta ishlamasligi uchun
 -- (server qayta ishga tushsa ham). job_key misol: "morning:2026-09-25".

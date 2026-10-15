@@ -1635,20 +1635,38 @@ function startScheduler(): void {
       if (schoolDay && inWindow(hour, min, 15, 30) && (await claimJob(`att-remind:${date}`))) {
         await jobAttendanceReminder(date);
       }
-      // Face ID — 08:00: darslar boshlandi, maktab guruhiga kelganlar soni (qisqa snapshot)
-      if (schoolDay && inWindow(hour, min, 8, 0) && (await claimJob(`faceid-arrived:${date}`))) {
-        await faceidArrivedCount().catch((err) => logger.warn({ err }, "faceid 08:00 kelganlar soni"));
+      // Face ID — har MAKTAB uchun alohida ishlaydi (ko'p-maktab).
+      // Faol maktablar; bo'lmasa/jadval bo'sh bo'lsa — 3-maktab (standart).
+      const faceSchools = async (): Promise<number[]> => {
+        const rows = await query<{ id: number }>("SELECT id FROM maktablar WHERE is_active ORDER BY id").catch(() => [] as { id: number }[]);
+        return rows.length ? rows.map((r) => r.id) : [3];
+      };
+      // 08:00: darslar boshlandi, maktab guruhiga kelganlar soni (qisqa snapshot)
+      if (schoolDay && inWindow(hour, min, 8, 0)) {
+        for (const mid of await faceSchools()) {
+          if (await claimJob(`faceid-arrived:${date}:${mid}`)) {
+            await faceidArrivedCount(mid).catch((err) => logger.warn({ err, mid }, "faceid 08:00 kelganlar soni"));
+          }
+        }
       }
-      // Face ID — 10:00: to'liq xulosa (keldi/kech/sababli/sababsiz) + muntazam kelmaydiganlar
-      if (schoolDay && inWindow(hour, min, 10, 0) && (await claimJob(`faceid-summary:${date}`))) {
-        await faceidGroupSummary().catch((err) => logger.warn({ err }, "faceid 10:00 to'liq xulosa"));
-        await faceidUnexcusedNotify().catch((err) => logger.warn({ err }, "faceid sababsizlar (o'qituvchilarga)"));
-        await faceidChronicNotify().catch((err) => logger.warn({ err }, "faceid muntazam kelmaydiganlar"));
+      // 10:00: to'liq xulosa (keldi/kech/sababli/sababsiz) + muntazam kelmaydiganlar
+      if (schoolDay && inWindow(hour, min, 10, 0)) {
+        for (const mid of await faceSchools()) {
+          if (await claimJob(`faceid-summary:${date}:${mid}`)) {
+            await faceidGroupSummary(mid).catch((err) => logger.warn({ err, mid }, "faceid 10:00 to'liq xulosa"));
+            await faceidUnexcusedNotify(mid).catch((err) => logger.warn({ err, mid }, "faceid sababsizlar (o'qituvchilarga)"));
+            await faceidChronicNotify(mid).catch((err) => logger.warn({ err, mid }, "faceid muntazam kelmaydiganlar"));
+          }
+        }
       }
-      // Face ID — 14:30: kun yakuni (ketgan/qochgan/javob so'ragan) + kunlik arxiv (Word) Telegramga
-      if (schoolDay && inWindow(hour, min, 14, 30) && (await claimJob(`faceid-departures:${date}`))) {
-        await faceidDepartureSummary().catch((err) => logger.warn({ err }, "faceid 14:30 kun yakuni"));
-        await faceidArchiveToTelegram().catch((err) => logger.warn({ err }, "faceid kunlik arxiv"));
+      // 14:30: kun yakuni (ketgan/qochgan/javob so'ragan) + kunlik arxiv (Word) Telegramga
+      if (schoolDay && inWindow(hour, min, 14, 30)) {
+        for (const mid of await faceSchools()) {
+          if (await claimJob(`faceid-departures:${date}:${mid}`)) {
+            await faceidDepartureSummary(mid).catch((err) => logger.warn({ err, mid }, "faceid 14:30 kun yakuni"));
+            await faceidArchiveToTelegram(mid).catch((err) => logger.warn({ err, mid }, "faceid kunlik arxiv"));
+          }
+        }
       }
       if (day === 6 && inWindow(hour, min, 16, 0) && (await claimJob(`weekly:${date}`))) {
         await jobWeeklyTop();

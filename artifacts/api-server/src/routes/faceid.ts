@@ -1047,7 +1047,7 @@ router.post("/faceid/checkin", async (req, res): Promise<void> => {
 // ─── Bir sinfdagi har bir o'quvchining bugungi holati ───────────────────────
 type StudentState = "present" | "late" | "excused" | "unexcused";
 interface RosterRow { full_name: string; state: StudentState; reason: string }
-async function classRoster(className: string, today: string): Promise<RosterRow[]> {
+async function classRoster(className: string, today: string, mid: number): Promise<RosterRow[]> {
   const rows = await query<{ full_name: string; arrived: boolean; status: string; excused: boolean; reason: string }>(
     `SELECT u.full_name,
             (fc.checked_at IS NOT NULL) AS arrived,
@@ -1056,9 +1056,9 @@ async function classRoster(className: string, today: string): Promise<RosterRow[
             COALESCE(fc.excuse_reason, '') AS reason
        FROM users u
        LEFT JOIN face_checkins fc ON fc.student_login = u.login AND fc.date = $2::date
-      WHERE u.class_name = $1
+      WHERE u.class_name = $1 AND u.maktab_id = $3
       ORDER BY u.full_name`,
-    [className, today]
+    [className, today, mid]
   );
   return rows.map((r) => ({
     full_name: r.full_name,
@@ -1070,7 +1070,7 @@ async function classRoster(className: string, today: string): Promise<RosterRow[
 // ═══════════════════════════════════════════════════════════════════════════
 //  08:00 — MAKTAB GURUHIGA: shu paytgacha kelganlar soni (qisqa snapshot)
 // ═══════════════════════════════════════════════════════════════════════════
-export async function faceidArrivedCount(): Promise<{ sent: number; arrived: number; total: number }> {
+export async function faceidArrivedCount(mid: number): Promise<{ sent: number; arrived: number; total: number }> {
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
   const agg = await queryOne<{ total: number; arrived: number; late: number }>(
@@ -1078,11 +1078,11 @@ export async function faceidArrivedCount(): Promise<{ sent: number; arrived: num
             COUNT(fc.checked_at)::int AS arrived,
             COUNT(fc.checked_at) FILTER (WHERE fc.status = 'late')::int AS late
        FROM users u LEFT JOIN face_checkins fc ON fc.student_login = u.login AND fc.date = $1::date
-      WHERE u.class_name <> ''`,
-    [today]
+      WHERE u.class_name <> '' AND u.maktab_id = $2`,
+    [today, mid]
   );
   const total = agg?.total ?? 0, arrived = agg?.arrived ?? 0, late = agg?.late ?? 0;
-  const schoolChats = await getChatsByPurpose("school");
+  const schoolChats = await getChatsByPurpose("school", mid);
   let sent = 0;
   const text =
     `🏫 <b>Maktab — darslar boshlandi (08:00)</b> (${dateStr})\n\n` +
@@ -1099,17 +1099,17 @@ export async function faceidArrivedCount(): Promise<{ sent: number; arrived: num
 //   • MAKTAB GURUHIGA: umumiy sonlar + sababli va sababsizlar ro'yxati (sinflar kesimida)
 //  Har bir o'quvchiga (ota-onasiga) alohida xabar handleScan ichida darhol boradi.
 // ═══════════════════════════════════════════════════════════════════════════
-export async function faceidGroupSummary(): Promise<{ classes: number; sent: number }> {
+export async function faceidGroupSummary(mid: number): Promise<{ classes: number; sent: number }> {
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
-  const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' ORDER BY name");
+  const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' AND maktab_id = $1 ORDER BY name", [mid]);
   let sent = 0, done = 0;
   let sTotal = 0, sArrived = 0, sLate = 0, sExcused = 0, sUnexcused = 0;
   const schoolExcused: string[] = [];   // "7-A — Ism F. (sabab)"
   const schoolUnexcused: string[] = []; // "7-A — Ism F."
 
   for (const c of classes) {
-    const roster = await classRoster(c.name, today);
+    const roster = await classRoster(c.name, today, mid);
     if (roster.length === 0) continue;
     const present = roster.filter((r) => r.state === "present");
     const late = roster.filter((r) => r.state === "late");
@@ -1143,7 +1143,7 @@ export async function faceidGroupSummary(): Promise<{ classes: number; sent: num
   }
 
   // ── Maktab guruhiga — umumiy holat + sababli/sababsiz ro'yxatlar
-  const schoolChats = await getChatsByPurpose("school");
+  const schoolChats = await getChatsByPurpose("school", mid);
   if (schoolChats.length) {
     const lines: string[] = [
       `🏫 <b>Maktab — bugungi davomat (Face ID, 10:00)</b> (${dateStr})`,
@@ -1170,9 +1170,9 @@ export async function faceidGroupSummary(): Promise<{ classes: number; sent: num
 // ═══════════════════════════════════════════════════════════════════════════
 //  10:00 — "MUNTAZAM KELMAYDIGAN" o'quvchilar har kuni sinf guruhiga eslatiladi
 // ═══════════════════════════════════════════════════════════════════════════
-export async function faceidChronicNotify(): Promise<{ classes: number; sent: number }> {
+export async function faceidChronicNotify(mid: number): Promise<{ classes: number; sent: number }> {
   const today = uzDateStr();
-  const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' ORDER BY name");
+  const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' AND maktab_id = $1 ORDER BY name", [mid]);
   let sent = 0, done = 0;
   for (const c of classes) {
     const chats = await getClassChats(c.id);
@@ -1180,9 +1180,9 @@ export async function faceidChronicNotify(): Promise<{ classes: number; sent: nu
     const rows = await query<{ full_name: string; note: string }>(
       `SELECT u.full_name, COALESCE(ch.note, '') AS note
          FROM face_chronic ch JOIN users u ON u.login = ch.student_login
-        WHERE ch.class_name = $1 AND (ch.until IS NULL OR ch.until >= $2::date)
+        WHERE ch.class_name = $1 AND (ch.until IS NULL OR ch.until >= $2::date) AND u.maktab_id = $3
         ORDER BY u.full_name`,
-      [c.name, today]
+      [c.name, today, mid]
     );
     if (rows.length === 0) continue;
     const text =
@@ -1196,9 +1196,10 @@ export async function faceidChronicNotify(): Promise<{ classes: number; sent: nu
 
 // POST /api/faceid/group-summary — qo'lda yuborish (rahbariyat)
 router.post("/faceid/group-summary", async (req, res): Promise<void> => {
-  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const u = authAs(req, MANAGE);
+  if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   try {
-    const r = await faceidGroupSummary();
+    const r = await faceidGroupSummary(schoolOf(u) ?? 3);
     res.json({ ok: true, ...r });
   } catch (err) {
     logger.error({ err }, "faceid/group-summary");
@@ -1215,7 +1216,7 @@ router.post("/faceid/group-summary", async (req, res): Promise<void> => {
 //   • Qochib ketganlarga shaxsiy chatga ham eslatma (ota-onasiga).
 //   • Shundan so'ng kunlik faoliyat yopiladi (14:30 dan keyin Face ID ishlamaydi).
 // ═══════════════════════════════════════════════════════════════════════════
-export async function faceidDepartureSummary(): Promise<{ classes: number; sent: number; truants: number }> {
+export async function faceidDepartureSummary(mid: number): Promise<{ classes: number; sent: number; truants: number }> {
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
 
@@ -1226,12 +1227,12 @@ export async function faceidDepartureSummary(): Promise<{ classes: number; sent:
        FROM users u
       WHERE fc.student_login = u.login
         AND fc.date = $1::date AND fc.checked_at IS NOT NULL AND fc.left_at IS NULL
-        AND fc.excused = FALSE AND fc.class_name <> $2
+        AND fc.excused = FALSE AND fc.class_name <> $2 AND u.maktab_id = $3
       RETURNING fc.student_login, fc.student_name, fc.class_name, u.telegram_id`,
-    [today, STAFF_GROUP]
+    [today, STAFF_GROUP, mid]
   ).catch(() => [] as { student_login: string; student_name: string; class_name: string; telegram_id: number | null }[]);
 
-  const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' ORDER BY name");
+  const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' AND maktab_id = $1 ORDER BY name", [mid]);
   let sent = 0, done = 0;
   const schoolTruant: string[] = [];   // "7-A — Ism F. (chiqishi belgilanmagan)"
   const schoolExcusedOut: string[] = []; // "7-A — Ism F. — 12:30"
@@ -1245,9 +1246,9 @@ export async function faceidDepartureSummary(): Promise<{ classes: number; sent:
               COALESCE(fc.left_early, false) AS early,
               COALESCE(fc.truant, false) AS truant
          FROM face_checkins fc JOIN users u ON u.login = fc.student_login
-        WHERE fc.class_name = $1 AND fc.date = $2::date AND fc.left_at IS NOT NULL
+        WHERE fc.class_name = $1 AND fc.date = $2::date AND fc.left_at IS NOT NULL AND fc.maktab_id = $3
         ORDER BY fc.left_at`,
-      [c.name, today]
+      [c.name, today, mid]
     );
     const normal = left.filter((r) => !r.excused && !r.early);
     const runaway = left.filter((r) => !r.excused && r.early);       // erta yoki qochib ketgan
@@ -1282,7 +1283,7 @@ export async function faceidDepartureSummary(): Promise<{ classes: number; sent:
   }
 
   // 3) Maktab guruhiga umumiy yakun
-  const schoolChats = await getChatsByPurpose("school");
+  const schoolChats = await getChatsByPurpose("school", mid);
   if (schoolChats.length) {
     const lines: string[] = [
       `🏫 <b>Maktab — kun yakuni (Face ID, 14:30)</b> (${dateStr})`,
@@ -1312,7 +1313,7 @@ export async function faceidDepartureSummary(): Promise<{ classes: number; sent:
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Bitta sinf uchun xabar oluvchilar: sinf rahbari + fan o'qituvchilari (tartib bo'yicha). */
-async function classRecipients(className: string): Promise<number[]> {
+async function classRecipients(className: string, mid: number): Promise<number[]> {
   const ids: number[] = [];
   const seen = new Set<number>();
   const add = (tid: number | null | undefined) => {
@@ -1321,37 +1322,39 @@ async function classRecipients(className: string): Promise<number[]> {
   // 1) Sinf rahbari
   const rahbar = await query<{ telegram_id: number | null }>(
     `SELECT s.telegram_id FROM classes c JOIN staff s ON s.id = c.teacher_id
-      WHERE c.name = $1 AND s.telegram_id IS NOT NULL`,
-    [className]
+      WHERE c.name = $1 AND c.maktab_id = $2 AND s.telegram_id IS NOT NULL`,
+    [className, mid]
   ).catch(() => [] as { telegram_id: number | null }[]);
   for (const r of rahbar) add(r.telegram_id);
   // 2) Fan o'qituvchilari (shu sinfga biriktirilgan)
   const fan = await query<{ telegram_id: number | null }>(
     `SELECT DISTINCT s.telegram_id FROM teacher_subjects ts
        JOIN classes c ON c.id = ts.class_id JOIN staff s ON s.id = ts.teacher_id
-      WHERE c.name = $1 AND s.telegram_id IS NOT NULL`,
-    [className]
+      WHERE c.name = $1 AND c.maktab_id = $2 AND s.telegram_id IS NOT NULL`,
+    [className, mid]
   ).catch(() => [] as { telegram_id: number | null }[]);
   for (const r of fan) add(r.telegram_id);
   return ids;
 }
 
-/** Rahbariyat: direktor, MMTB (zam_direktor), zavuch. */
-async function mgmtRecipients(): Promise<number[]> {
+/** Rahbariyat: direktor, MMTB (zam_direktor), zavuch — faqat shu maktabniki. */
+async function mgmtRecipients(mid: number): Promise<number[]> {
   const rows = await query<{ telegram_id: number | null }>(
     `SELECT telegram_id FROM staff
-      WHERE role IN ('director', 'zam_direktor', 'zavuch') AND telegram_id IS NOT NULL`
+      WHERE role IN ('director', 'zam_direktor', 'zavuch') AND telegram_id IS NOT NULL AND maktab_id = $1`,
+    [mid]
   ).catch(() => [] as { telegram_id: number | null }[]);
   const out: number[] = [];
   for (const r of rows) if (r.telegram_id != null && isRealTelegramId(r.telegram_id)) out.push(r.telegram_id);
   return out;
 }
 
-export async function faceidUnexcusedNotify(): Promise<{ classes: number; recipients: number }> {
+export async function faceidUnexcusedNotify(mid: number): Promise<{ classes: number; recipients: number }> {
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
   const classes = await query<{ name: string }>(
-    "SELECT DISTINCT class_name AS name FROM users WHERE class_name <> '' ORDER BY class_name"
+    "SELECT DISTINCT class_name AS name FROM users WHERE class_name <> '' AND maktab_id = $1 ORDER BY class_name",
+    [mid]
   );
   let recipients = 0;
   let affected = 0;
@@ -1360,14 +1363,14 @@ export async function faceidUnexcusedNotify(): Promise<{ classes: number; recipi
   for (const c of classes) {
     const absent = await query<{ full_name: string }>(
       `SELECT u.full_name FROM users u
-        WHERE u.class_name = $1
+        WHERE u.class_name = $1 AND u.maktab_id = $3
           AND NOT EXISTS (
             SELECT 1 FROM face_checkins fc
              WHERE fc.student_login = u.login AND fc.date = $2::date
                AND (fc.checked_at IS NOT NULL OR fc.excused = TRUE)
           )
         ORDER BY u.full_name`,
-      [c.name, today]
+      [c.name, today, mid]
     );
     if (absent.length === 0) continue;
     affected++;
@@ -1376,7 +1379,7 @@ export async function faceidUnexcusedNotify(): Promise<{ classes: number; recipi
       `⛔️ <b>${esc(c.name)} — sababsiz kelmaganlar</b> (${dateStr}, ${uzTime()})\n\n` +
       absent.slice(0, 80).map((a, i) => `${i + 1}. ${esc(a.full_name)}`).join("\n") +
       `\n\n<i>Sababli bo'lsa — platformada "Sababli" deb belgilang, ro'yxatdan chiqadi.</i>`;
-    const to = await classRecipients(c.name);
+    const to = await classRecipients(c.name, mid);
     for (const id of to) { if (await sendToChat(id, text)) recipients++; await sleep(60); }
   }
 
@@ -1387,16 +1390,17 @@ export async function faceidUnexcusedNotify(): Promise<{ classes: number; recipi
       `⛔️ <b>Maktab — bugungi sababsiz kelmaganlar</b> (${dateStr}, ${uzTime()})\n\n` +
       schoolLines.join("\n") +
       `\n\n<b>Jami:</b> ${total} sinfda sababsiz kelmaganlar bor.`;
-    for (const id of await mgmtRecipients()) { if (await sendToChat(id, text)) recipients++; await sleep(60); }
+    for (const id of await mgmtRecipients(mid)) { if (await sendToChat(id, text)) recipients++; await sleep(60); }
   }
   return { classes: affected, recipients };
 }
 
 // POST /api/faceid/notify-unexcused — qo'lda yuborish (rahbariyat)
 router.post("/faceid/notify-unexcused", async (req, res): Promise<void> => {
-  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const u = authAs(req, MANAGE);
+  if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   try {
-    const r = await faceidUnexcusedNotify();
+    const r = await faceidUnexcusedNotify(schoolOf(u) ?? 3);
     res.json({ ok: true, ...r });
   } catch (err) {
     logger.error({ err }, "faceid/notify-unexcused");
@@ -1460,18 +1464,18 @@ interface ArchiveData {
 }
 
 /** Arxiv uchun ma'lumotlarni yig'adi (bitta sana bo'yicha, butun maktab). */
-async function collectArchive(date: string): Promise<ArchiveData> {
+async function collectArchive(date: string, mid: number): Promise<ArchiveData> {
   const settings = await getSettings();
   const quarterStart = autoQuarterStart(date, settings.quarter_start);
 
   const counts = await queryOne<{ total: number; arrived: number; excused_absent: number; left_early: number; excused_out: number }>(
     `SELECT
-       (SELECT COUNT(*) FROM users WHERE class_name <> '')::int AS total,
-       (SELECT COUNT(*) FROM face_checkins WHERE date = $1::date AND checked_at IS NOT NULL AND class_name <> '${STAFF_GROUP}')::int AS arrived,
-       (SELECT COUNT(*) FROM face_checkins WHERE date = $1::date AND excused = TRUE AND checked_at IS NULL AND class_name <> '${STAFF_GROUP}')::int AS excused_absent,
-       (SELECT COUNT(*) FROM face_checkins WHERE date = $1::date AND left_early = TRUE AND excused = FALSE AND class_name <> '${STAFF_GROUP}')::int AS left_early,
-       (SELECT COUNT(*) FROM face_checkins WHERE date = $1::date AND excused = TRUE AND left_at IS NOT NULL AND class_name <> '${STAFF_GROUP}')::int AS excused_out`,
-    [date]
+       (SELECT COUNT(*) FROM users WHERE class_name <> '' AND maktab_id = $2)::int AS total,
+       (SELECT COUNT(*) FROM face_checkins WHERE date = $1::date AND checked_at IS NOT NULL AND class_name <> '${STAFF_GROUP}' AND maktab_id = $2)::int AS arrived,
+       (SELECT COUNT(*) FROM face_checkins WHERE date = $1::date AND excused = TRUE AND checked_at IS NULL AND class_name <> '${STAFF_GROUP}' AND maktab_id = $2)::int AS excused_absent,
+       (SELECT COUNT(*) FROM face_checkins WHERE date = $1::date AND left_early = TRUE AND excused = FALSE AND class_name <> '${STAFF_GROUP}' AND maktab_id = $2)::int AS left_early,
+       (SELECT COUNT(*) FROM face_checkins WHERE date = $1::date AND excused = TRUE AND left_at IS NOT NULL AND class_name <> '${STAFF_GROUP}' AND maktab_id = $2)::int AS excused_out`,
+    [date, mid]
   );
   const total = counts?.total ?? 0;
   const arrived = counts?.arrived ?? 0;
@@ -1481,22 +1485,22 @@ async function collectArchive(date: string): Promise<ArchiveData> {
   const excused = await query<{ class_name: string; full_name: string; reason: string }>(
     `SELECT fc.class_name, fc.student_name AS full_name, COALESCE(fc.excuse_reason, '') AS reason
        FROM face_checkins fc
-      WHERE fc.date = $1::date AND fc.excused = TRUE AND fc.checked_at IS NULL AND fc.class_name <> '${STAFF_GROUP}'
+      WHERE fc.date = $1::date AND fc.excused = TRUE AND fc.checked_at IS NULL AND fc.class_name <> '${STAFF_GROUP}' AND fc.maktab_id = $2
       ORDER BY fc.class_name, fc.student_name`,
-    [date]
+    [date, mid]
   );
 
   // Sababsiz kelmaganlar (bugun kelmagan va sababli emas) — har biriga chorakdagi qoldirilgan soat
   const unexcusedRows = await query<{ class_name: string; login: string; full_name: string }>(
     `SELECT u.class_name, u.login, u.full_name FROM users u
-      WHERE u.class_name <> ''
+      WHERE u.class_name <> '' AND u.maktab_id = $2
         AND NOT EXISTS (
           SELECT 1 FROM face_checkins fc
            WHERE fc.student_login = u.login AND fc.date = $1::date
              AND (fc.checked_at IS NOT NULL OR fc.excused = TRUE)
         )
       ORDER BY u.class_name, u.full_name`,
-    [date]
+    [date, mid]
   );
   // Chorakdagi qoldirilgan soat: sinf bo'yicha hafta-kuni dars soni × attendance absent kunlari
   const hoursByLogin = new Map<string, number>();
@@ -1506,7 +1510,7 @@ async function collectArchive(date: string): Promise<ArchiveData> {
       `WITH lc AS (
          SELECT t.day_of_week AS dow, COUNT(*)::int AS n
            FROM timetable t JOIN classes c ON c.id = t.class_id
-          WHERE c.name = $1 GROUP BY t.day_of_week
+          WHERE c.name = $1 AND c.maktab_id = $4 GROUP BY t.day_of_week
        )
        SELECT a.student_login AS login, COALESCE(SUM(lc.n), 0)::int AS hours
          FROM attendance a
@@ -1514,7 +1518,7 @@ async function collectArchive(date: string): Promise<ArchiveData> {
         WHERE a.class_name = $1 AND a.status = 'absent'
           AND a.date >= $2::date AND a.date <= $3::date
         GROUP BY a.student_login`,
-      [cn, quarterStart, date]
+      [cn, quarterStart, date, mid]
     ).catch(() => [] as { login: string; hours: number }[]);
     for (const r of rows) hoursByLogin.set(r.login, r.hours);
   }
@@ -1524,9 +1528,9 @@ async function collectArchive(date: string): Promise<ArchiveData> {
   const chronic = await query<{ class_name: string; full_name: string; note: string }>(
     `SELECT ch.class_name, u.full_name, COALESCE(ch.note, '') AS note
        FROM face_chronic ch JOIN users u ON u.login = ch.student_login
-      WHERE (ch.until IS NULL OR ch.until >= $1::date)
+      WHERE (ch.until IS NULL OR ch.until >= $1::date) AND u.maktab_id = $2
       ORDER BY ch.class_name, u.full_name`,
-    [date]
+    [date, mid]
   ).catch(() => [] as { class_name: string; full_name: string; note: string }[]);
 
   return {
@@ -1612,11 +1616,12 @@ function renderArchiveDoc(a: ArchiveData): string {
 
 // GET /api/faceid/archive?date=YYYY-MM-DD — Word (.doc) hisobotni yuklab olish
 router.get("/faceid/archive", async (req, res): Promise<void> => {
-  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const u = authAs(req, MANAGE);
+  if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const q = String(req.query["date"] ?? "");
   const date = /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : uzDateStr();
   try {
-    const data = await collectArchive(date);
+    const data = await collectArchive(date, schoolOf(u) ?? 3);
     const html = renderArchiveDoc(data);
     res.setHeader("Content-Type", "application/msword; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="davomat-${date}.doc"`);
@@ -1628,8 +1633,8 @@ router.get("/faceid/archive", async (req, res): Promise<void> => {
 });
 
 /** 14:30 da — kunlik arxivni Telegramga (maktab guruhi + rahbariyat) hujjat sifatida yuboradi. */
-export async function faceidArchiveToTelegram(date = uzDateStr()): Promise<{ sent: number }> {
-  const data = await collectArchive(date);
+export async function faceidArchiveToTelegram(mid: number, date = uzDateStr()): Promise<{ sent: number }> {
+  const data = await collectArchive(date, mid);
   const buf = Buffer.from(renderArchiveDoc(data), "utf-8");
   const fname = `davomat-${date}.doc`;
   const dateStr = date.split("-").reverse().join(".");
@@ -1638,9 +1643,9 @@ export async function faceidArchiveToTelegram(date = uzDateStr()): Promise<{ sen
     `✅ Keldi: ${data.counts.arrived}/${data.counts.total} · ` +
     `📝 sababli: ${data.counts.excusedAbsent} · ⛔️ sababsiz: ${data.counts.unexcusedAbsent}`;
   let sent = 0;
-  const schoolChats = await getChatsByPurpose("school");
+  const schoolChats = await getChatsByPurpose("school", mid);
   for (const ch of schoolChats) { if (await sendDocumentToChat(ch.chat_id, buf, fname, caption)) sent++; await sleep(120); }
-  for (const id of await mgmtRecipients()) { if (await sendDocumentToChat(id, buf, fname, caption)) sent++; await sleep(120); }
+  for (const id of await mgmtRecipients(mid)) { if (await sendDocumentToChat(id, buf, fname, caption)) sent++; await sleep(120); }
   return { sent };
 }
 
