@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { query, queryOne } from "../lib/db.js";
-import { getAuthUser } from "./auth.js";
+import { getAuthUser, hashPassword } from "./auth.js";
+import { genUniqueLoginId } from "./auth-login.js";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -160,6 +161,81 @@ router.delete("/maktablar/:id", async (req, res): Promise<void> => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ============================================================
+//  DIREKTOR BIRIKTIRISH — maktabga login akkaunt yaratish
+//  Admin maktabga direktor yaratadi: login + parol + 5 xonali ID
+//  avtomatik beriladi. Direktor shu bilan kirib, O'Z maktabini
+//  (maktab_id) boshqaradi.
+// ============================================================
+
+// GET /maktablar/:id/director — maktab direktori (bo'lsa)
+router.get("/maktablar/:id/director", async (req, res): Promise<void> => {
+  if (!admin(req)) { res.status(403).json({ error: "Faqat tuman admini" }); return; }
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Noto'g'ri id" }); return; }
+  const d = await queryOne<{ id: string; full_name: string; login: string; login_id: string }>(
+    "SELECT id, full_name, login, login_id FROM staff WHERE maktab_id = $1 AND role = 'director' ORDER BY created_at LIMIT 1",
+    [id],
+  ).catch(() => null);
+  res.json(d ?? null);
+});
+
+// POST /maktablar/:id/director { full_name } — maktabga direktor akkaunt yaratish
+router.post("/maktablar/:id/director", async (req, res): Promise<void> => {
+  if (!admin(req)) { res.status(403).json({ error: "Faqat tuman admini" }); return; }
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Noto'g'ri id" }); return; }
+  const full_name = String((req.body as { full_name?: unknown })?.full_name ?? "").trim();
+  if (full_name.length < 3) { res.status(400).json({ error: "Direktor ism-familiyasini to'liq kiriting" }); return; }
+
+  try {
+    const maktab = await queryOne<{ id: number; nom: string }>("SELECT id, nom FROM maktablar WHERE id = $1", [id]);
+    if (!maktab) { res.status(404).json({ error: "Maktab topilmadi" }); return; }
+
+    // Bir maktabda bitta direktor
+    const existing = await queryOne<{ login: string; full_name: string }>(
+      "SELECT login, full_name FROM staff WHERE maktab_id = $1 AND role = 'director'", [id],
+    );
+    if (existing) {
+      res.status(400).json({ error: `Bu maktabda direktor bor: ${existing.full_name} (${existing.login}). Avval "Xodimlar"da uni o'chiring.` });
+      return;
+    }
+
+    // Login: ismdan + tasodifiy raqam (staff/users ichida band bo'lmasin)
+    const base = (full_name.split(/\s+/)[0] ?? "direktor").toLowerCase().replace(/[^a-z]/g, "") || "direktor";
+    let login = `${base}${Math.floor(100 + Math.random() * 900)}`;
+    for (let i = 0; i < 25; i++) {
+      const taken = await queryOne(
+        "SELECT 1 AS x FROM staff WHERE LOWER(login) = LOWER($1) UNION SELECT 1 FROM users WHERE LOWER(login) = LOWER($1)",
+        [login],
+      );
+      if (!taken) break;
+      login = `${base}${Math.floor(100 + Math.random() * 900)}`;
+    }
+
+    const password = `${id}maktabdirektor`; // masalan: 1maktabdirektor
+    const passwordHash = await hashPassword(password);
+    const login_id = await genUniqueLoginId(id);
+
+    await query(
+      `INSERT INTO staff (full_name, role, class_id, login, password, login_id, telegram_id, subjects, can_teach, maktab_id)
+       VALUES ($1,'director',NULL,$2,$3,$4,NULL,'{}',false,$5)`,
+      [full_name, login, passwordHash, login_id, id],
+    );
+    // Ro'yxatda ko'rinishi uchun maktab.direktor matnini ham yangilaymiz
+    await query("UPDATE maktablar SET direktor = $2 WHERE id = $1", [id, full_name]).catch(() => {});
+
+    res.json({ ok: true, full_name, login, password, login_id, maktab_id: id, maktab_nom: maktab.nom });
+  } catch (err) {
+    const msg = (err as Error).message ?? "";
+    if (msg.includes("unique") || msg.includes("duplicate")) {
+      res.status(409).json({ error: "Login band bo'lib qoldi, qayta urinib ko'ring" });
+    } else {
+      res.status(500).json({ error: "Direktor yaratishda xatolik: " + msg });
+    }
   }
 });
 

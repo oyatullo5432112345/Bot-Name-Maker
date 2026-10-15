@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Building2, Plus, Pencil, Trash2, Loader2, Check, X, Save, Users, GraduationCap, School,
+  UserPlus, KeyRound, Copy,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -33,6 +34,12 @@ export default function MaktablarPage() {
   const [editId, setEditId] = useState<number | null>(null); // null = yangi
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
+
+  // Direktor biriktirish
+  const [dirFor, setDirFor] = useState<School | null>(null);
+  const [dirName, setDirName] = useState("");
+  const [dirSaving, setDirSaving] = useState(false);
+  const [dirCreds, setDirCreds] = useState<{ login: string; password: string; login_id: string } | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -94,6 +101,27 @@ export default function MaktablarPage() {
       await refresh();
     } catch { /* jim */ }
     setBusy(null);
+  }
+
+  function openDirector(s: School) { setDirFor(s); setDirName(""); setDirCreds(null); }
+  function closeDirector() { setDirFor(null); setDirName(""); setDirCreds(null); }
+
+  async function assignDirector() {
+    if (!dirFor) return;
+    if (dirName.trim().length < 3) { toast({ variant: "destructive", title: "Ism-familiyani to'liq kiriting" }); return; }
+    setDirSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/maktablar/${dirFor.id}/director`, {
+        method: "POST", headers: headers(true), body: JSON.stringify({ full_name: dirName.trim() }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { login?: string; password?: string; login_id?: string; error?: string };
+      if (!res.ok) { toast({ variant: "destructive", title: "Xatolik", description: j.error }); return; }
+      setDirCreds({ login: j.login ?? "", password: j.password ?? "", login_id: j.login_id ?? "" });
+      await refresh();
+    } catch (e) {
+      toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
+    }
+    setDirSaving(false);
   }
 
   async function remove(s: School) {
@@ -206,6 +234,7 @@ export default function MaktablarPage() {
                     className={`px-2.5 py-2 rounded-lg text-[11px] font-bold cursor-pointer ${s.is_active ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300" : "bg-slate-500/15 text-slate-400"}`}>
                     {busy === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (s.is_active ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />)}
                   </button>
+                  <button onClick={() => openDirector(s)} className="p-2 rounded-lg bg-blue-500/15 text-blue-600 dark:text-blue-300 cursor-pointer" title="Direktor biriktirish"><UserPlus className="w-3.5 h-3.5" /></button>
                   <button onClick={() => startEdit(s)} className="p-2 rounded-lg bg-secondary cursor-pointer" title="Tahrirlash"><Pencil className="w-3.5 h-3.5" /></button>
                   {s.id !== 3 && (
                     <button onClick={() => remove(s)} disabled={busy === s.id} className="p-2 rounded-lg bg-rose-500/15 text-rose-500 cursor-pointer" title="O'chirish"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -217,6 +246,58 @@ export default function MaktablarPage() {
           {list.length === 0 && <div className="text-center text-sm text-muted-foreground py-12">Hali maktab yo'q.</div>}
         </div>
       )}
+
+      {/* DIREKTOR BIRIKTIRISH OYNASI */}
+      {dirFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={closeDirector}>
+          <div className="w-full max-w-md rounded-2xl bg-card border border-border shadow-2xl p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <p className="font-black text-sm flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-600" /> {dirFor.nom} — direktor biriktirish</p>
+              <button onClick={closeDirector} className="p-1.5 rounded-lg bg-secondary cursor-pointer"><X className="w-4 h-4" /></button>
+            </div>
+
+            {!dirCreds ? (
+              <>
+                <p className="text-[12px] text-muted-foreground">Direktorning ism-familiyasini kiriting. Login, parol va 5 xonali ID avtomatik yaratiladi. Direktor shu bilan kirib, <b>o'z maktabini</b> boshqaradi.</p>
+                <input value={dirName} autoFocus
+                  onChange={(e: { target: { value: string } }) => setDirName(e.target.value)}
+                  placeholder="masalan: Aliyev Vali"
+                  className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border text-sm font-bold focus:outline-none focus:border-primary" />
+                <button onClick={assignDirector} disabled={dirSaving}
+                  className="w-full px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-sm cursor-pointer active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
+                  {dirSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />} Yaratish
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-[12px] text-muted-foreground">Direktor yaratildi ✅ Bu ma'lumotlarni direktorga bering — oyna yopilgach parol qayta ko'rsatilmaydi.</p>
+                <div className="rounded-xl border border-border bg-secondary/50 divide-y divide-border">
+                  <CredRow label="Login" value={dirCreds.login} />
+                  <CredRow label="Parol" value={dirCreds.password} />
+                  <CredRow label="5 xonali ID" value={dirCreds.login_id} />
+                </div>
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1"><KeyRound className="w-3 h-3" /> Direktor shu login+parol yoki 5 xonali ID bilan tizimga kiradi.</p>
+                <button onClick={closeDirector} className="w-full px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-sm cursor-pointer">Yopish</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CredRow({ label, value }: { label: string; value: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="flex items-center gap-2 px-3 py-2.5">
+      <span className="text-[11px] font-bold text-muted-foreground w-20 shrink-0">{label}</span>
+      <span className="flex-1 min-w-0 font-mono font-black text-sm break-all">{value}</span>
+      <button
+        onClick={async () => { try { await navigator.clipboard.writeText(value); setDone(true); setTimeout(() => setDone(false), 1500); } catch { /* jim */ } }}
+        className="p-1.5 rounded-lg bg-secondary cursor-pointer shrink-0" title="Nusxa olish">
+        {done ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
     </div>
   );
 }
