@@ -275,7 +275,7 @@ export function WelcomeAnimation({ name, role, onDone }: WelcomeAnimationProps) 
             fontWeight: 500, letterSpacing: "0.15em",
             textTransform: "uppercase", marginBottom: "4px",
           }}>
-            Toshloq tumani 3-maktab
+            Toshloq tumani
           </p>
           <h1 style={{
             color: "white", fontSize: "clamp(28px, 6vw, 42px)",

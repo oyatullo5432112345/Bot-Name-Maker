@@ -105,7 +105,7 @@ export function LoadingScreen({ label = "yuklanmoqda..." }: LoadingScreenProps) 
         textTransform: "uppercase",
         marginBottom: 6,
       }}>
-        Toshloq tumani 3-maktab
+        Toshloq tumani
       </p>
       <h1 style={{
         color: "white",

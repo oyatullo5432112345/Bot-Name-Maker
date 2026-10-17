@@ -349,7 +349,7 @@ export default function Login() {
         }}>
           <div style={{ textAlign: "center", marginBottom: 32 }}>
             <div style={{ fontSize: 56, marginBottom: 14, filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.4))" }}>🏫</div>
-            <div style={{ color: "white", fontWeight: 800, fontSize: 22, marginBottom: 4 }}>Toshloq tumani 3-maktab</div>
+            <div style={{ color: "white", fontWeight: 800, fontSize: 22, marginBottom: 4 }}>Toshloq tumani</div>
             <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Kirish usulini tanlang</div>
           </div>
 
@@ -450,7 +450,7 @@ export default function Login() {
               <DialogTitle className="flex items-center gap-2.5">
                 <span className="text-xl">🏫</span>
                 <div>
-                  <div className="font-bold text-base leading-tight">Toshloq tumani 3-maktab</div>
+                  <div className="font-bold text-base leading-tight">Toshloq tumani</div>
                   <div className="text-xs text-muted-foreground font-normal">Tizimga kirish</div>
                 </div>
               </DialogTitle>
