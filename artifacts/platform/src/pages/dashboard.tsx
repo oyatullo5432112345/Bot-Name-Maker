@@ -25,6 +25,31 @@ const authHeaders = (): HeadersInit => {
 
 const SCHOOL_YEAR_START = new Date("2026-09-02T08:00:00");
 
+// Bayramlar — eng yaqin bayramgacha sanoq uchun (tuman platformasi)
+const HOLIDAYS: { date: string; name: string; emoji: string }[] = [
+  { date: "2026-10-21", name: "O'zbek tili bayrami", emoji: "🇺🇿" },
+  { date: "2026-12-08", name: "Konstitutsiya kuni", emoji: "📜" },
+  { date: "2027-01-01", name: "Yangi yil", emoji: "🎄" },
+  { date: "2027-03-08", name: "Xalqaro xotin-qizlar kuni", emoji: "🌷" },
+  { date: "2027-03-21", name: "Navro'z bayrami", emoji: "🌸" },
+  { date: "2027-05-09", name: "Xotira va qadrlash kuni", emoji: "🕊️" },
+  { date: "2027-06-01", name: "Bolalarni himoya qilish kuni", emoji: "🧒" },
+  { date: "2027-09-01", name: "Mustaqillik kuni", emoji: "🇺🇿" },
+  { date: "2027-10-01", name: "O'qituvchi va murabbiylar kuni", emoji: "👩‍🏫" },
+  { date: "2027-10-21", name: "O'zbek tili bayrami", emoji: "🇺🇿" },
+  { date: "2027-12-08", name: "Konstitutsiya kuni", emoji: "📜" },
+  { date: "2028-01-01", name: "Yangi yil", emoji: "🎄" },
+];
+function nextHoliday(): { name: string; emoji: string; date: Date } {
+  const now = Date.now();
+  for (const h of HOLIDAYS) {
+    const d = new Date(h.date + "T00:00:00");
+    if (d.getTime() >= now) return { name: h.name, emoji: h.emoji, date: d };
+  }
+  const last = HOLIDAYS[HOLIDAYS.length - 1]!;
+  return { name: last.name, emoji: last.emoji, date: new Date(last.date + "T00:00:00") };
+}
+
 const DAY_NAMES: Record<number, string> = {
   1: "Dushanba", 2: "Seshanba", 3: "Chorshanba",
   4: "Payshanba", 5: "Juma", 6: "Shanba",
@@ -391,12 +416,16 @@ function AdminDashboard() {
   const nowMs       = Date.now();
   const summerProgress = Math.min(100, Math.max(0, Math.round(((nowMs - summerStart) / (summerEnd - summerStart)) * 100)));
   const daysTotal   = Math.round((summerEnd - summerStart) / 86400000);
+  void summerProgress; void daysTotal; // eski yozgi-ta'til kartasi olib tashlandi
+
+  const holiday = nextHoliday();
+  const holidayDays = Math.max(0, Math.ceil((holiday.date.getTime() - Date.now()) / 86400000));
 
   const statCards = [
     {
       title: "Jami O'quvchilar", value: stats.total_students,
       icon: GraduationCap, color: "text-blue-400", bg: "bg-blue-400/10",
-      trend: "+12 o'tgan oyga", trendUp: true,
+      trend: "Ro'yxatda", trendUp: null,
     },
     {
       title: "Jami Sinflar", value: stats.total_classes,
@@ -409,9 +438,10 @@ function AdminDashboard() {
       trend: "Ro'yxatga olingan", trendUp: null,
     },
     {
-      title: "Yangi o'quv yiliga", value: `${stats.days_until_launch} kun`,
+      title: "Keyingi bayram",
+      value: holidayDays <= 0 ? "Bugun! 🎉" : `${holidayDays} kun`,
       icon: CalendarDays, color: "text-emerald-400", bg: "bg-emerald-400/10",
-      trend: null, trendUp: null, progress: summerProgress, daysTotal,
+      trend: `${holiday.emoji} ${holiday.name}`, trendUp: null,
     },
   ];
 
@@ -679,11 +709,12 @@ function TeacherDashboard() {
 }
 
 function CountdownBanner() {
-  const { days, hours, minutes, seconds, ended } = useCountdown(SCHOOL_YEAR_START);
+  const holiday = useMemo(() => nextHoliday(), []);
+  const { days, hours, minutes, seconds, ended } = useCountdown(holiday.date);
   if (ended) return (
     <Card className="border-primary bg-primary/5">
       <CardContent className="py-4 text-center">
-        <p className="text-lg font-bold text-primary">🎓 2026-2027 o'quv yili boshlandi!</p>
+        <p className="text-lg font-bold text-primary">{holiday.emoji} {holiday.name} muborak bo'lsin!</p>
       </CardContent>
     </Card>
   );
@@ -691,8 +722,8 @@ function CountdownBanner() {
     <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
       <CardContent className="py-4">
         <div className="flex items-center gap-2 mb-3">
-          <Clock className="w-4 h-4 text-primary" />
-          <p className="text-sm font-medium text-primary">2026-2027 o'quv yili boshlanishiga qoldi</p>
+          <span className="text-xl leading-none">{holiday.emoji}</span>
+          <p className="text-sm font-medium text-primary">{holiday.name}gacha qoldi</p>
         </div>
         <div className="grid grid-cols-4 gap-2 text-center">
           {[{ value: days, label: "Kun" }, { value: hours, label: "Soat" }, { value: minutes, label: "Daqiqa" }, { value: seconds, label: "Soniya" }].map(({ value, label }) => (

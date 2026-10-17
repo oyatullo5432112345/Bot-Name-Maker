@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Search, Trash2, Users, CreditCard, Crown } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, Users, CreditCard, Crown, ScanFace } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -103,7 +103,23 @@ export default function StudentsList() {
     }
   };
 
-  const filteredStudents = students?.filter(s => 
+  // O'quvchi Face ID (yuz ma'lumoti) ni o'chirish — direktor/rahbariyat uchun
+  const [fidBusy, setFidBusy] = useState<string | null>(null);
+  const handleDeleteFaceId = async (login: string, name: string) => {
+    if (!window.confirm(`${name} — Face ID (yuz ma'lumoti) o'chirilsinmi? O'quvchi qayta ro'yxatdan o'tishi mumkin.`)) return;
+    setFidBusy(login);
+    try {
+      const t = getToken();
+      const r = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/faceid/enroll/${encodeURIComponent(login)}`, {
+        method: "DELETE",
+        headers: t ? { Authorization: `Bearer ${t}` } : {},
+      });
+      if (r.ok) toast({ title: "Face ID o'chirildi", description: name });
+      else { const j = await r.json().catch(() => ({})); toast({ variant: "destructive", title: "Xatolik", description: (j as { error?: string }).error ?? "Face ID o'chirishda xatolik" }); }
+    } finally { setFidBusy(null); }
+  };
+
+  const filteredStudents = students?.filter(s =>
     s.full_name.toLowerCase().includes(search.toLowerCase()) || 
     s.class_name.toLowerCase().includes(search.toLowerCase())
   );
@@ -203,6 +219,17 @@ export default function StudentsList() {
                           <CreditCard className="w-4 h-4 text-primary" />
                         </Link>
                       </Button>
+                      {canManage && (
+                        <Button
+                          variant="ghost" size="icon" title="Face ID (yuz ma'lumoti) ni o'chirish"
+                          onClick={() => void handleDeleteFaceId(student.login, student.full_name)}
+                          disabled={fidBusy === student.login}
+                        >
+                          {fidBusy === student.login
+                            ? <Loader2 className="w-4 h-4 animate-spin text-rose-500" />
+                            : <ScanFace className="w-4 h-4 text-rose-500" />}
+                        </Button>
+                      )}
                       {isAdmin && (
                         <Button
                           variant="ghost" size="icon" title="Pro versiya berish (1 yil)"
