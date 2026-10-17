@@ -157,7 +157,12 @@ export function getAuthUser(authHeader: string | undefined): Record<string, unkn
 //  Har bir route SELECT/INSERT/UPDATE/DELETE da shu bilan filtrlanadi.
 export function schoolOf(user: Record<string, unknown> | null | undefined): number | null {
   if (!user) return null;
-  if ((user["role"] as string) === "admin") return null;
+  if ((user["role"] as string) === "admin") {
+    // Bosh admin bitta maktabni "ko'rish" rejimiga o'tsa — o'sha maktab (token ichida _viewMaktab).
+    // Aks holda null = BARCHA maktablar (aralash ko'rinish).
+    const v = user["_viewMaktab"];
+    return typeof v === "number" ? v : null;
+  }
   const m = user["maktab_id"];
   return typeof m === "number" ? m : 3;
 }
@@ -565,6 +570,30 @@ router.get("/auth/me", async (req, res): Promise<void> => {
     return;
   }
   res.json(GetMeResponse.parse(user));
+});
+
+// POST /api/auth/view-school { maktab_id: number | null }
+// Bosh admin uchun: bitta maktabni "ko'rish" rejimiga o'tadi (yoki null = barcha maktablar).
+// Yangi token qaytaradi — undan keyin barcha sahifalar o'sha maktabga filtrlanadi.
+router.post("/auth/view-school", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || (user["role"] as string) !== "admin") {
+    res.status(403).json({ error: "Faqat bosh administrator" });
+    return;
+  }
+  const raw = (req.body as { maktab_id?: unknown })?.maktab_id;
+  const mid = (raw === null || raw === undefined || raw === "") ? null : Number(raw);
+  if (mid !== null && !Number.isInteger(mid)) {
+    res.status(400).json({ error: "Noto'g'ri maktab raqami" });
+    return;
+  }
+  // Tokenni qayta yasaymiz: eski muddat belgilarini olib tashlab, _viewMaktab ni qo'yamiz.
+  const payload: Record<string, unknown> = { ...user, _viewMaktab: mid };
+  delete payload["_issuedAt"];
+  delete payload["_expiresAt"];
+  const token = createToken(payload);
+  res.setHeader("X-Auth-Token", token);
+  res.json({ token, maktab_id: mid });
 });
 
 // POST /api/auth/logout

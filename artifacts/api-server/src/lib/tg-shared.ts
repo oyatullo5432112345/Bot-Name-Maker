@@ -131,9 +131,17 @@ export async function linkChat(input: {
   classId?: string | null;
   linkedBy?: number | null;
 }): Promise<void> {
-  // Chat qaysi maktabga tegishli: bog'lagan xodimning maktabi (topilmasa 3-maktab)
+  // Chat qaysi maktabga tegishli:
+  //  • SINF guruhi → o'sha SINFning maktabi (kim ulashidan qat'i nazar — eng ishonchli)
+  //  • Maktab/o'qituvchilar guruhi → ulagan xodimning maktabi
+  //  • topilmasa → 3-maktab (standart)
   let mid = 3;
-  if (input.linkedBy != null) {
+  if (input.classId) {
+    const c = await queryOne<{ maktab_id: number }>(
+      "SELECT maktab_id FROM classes WHERE id = $1", [input.classId]
+    ).catch(() => null);
+    if (c?.maktab_id != null) mid = c.maktab_id;
+  } else if (input.linkedBy != null) {
     const r = await queryOne<{ maktab_id: number }>(
       "SELECT maktab_id FROM staff WHERE telegram_id = $1", [input.linkedBy]
     ).catch(() => null);

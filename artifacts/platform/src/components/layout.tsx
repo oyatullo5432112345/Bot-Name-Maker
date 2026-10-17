@@ -17,21 +17,77 @@ import { isSayohatOpen } from "@/pages/sayohat/sayohatData";
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
 
-// Joriy foydalanuvchining maktabi — "Toshloq tumani · 3-maktab" (kirish yozuvi)
+// Joriy foydalanuvchining maktabi — oddiy foydalanuvchi uchun yorliq ("Toshloq tumani · 3-maktab").
+// BOSH ADMIN uchun — maktab tanlagich (dropdown): bitta maktabni tanlab, faqat o'shani ko'radi,
+// yoki "Barcha maktablar" (aralash). Tanlov tokenga yoziladi, sahifa yangilanadi.
+// Joriy tokendan "ko'rilayotgan maktab" (_viewMaktab) ni o'qiydi — har doim haqiqiy holat.
+function currentViewMaktab(): string {
+  try {
+    const t = getToken();
+    if (!t) return "";
+    let b = t.split(".")[0]!.replace(/-/g, "+").replace(/_/g, "/");
+    while (b.length % 4) b += "=";
+    const json = JSON.parse(decodeURIComponent(escape(atob(b)))) as { _viewMaktab?: unknown };
+    return typeof json._viewMaktab === "number" ? String(json._viewMaktab) : "";
+  } catch { return ""; }
+}
+
 function SchoolBadge({ className = "" }: { className?: string }) {
-  const [label, setLabel] = useState<string | null>(null);
+  const [mine, setMine] = useState<{ nom?: string; tuman?: string; is_admin?: boolean } | null>(null);
+  const [schools, setSchools] = useState<{ id: number; nom: string }[]>([]);
+  const [view] = useState<string>(() => currentViewMaktab());
+  const [busy, setBusy] = useState(false);
+
   useEffect(() => {
     let alive = true;
     fetch(`${API_BASE}/maktablar/mine`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { nom?: string; tuman?: string } | null) => {
-        if (alive && d?.nom) setLabel(d.tuman ? `${d.tuman} tumani · ${d.nom}` : d.nom);
-      })
+      .then((d: { nom?: string; tuman?: string; is_admin?: boolean } | null) => { if (alive) setMine(d); })
       .catch(() => { /* jim */ });
     return () => { alive = false; };
   }, []);
-  if (!label) return null;
-  return <p className={`text-[11px] font-semibold text-primary/80 truncate ${className}`}>🏫 {label}</p>;
+
+  useEffect(() => {
+    if (!mine?.is_admin) return;
+    fetch(`${API_BASE}/maktablar`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d: { id: number; nom: string }[]) => setSchools(Array.isArray(d) ? d : []))
+      .catch(() => { /* jim */ });
+  }, [mine?.is_admin]);
+
+  const switchSchool = async (val: string) => {
+    setBusy(true);
+    try {
+      const r = await fetch(`${API_BASE}/auth/view-school`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify({ maktab_id: val === "" ? null : Number(val) }),
+      });
+      const j = (await r.json().catch(() => ({}))) as { token?: string };
+      if (r.ok && j.token) {
+        try { localStorage.setItem("talim_auth_token", j.token); } catch { /* jim */ }
+        window.location.reload();
+      } else { setBusy(false); }
+    } catch { setBusy(false); }
+  };
+
+  if (mine?.is_admin) {
+    return (
+      <select
+        value={view}
+        disabled={busy}
+        onChange={(e) => switchSchool(e.target.value)}
+        title="Ko'rilayotgan maktab (tuman admini)"
+        className={`text-[11px] font-bold text-primary bg-secondary border border-border rounded-lg px-2 py-1 cursor-pointer max-w-[180px] disabled:opacity-50 ${className}`}
+      >
+        <option value="">🏫 Barcha maktablar</option>
+        {schools.map((s) => <option key={s.id} value={String(s.id)}>🏫 {s.nom}</option>)}
+      </select>
+    );
+  }
+
+  if (!mine?.nom) return null;
+  return <p className={`text-[11px] font-semibold text-primary/80 truncate ${className}`}>🏫 {mine.tuman ? `${mine.tuman} tumani · ${mine.nom}` : mine.nom}</p>;
 }
 
 const roleDisplay: Record<string, string> = {
