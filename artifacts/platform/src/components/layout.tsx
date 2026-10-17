@@ -9,7 +9,7 @@ import {
   Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays,
   MessageSquare, Library, Award,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
-  Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace, Monitor, Compass, Building2,
+  Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace, Monitor, Compass, Building2, Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isSayohatOpen } from "@/pages/sayohat/sayohatData";
@@ -394,6 +394,46 @@ function MenuButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+// #5: maktab obunasi holati (PRO). /maktablar/mine dan.
+interface SubState {
+  locked?: boolean; is_mgmt?: boolean; is_admin?: boolean; nom?: string;
+  sub?: { active?: boolean; days_left?: number | null; warn?: boolean };
+}
+function useSubscription(): SubState | null {
+  const [s, setS] = useState<SubState | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API_BASE}/maktablar/mine`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: SubState | null) => { if (alive) setS(d); })
+      .catch(() => { /* jim */ });
+    return () => { alive = false; };
+  }, []);
+  return s;
+}
+
+// Oddiy foydalanuvchi uchun to'liq qulf ekrani (obuna tugagan)
+function LockedScreen({ nom, onLogout }: { nom?: string; onLogout: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-background">
+      <div className="max-w-md w-full text-center space-y-5">
+        <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-500/15 flex items-center justify-center">
+          <Lock className="w-8 h-8 text-rose-500" />
+        </div>
+        <h1 className="text-xl font-extrabold">1 oylik bepul versiya tugadi</h1>
+        <p className="text-sm text-muted-foreground">
+          {nom ? `${nom} — ` : ""}platformadan foydalanishni davom ettirish uchun to'lovni amalga oshiring.
+        </p>
+        <div className="rounded-2xl border border-border bg-card p-4 text-left text-sm space-y-1">
+          <p className="font-bold flex items-center gap-1.5"><CreditCard className="w-4 h-4" /> To'lov</p>
+          <p className="text-muted-foreground">To'lov ma'lumotlari (YaTT hisob raqami) tez kunda shu yerda ko'rsatiladi. Maktab rahbariyatiga murojaat qiling.</p>
+        </div>
+        <button onClick={onLogout} className="text-xs text-muted-foreground underline">Chiqish</button>
+      </div>
+    </div>
+  );
+}
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout: authLogout } = useAuth();
   const [location] = useLocation();
@@ -405,6 +445,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [quickSheetOpen, setQuickSheetOpen] = useState(false);
   const isStudent = user?.role === "student";
   const tanga = useTangaInfo(isStudent ?? false);
+  const subState = useSubscription();
 
   useEffect(() => { setDrawerOpen(false); setQuickSheetOpen(false); }, [location]);
 
@@ -416,12 +457,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (!user) return <>{children}</>;
 
+  // #5: Obuna qulfi
+  const subLocked = !!subState?.locked;           // maktab obunasi tugagan
+  const isAdminUser = user.role === "admin";
+  const isMgmtUser = ["director", "mudir", "zam_direktor", "zavuch"].includes(user.role);
+  // Oddiy foydalanuvchi (o'quvchi/o'qituvchi/...) + qulf → to'liq qulf. Admin va rahbariyatга qulf tegmaydi.
+  if (subLocked && !isAdminUser && !isMgmtUser) {
+    return <LockedScreen nom={subState?.nom} onLogout={handleLogout} />;
+  }
+  const subWarn = !!subState?.sub?.warn;          // 3 kundan kam qoldi
+  const faceLockedForMgmt = subLocked;            // rahbariyatga faqat Face ID yopiladi
+
   const isMudir = user.role === "mudir";
   const canViewStaff = !isMudir && ["admin","director","zam_direktor","zavuch"].includes(user.role);
   const canViewClasses = !isMudir && ["admin","director","zam_direktor","zavuch"].includes(user.role);
   const canViewStudents = !isMudir && ["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
   const canViewDavomat = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
-  const canUseFaceId = !isMudir && ["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
+  const canUseFaceId = !isMudir && !faceLockedForMgmt && ["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
   const canUseLab = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
   const canSeeLoginIds = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
   const sayohatOpen = isSayohatOpen(user.role);
@@ -651,6 +703,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-36 lg:pb-20">
+          <div className="mx-auto max-w-6xl">
+            {faceLockedForMgmt ? (
+              <div className="mb-4 rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 flex items-start gap-2.5">
+                <Lock className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-bold text-rose-600 dark:text-rose-300">Bepul versiya tugadi — Face ID yopiq</p>
+                  <p className="text-muted-foreground text-xs mt-0.5">To'lovni amalga oshiring. To'lov ma'lumotlari (YaTT hisob raqami) tez kunda qo'shiladi.</p>
+                </div>
+              </div>
+            ) : subWarn ? (
+              <div className="mb-4 rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-bold text-amber-600 dark:text-amber-300">Bepul versiya {subState?.sub?.days_left} kundan keyin tugaydi</p>
+                  <p className="text-muted-foreground text-xs mt-0.5">Davom ettirish uchun to'lovni oldindan amalga oshiring.</p>
+                </div>
+              </div>
+            ) : null}
+          </div>
           <div key={location} className="mx-auto max-w-6xl page-fade">
             {children}
           </div>

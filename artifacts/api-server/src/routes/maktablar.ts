@@ -20,6 +20,34 @@ function admin(req: { headers: { authorization?: string } }): Record<string, unk
   return u;
 }
 
+// ─── #5: Obuna (PRO) ────────────────────────────────────────────────────────
+// Har maktab uchun pro_until. NULL = cheksiz (qulf yo'q). Yangi maktablar 1 oy
+// bepul oladi; admin uzaytiradi. Muddat tugasa — maktab qulflanadi.
+void query(`ALTER TABLE maktablar ADD COLUMN IF NOT EXISTS pro_until TIMESTAMPTZ;`)
+  .catch(() => { /* jadval hali yo'q bo'lsa migratsiya yaratadi */ });
+
+// Rahbariyat: qulf TO'LIQ tegmaydi, lekin ularga "Face ID boshlash" yopiladi.
+// Oddiy foydalanuvchi (o'quvchi/o'qituvchi/...): to'liq qulf.
+const MGMT_ROLES = ["director", "mudir", "zam_direktor", "zavuch"];
+
+interface SubInfo { pro_until: string | null; active: boolean; days_left: number | null; warn: boolean }
+function subInfo(proUntil: Date | string | null): SubInfo {
+  if (!proUntil) return { pro_until: null, active: true, days_left: null, warn: false };
+  const until = new Date(proUntil);
+  const ms = until.getTime() - Date.now();
+  const days = Math.ceil(ms / 86400000);
+  return { pro_until: until.toISOString(), active: ms > 0, days_left: days, warn: ms > 0 && days <= 3 };
+}
+
+// faceid.ts uchun: maktab obunasi faolmi (Face ID shu bilan qulflanadi)
+export async function schoolActive(mid: number | null): Promise<boolean> {
+  if (mid === null) return true; // admin / cheksiz
+  const r = await queryOne<{ pro_until: string | null }>(
+    "SELECT pro_until::text AS pro_until FROM maktablar WHERE id = $1", [mid],
+  ).catch(() => null);
+  return subInfo(r?.pro_until ?? null).active;
+}
+
 // GET /maktablar/mine — joriy foydalanuvchining maktabi (kirish yozuvi uchun)
 //  Har qanday kirgan foydalanuvchi uchun. Admin → barcha maktablar.
 router.get("/maktablar/mine", async (req, res): Promise<void> => {
@@ -42,10 +70,14 @@ router.get("/maktablar/mine", async (req, res): Promise<void> => {
       mid = row?.maktab_id ?? 3;
     }
     if (mid === null) mid = 3;
-    const m = await queryOne<{ id: number; nom: string; tuman: string }>(
-      "SELECT id, nom, tuman FROM maktablar WHERE id = $1", [mid],
+    const m = await queryOne<{ id: number; nom: string; tuman: string; pro_until: string | null }>(
+      "SELECT id, nom, tuman, pro_until::text AS pro_until FROM maktablar WHERE id = $1", [mid],
     );
-    res.json(m ? { ...m, is_admin: false } : { id: mid, nom: `${mid}-maktab`, tuman: "Toshloq", is_admin: false });
+    const sub = subInfo(m?.pro_until ?? null);
+    const is_mgmt = MGMT_ROLES.includes(String(u["role"]));
+    res.json(m
+      ? { id: m.id, nom: m.nom, tuman: m.tuman, is_admin: false, sub, locked: !sub.active, is_mgmt }
+      : { id: mid, nom: `${mid}-maktab`, tuman: "Toshloq", is_admin: false, sub: subInfo(null), locked: false, is_mgmt });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -57,9 +89,9 @@ router.get("/maktablar", async (req, res): Promise<void> => {
   try {
     const rows = await query<{
       id: number; nom: string; tuman: string; manzil: string; direktor: string;
-      is_active: boolean; oquvchi: string; xodim: string; sinf: string;
+      is_active: boolean; pro_until: string | null; oquvchi: string; xodim: string; sinf: string;
     }>(
-      `SELECT m.id, m.nom, m.tuman, m.manzil, m.direktor, m.is_active,
+      `SELECT m.id, m.nom, m.tuman, m.manzil, m.direktor, m.is_active, m.pro_until::text AS pro_until,
          (SELECT COUNT(*) FROM users u  WHERE u.maktab_id  = m.id) AS oquvchi,
          (SELECT COUNT(*) FROM staff s  WHERE s.maktab_id  = m.id) AS xodim,
          (SELECT COUNT(*) FROM classes c WHERE c.maktab_id = m.id) AS sinf
@@ -69,6 +101,7 @@ router.get("/maktablar", async (req, res): Promise<void> => {
     res.json(rows.map((r) => ({
       id: r.id, nom: r.nom, tuman: r.tuman, manzil: r.manzil, direktor: r.direktor,
       is_active: r.is_active,
+      sub: subInfo(r.pro_until),
       counts: { oquvchi: Number(r.oquvchi), xodim: Number(r.xodim), sinf: Number(r.sinf) },
     })));
   } catch (err) {
@@ -93,8 +126,10 @@ router.post("/maktablar", async (req, res): Promise<void> => {
   try {
     const exists = await queryOne<{ id: number }>("SELECT id FROM maktablar WHERE id = $1", [m.id]);
     if (exists) { res.status(409).json({ error: `${m.id}-raqamli maktab allaqachon bor` }); return; }
+    // Yangi maktab — 1 oy bepul (PRO). Admin keyin uzaytiradi.
     await query(
-      `INSERT INTO maktablar (id, nom, tuman, manzil, direktor) VALUES ($1, $2, $3, $4, $5)`,
+      `INSERT INTO maktablar (id, nom, tuman, manzil, direktor, pro_until)
+       VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '1 month')`,
       [m.id, m.nom, m.tuman, m.manzil, m.direktor],
     );
     res.json({ ok: true, id: m.id });
@@ -236,6 +271,43 @@ router.post("/maktablar/:id/director", async (req, res): Promise<void> => {
     } else {
       res.status(500).json({ error: "Direktor yaratishda xatolik: " + msg });
     }
+  }
+});
+
+// POST /maktablar/:id/subscription  { months } yoki { unlimited: true }  — obunani uzaytirish (admin)
+//  months > 0 → shuncha oyga uzaytiradi (hozirgi muddat ustiga)
+//  months = 0 → hoziroq qulflaydi
+//  unlimited: true → cheksiz (qulf yo'q)
+router.post("/maktablar/:id/subscription", async (req, res): Promise<void> => {
+  if (!admin(req)) { res.status(403).json({ error: "Faqat tuman admini" }); return; }
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Noto'g'ri id" }); return; }
+  const body = req.body as { months?: unknown; unlimited?: unknown };
+  const exists = await queryOne("SELECT id FROM maktablar WHERE id = $1", [id]);
+  if (!exists) { res.status(404).json({ error: "Maktab topilmadi" }); return; }
+  try {
+    if (body.unlimited === true) {
+      await query("UPDATE maktablar SET pro_until = NULL, updated_at = NOW() WHERE id = $1", [id]);
+    } else {
+      const months = Number(body.months);
+      if (!Number.isInteger(months) || months < 0 || months > 120) {
+        res.status(400).json({ error: "Oy soni 0..120 bo'lsin" }); return;
+      }
+      if (months === 0) {
+        await query("UPDATE maktablar SET pro_until = NOW(), updated_at = NOW() WHERE id = $1", [id]);
+      } else {
+        await query(
+          "UPDATE maktablar SET pro_until = GREATEST(COALESCE(pro_until, NOW()), NOW()) + ($2 || ' months')::interval, updated_at = NOW() WHERE id = $1",
+          [id, String(months)],
+        );
+      }
+    }
+    const row = await queryOne<{ pro_until: string | null }>(
+      "SELECT pro_until::text AS pro_until FROM maktablar WHERE id = $1", [id],
+    );
+    res.json({ ok: true, ...subInfo(row?.pro_until ?? null) });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 

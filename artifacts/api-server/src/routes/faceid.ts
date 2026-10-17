@@ -15,6 +15,7 @@ import { Router, type IRouter, type Request } from "express";
 import { query, queryOne } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { getAuthUser, schoolOf } from "./auth.js";
+import { schoolActive } from "./maktablar.js";
 import { notifyUser } from "../lib/notify.js";
 import { isRealTelegramId, uzDateStr, uzHourMin, uzDay, sendToChat, sendDocumentToChat, esc, PERIOD_TIMES, getClassChats, getChatsByPurpose, sleep } from "../lib/tg-shared.js";
 
@@ -873,6 +874,11 @@ router.post("/faceid/scan", async (req, res): Promise<void> => {
   const au = authAs(req, MANAGE);
   if (!au) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const mid = schoolOf(au);
+  // #5: obuna tugagan bo'lsa — Face ID yopiq
+  if (!(await schoolActive(mid))) {
+    res.status(402).json({ error: "Maktab obunasi tugagan. Face ID vaqtincha yopiq — to'lovni amalga oshiring." });
+    return;
+  }
   const { student_login, mode, distance, device } = req.body as { student_login?: string; mode?: string; distance?: number; device?: string };
   if (!student_login) { res.status(400).json({ error: "student_login kerak" }); return; }
   const m: ScanMode = mode === "in" || mode === "out" ? mode : "auto";

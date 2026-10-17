@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Building2, Plus, Pencil, Trash2, Loader2, Check, X, Save, Users, GraduationCap, School,
-  UserPlus, KeyRound, Copy,
+  UserPlus, KeyRound, Copy, CreditCard,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -22,6 +22,7 @@ function headers(json = false): Record<string, string> {
 interface School {
   id: number; nom: string; tuman: string; manzil: string; direktor: string;
   is_active: boolean; counts: { oquvchi: number; xodim: number; sinf: number };
+  sub?: { pro_until: string | null; active: boolean; days_left: number | null; warn: boolean };
 }
 interface FormState { id: string; nom: string; tuman: string; manzil: string; direktor: string }
 
@@ -101,6 +102,26 @@ export default function MaktablarPage() {
       await refresh();
     } catch { /* jim */ }
     setBusy(null);
+  }
+
+  // #5: Obuna uzaytirish / qulflash / cheksiz
+  async function extendSub(s: School) {
+    const ans = window.prompt(
+      `${s.nom} — obuna (PRO):\n• Necha OY uzaytirish (masalan 1, 12)\n• 0 = hoziroq qulflash\n• c = cheksiz (qulf yo'q)`,
+      "12",
+    );
+    if (ans === null) return;
+    const v = ans.trim().toLowerCase();
+    const body = (v === "c" || v === "cheksiz") ? { unlimited: true } : { months: Number(v) };
+    if (!("unlimited" in body) && !Number.isInteger(body.months)) { toast({ variant: "destructive", title: "Oy sonini to'g'ri kiriting (yoki c = cheksiz)" }); return; }
+    setBusy(s.id);
+    try {
+      const r = await fetch(`${API_BASE}/maktablar/${s.id}/subscription`, {
+        method: "POST", headers: headers(true), body: JSON.stringify(body),
+      });
+      if (r.ok) { toast({ title: "Obuna yangilandi", description: s.nom }); await refresh(); }
+      else { const j = (await r.json().catch(() => ({}))) as { error?: string }; toast({ variant: "destructive", title: "Xatolik", description: j.error }); }
+    } finally { setBusy(null); }
   }
 
   function openDirector(s: School) { setDirFor(s); setDirName(""); setDirCreds(null); }
@@ -226,6 +247,11 @@ export default function MaktablarPage() {
                       <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {s.counts.xodim}</span>
                       <span className="flex items-center gap-1"><School className="w-3 h-3" /> {s.counts.sinf}</span>
                     </div>
+                    {s.sub && (
+                      <p className={`text-[11px] font-bold mt-0.5 ${s.sub.pro_until === null ? "text-emerald-600 dark:text-emerald-300" : !s.sub.active ? "text-rose-500" : s.sub.warn ? "text-amber-600 dark:text-amber-300" : "text-sky-600 dark:text-sky-300"}`}>
+                        {s.sub.pro_until === null ? "♾️ Obuna: cheksiz" : !s.sub.active ? "🔒 Obuna tugagan — qulflangan" : `⏳ Obuna: ${s.sub.days_left} kun qoldi`}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -235,6 +261,7 @@ export default function MaktablarPage() {
                     {busy === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (s.is_active ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />)}
                   </button>
                   <button onClick={() => openDirector(s)} className="p-2 rounded-lg bg-blue-500/15 text-blue-600 dark:text-blue-300 cursor-pointer" title="Direktor biriktirish"><UserPlus className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => void extendSub(s)} disabled={busy === s.id} className="p-2 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-300 cursor-pointer" title="Obuna (PRO): uzaytirish / qulflash / cheksiz"><CreditCard className="w-3.5 h-3.5" /></button>
                   <button onClick={() => startEdit(s)} className="p-2 rounded-lg bg-secondary cursor-pointer" title="Tahrirlash"><Pencil className="w-3.5 h-3.5" /></button>
                   {s.id !== 3 && (
                     <button onClick={() => remove(s)} disabled={busy === s.id} className="p-2 rounded-lg bg-rose-500/15 text-rose-500 cursor-pointer" title="O'chirish"><Trash2 className="w-3.5 h-3.5" /></button>
