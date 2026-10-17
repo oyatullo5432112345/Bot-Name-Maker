@@ -175,22 +175,28 @@ export default function FaceTodayPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5 mt-2.5">
-                <Button size="sm" variant="outline" className="text-emerald-600" disabled={b} onClick={act(r.login, "in", r.full_name)}>
-                  <LogIn className="w-3.5 h-3.5 mr-1" /> Keldi
-                </Button>
-                <Button size="sm" variant="outline" className="text-sky-600" disabled={b} onClick={act(r.login, "out", r.full_name)}>
-                  <DoorOpen className="w-3.5 h-3.5 mr-1" /> Ketdi
-                </Button>
-                <Button size="sm" variant="outline" className="text-violet-600" disabled={b} onClick={act(r.login, "out_excused", r.full_name)}>
-                  <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Ruxsat bilan ketdi
-                </Button>
+                {/* Keldi/Ketdi/Ruxsat — faqat maktab rahbariyati (sinf rahbari emas) */}
+                {isManager && (
+                  <>
+                    <Button size="sm" variant="outline" className="text-emerald-600" disabled={b} onClick={act(r.login, "in", r.full_name)}>
+                      <LogIn className="w-3.5 h-3.5 mr-1" /> Keldi
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-sky-600" disabled={b} onClick={act(r.login, "out", r.full_name)}>
+                      <DoorOpen className="w-3.5 h-3.5 mr-1" /> Ketdi
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-violet-600" disabled={b} onClick={act(r.login, "out_excused", r.full_name)}>
+                      <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Ruxsat bilan ketdi
+                    </Button>
+                  </>
+                )}
+                {/* Sababli — sinf rahbari ham qila oladi */}
                 <Button size="sm" variant="outline" className="text-indigo-600" disabled={b} onClick={act(r.login, "absent_excused", r.full_name)}>
                   <UserX className="w-3.5 h-3.5 mr-1" /> Sababli (kelmadi)
                 </Button>
                 <Button size="sm" variant="outline" className={r.chronic ? "text-rose-600" : "text-muted-foreground"} disabled={b} onClick={toggleChronic(r.login, r.full_name, !r.chronic)}>
                   <Repeat className="w-3.5 h-3.5 mr-1" /> {r.chronic ? "Muntazamdan chiqarish" : "Muntazam"}
                 </Button>
-                {(r.arrived || r.left) && (
+                {isManager && (r.arrived || r.left) && (
                   <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={b} onClick={act(r.login, "clear", r.full_name)}>
                     <X className="w-3.5 h-3.5 mr-1" /> Tozalash
                   </Button>

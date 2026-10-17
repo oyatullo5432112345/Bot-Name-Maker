@@ -715,7 +715,7 @@ async function postClassGroup(
   mid: number | null,
   kind: "in" | "out",
   time: string,
-  flags: { late?: boolean; early?: boolean; excused?: boolean } = {}
+  flags: { late?: boolean; early?: boolean; excused?: boolean; manualBy?: string } = {}
 ): Promise<void> {
   if (st.kind !== "student" || !st.class_name) return;
   const cls = mid !== null
@@ -724,9 +724,11 @@ async function postClassGroup(
   if (!cls) return;
   const chats = await getClassChats(cls.id);
   if (chats.length === 0) return;
-  const text = kind === "in"
+  // Qo'lda belgilangan bo'lsa — Face ID tanimagani va kim qo'yganini bildiramiz
+  const manualNote = flags.manualBy ? `\n<i>ℹ️ Face ID aniqlamagani uchun ${esc(flags.manualBy)} qo'lda belgiladi</i>` : "";
+  const text = (kind === "in"
     ? `${flags.late ? "⏰" : "✅"} <b>${esc(st.full_name)}</b> maktabga keldi — <b>${time}</b>${flags.late ? " (kech qoldi)" : ""}`
-    : `🏠 <b>${esc(st.full_name)}</b> maktabdan ketdi — <b>${time}</b>${flags.excused ? " (ruxsat bilan)" : flags.early ? " (erta)" : ""}`;
+    : `🏠 <b>${esc(st.full_name)}</b> maktabdan ketdi — <b>${time}</b>${flags.excused ? " (ruxsat bilan)" : flags.early ? " (erta)" : ""}`) + manualNote;
   for (const ch of chats) {
     await sendToChat(ch.chat_id, text);
     await sleep(50);
@@ -929,6 +931,14 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
   if (!student_login || !["in", "out", "out_excused", "clear", "absent_excused"].includes(String(action))) {
     res.status(400).json({ error: "Noto'g'ri so'rov" }); return;
   }
+  // #8: keldi/ketdi va "ruxsat bilan ketish" ni faqat maktab rahbariyati qo'lda qo'yadi.
+  // Sinf rahbari faqat "sababli" (absent_excused) va "clear" qila oladi — keldi/ketdiga aralashmaydi.
+  const MANUAL_MARK_ROLES = ["admin", "director", "zam_direktor", "zavuch"];
+  const act = String(action);
+  if ((act === "in" || act === "out" || act === "out_excused") && !MANUAL_MARK_ROLES.includes(String(u.role))) {
+    res.status(403).json({ error: "Keldi/ketdi va ruxsat bilan ketishni faqat maktab rahbariyati belgilaydi. Sinf rahbari faqat 'sababli' qila oladi." });
+    return;
+  }
   const person = await findPerson(student_login);
   if (!person) { res.status(404).json({ error: "Topilmadi" }); return; }
   if (!canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
@@ -982,7 +992,7 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
          checked_at = COALESCE($5::timestamptz, NOW()), status = $6, student_name = EXCLUDED.student_name`,
       [student_login, person.full_name, person.class_name, today, ts, status, mid ?? 3]
     );
-    if (messagingAllowed(settings) && settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "in", shownTime, { late: status === "late" });
+    if (messagingAllowed(settings) && settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "in", shownTime, { late: status === "late", manualBy: byName });
     res.json({ ok: true, status });
     return;
   }
@@ -998,7 +1008,7 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
        left_at = COALESCE($5::timestamptz, NOW()), left_early = $6, excused = $7`,
     [student_login, person.full_name, person.class_name, today, ts, early, excused, mid ?? 3]
   );
-  if (messagingAllowed(settings) && settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "out", shownTime, { early, excused });
+  if (messagingAllowed(settings) && settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "out", shownTime, { early, excused, manualBy: byName });
   res.json({ ok: true, early, excused, lessons_end: end });
 });
 

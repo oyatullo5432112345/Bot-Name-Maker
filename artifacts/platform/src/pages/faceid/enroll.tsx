@@ -33,6 +33,34 @@ const POSES: { hint: string; ok: (f: FaceResult, c: PoseCtx) => boolean }[] = [
 const SAMPLES = POSES.length;
 const POSE_WAIT_MS = 2000; // shu vaqt ichida kerakli holat bo'lmasa — bor holatni olamiz (qotib qolmasin)
 const CHAIN_MAX = 0.62; // yangi namuna oldingilaridan biriga shunchalik yaqin bo'lishi kerak (o'sha odam)
+const SHARP_MIN = 55; // #2: yuz tasviri shunchalik aniq (Laplacian-varians) bo'lishi kerak — xira rasmni rad etamiz.
+                      // Agar juda qattiq bo'lsa (hech kim tusha olmasa) — bu sonni kamaytiring; xira o'tsa — oshiring.
+
+// Yuz sohasining "aniqligi" (xira emasmi): Laplacian varians. Katta son = aniq, kichik = xira.
+function faceSharpness(src: CanvasImageSource, box: { x: number; y: number; width: number; height: number }): number {
+  try {
+    const S = 80;
+    const c = document.createElement("canvas"); c.width = S; c.height = S;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx || box.width < 4 || box.height < 4) return 999;
+    ctx.drawImage(src, Math.max(0, box.x), Math.max(0, box.y), box.width, box.height, 0, 0, S, S);
+    const d = ctx.getImageData(0, 0, S, S).data;
+    const g = new Float64Array(S * S);
+    for (let i = 0; i < S * S; i++) g[i] = 0.299 * d[i * 4]! + 0.587 * d[i * 4 + 1]! + 0.114 * d[i * 4 + 2]!;
+    let mean = 0, cnt = 0;
+    const lap = new Float64Array(S * S);
+    for (let y = 1; y < S - 1; y++) for (let x = 1; x < S - 1; x++) {
+      const i = y * S + x;
+      const v = 4 * g[i]! - g[i - 1]! - g[i + 1]! - g[i - S]! - g[i + S]!;
+      lap[cnt++] = v; mean += v;
+    }
+    if (cnt === 0) return 999;
+    mean /= cnt;
+    let varr = 0;
+    for (let i = 0; i < cnt; i++) { const dd = lap[i]! - mean; varr += dd * dd; }
+    return varr / cnt;
+  } catch { return 999; }
+}
 
 // Rasmdan ro'yxatga olish uchun: fayldan HTMLImageElement
 function fileToImage(file: File): Promise<HTMLImageElement> {
@@ -98,7 +126,8 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
       const face = faces[0];
       const big = !!face && face.box.width >= video.videoWidth * 0.22;
       const crowd = !!face && faces.length > 1 && faces[1]!.box.width > face.box.width * 0.6;
-      const good = !!face && big && !crowd && face.score >= (n === 0 ? 0.75 : 0.55);
+      const sharp = face ? faceSharpness(video, face.box) : 0; // #2: xira rasmni rad etish
+      const good = !!face && big && !crowd && sharp >= SHARP_MIN && face.score >= (n === 0 ? 0.75 : 0.55);
       // Shu odammi? (oldingi namunalardan biriga yaqin bo'lishi kerak)
       const same =
         !!face &&
@@ -133,9 +162,11 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
             ? "Kadrda faqat bitta o'quvchi bo'lsin"
             : !big
               ? "Yaqinroq keling"
-              : !same
-                ? "Boshni kamroq buring (kadrda faqat shu o'quvchi)"
-                : pose.hint
+              : sharp < SHARP_MIN
+                ? "📷 Rasm xira — qimirlamay turing va yorug'roq joyga chiqing"
+                : !same
+                  ? "Boshni kamroq buring (kadrda faqat shu o'quvchi)"
+                  : pose.hint
       );
     } catch {
       /* keyingi kadr */
@@ -187,13 +218,15 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
         try { URL.revokeObjectURL(img.src); } catch { /* yo'q */ }
         const faces = await detectFaces(fa, canvas, hasSsd(fa) ? "ssd" : "tiny", { inputSize: 512, maxFaces: 2, minScore: 0.4 });
         if (!faces.length) { noFace++; continue; }
+        // #2: xira (blur) rasmni rad etamiz — yuklangan suratlar uchun biroz yumshoqroq chegara
+        if (faceSharpness(canvas, faces[0]!.box) < SHARP_MIN * 0.7) { noFace++; continue; }
         const d = faces[0]!.descriptor;
         // Hamma rasm bitta odamniki bo'lsin (birinchidan juda uzoq bo'lsa — o'tkazib yuboramiz)
         if (descs.length && distance(d, Float32Array.from(descs[0]!)) > 0.9) { noFace++; continue; }
         descs.push(Array.from(d));
       }
       if (descs.length === 0) {
-        setError(`Rasm(lar)da yuz aniq topilmadi (${noFace} ta o'tkazib yuborildi). Yorug', to'g'ri qaragan, bitta odamli surat tanlang.`);
+        setError(`Rasm(lar)da aniq yuz topilmadi yoki xira (${noFace} ta o'tkazib yuborildi). Yorug', aniq (xira emas), to'g'ri qaragan, bitta odamli surat tanlang.`);
         setStage("error");
         return;
       }
