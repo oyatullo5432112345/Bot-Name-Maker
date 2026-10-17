@@ -23,6 +23,7 @@ import {
 import { createSessionStore } from "./session-store.js";
 import { addChannel, removeChannel, loadSettings } from "./settings.js";
 import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify, faceidArrivedCount, faceidArchiveToTelegram, faceidChronicNotify } from "../routes/faceid.js";
+import { purgeExpiredSchools } from "../routes/maktablar.js";
 
 // Kanal "maktab kanali" sifatida ulanganda — uni MAJBURIY a'zolik ro'yxatiga ham
 // qo'shadi (o'quvchilar a'zo bo'lishi shart bo'ladi). Qo'shilish havolasini ham
@@ -1670,6 +1671,10 @@ function startScheduler(): void {
       }
       if (day === 6 && inWindow(hour, min, 16, 0) && (await claimJob(`weekly:${date}`))) {
         await jobWeeklyTop();
+      }
+      // #4: har kuni 03:10 da — 15 kundan oshган arxiv maktablarni butunlay o'chirish
+      if (inWindow(hour, min, 3, 10) && (await claimJob(`purge-schools:${date}`))) {
+        await purgeExpiredSchools().catch((err) => logger.warn({ err }, "arxiv maktablarni tozalash"));
       }
     } catch (err) {
       logger.error({ err }, "Rejalashtirilgan Telegram xabarida xato");

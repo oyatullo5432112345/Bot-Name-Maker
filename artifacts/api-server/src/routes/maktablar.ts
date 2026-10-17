@@ -25,6 +25,35 @@ function admin(req: { headers: { authorization?: string } }): Record<string, unk
 // bepul oladi; admin uzaytiradi. Muddat tugasa — maktab qulflanadi.
 void query(`ALTER TABLE maktablar ADD COLUMN IF NOT EXISTS pro_until TIMESTAMPTZ;`)
   .catch(() => { /* jadval hali yo'q bo'lsa migratsiya yaratadi */ });
+// #4: yumshoq o'chirish — maktab o'chirilsa 15 kun arxivda turadi (tiklanadi), keyin avto butunlay o'chadi.
+void query(`ALTER TABLE maktablar ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`)
+  .catch(() => { /* migratsiya yaratadi */ });
+
+const ARCHIVE_DAYS = 15; // arxivda necha kun saqlanadi
+
+// #4: 15 kundan oshган arxiv maktablarini butunlay o'chiradi (hamma maktab_id li jadvaldan).
+export async function purgeExpiredSchools(): Promise<number> {
+  const due = await query<{ id: number }>(
+    `SELECT id FROM maktablar WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - INTERVAL '${ARCHIVE_DAYS} days' AND id <> 3`,
+  ).catch(() => [] as { id: number }[]);
+  if (due.length === 0) return 0;
+  const tbls = await query<{ table_name: string }>(
+    "SELECT table_name FROM information_schema.columns WHERE column_name = 'maktab_id' AND table_schema = 'public' AND table_name <> 'maktablar'",
+  ).catch(() => [] as { table_name: string }[]);
+  let n = 0;
+  for (const s of due) {
+    // 2 marta aylanamiz — jadvallar orasidagi bog'liqlik tartibini hal qilish uchun
+    for (let pass = 0; pass < 2; pass++) {
+      for (const t of tbls) {
+        await query(`DELETE FROM "${t.table_name}" WHERE maktab_id = $1`, [s.id]).catch(() => { /* keyingi pass */ });
+      }
+    }
+    const done = await query("DELETE FROM maktablar WHERE id = $1 AND deleted_at IS NOT NULL", [s.id]).catch(() => null);
+    if (done !== null) n++;
+  }
+  return n;
+}
+void purgeExpiredSchools().catch(() => { /* startup — jim */ });
 
 // Rahbariyat: qulf TO'LIQ tegmaydi, lekin ularga "Face ID boshlash" yopiladi.
 // Oddiy foydalanuvchi (o'quvchi/o'qituvchi/...): to'liq qulf.
@@ -42,10 +71,11 @@ function subInfo(proUntil: Date | string | null): SubInfo {
 // faceid.ts uchun: maktab obunasi faolmi (Face ID shu bilan qulflanadi)
 export async function schoolActive(mid: number | null): Promise<boolean> {
   if (mid === null) return true; // admin / cheksiz
-  const r = await queryOne<{ pro_until: string | null }>(
-    "SELECT pro_until::text AS pro_until FROM maktablar WHERE id = $1", [mid],
+  const r = await queryOne<{ pro_until: string | null; deleted_at: string | null }>(
+    "SELECT pro_until::text AS pro_until, deleted_at::text AS deleted_at FROM maktablar WHERE id = $1", [mid],
   ).catch(() => null);
-  return subInfo(r?.pro_until ?? null).active;
+  if (!r || r.deleted_at) return false; // o'chirilgan yoki yo'q → yopiq
+  return subInfo(r.pro_until).active;
 }
 
 // GET /maktablar/mine — joriy foydalanuvchining maktabi (kirish yozuvi uchun)
@@ -70,14 +100,15 @@ router.get("/maktablar/mine", async (req, res): Promise<void> => {
       mid = row?.maktab_id ?? 3;
     }
     if (mid === null) mid = 3;
-    const m = await queryOne<{ id: number; nom: string; tuman: string; pro_until: string | null }>(
-      "SELECT id, nom, tuman, pro_until::text AS pro_until FROM maktablar WHERE id = $1", [mid],
+    const m = await queryOne<{ id: number; nom: string; tuman: string; pro_until: string | null; deleted_at: string | null }>(
+      "SELECT id, nom, tuman, pro_until::text AS pro_until, deleted_at::text AS deleted_at FROM maktablar WHERE id = $1", [mid],
     );
     const sub = subInfo(m?.pro_until ?? null);
     const is_mgmt = MGMT_ROLES.includes(String(u["role"]));
+    const deleted = !!m?.deleted_at;
     res.json(m
-      ? { id: m.id, nom: m.nom, tuman: m.tuman, is_admin: false, sub, locked: !sub.active, is_mgmt }
-      : { id: mid, nom: `${mid}-maktab`, tuman: "Toshloq", is_admin: false, sub: subInfo(null), locked: false, is_mgmt });
+      ? { id: m.id, nom: m.nom, tuman: m.tuman, is_admin: false, sub, locked: deleted || !sub.active, deleted, is_mgmt }
+      : { id: mid, nom: `${mid}-maktab`, tuman: "Toshloq", is_admin: false, sub: subInfo(null), locked: false, deleted: false, is_mgmt });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -96,6 +127,7 @@ router.get("/maktablar", async (req, res): Promise<void> => {
          (SELECT COUNT(*) FROM staff s  WHERE s.maktab_id  = m.id) AS xodim,
          (SELECT COUNT(*) FROM classes c WHERE c.maktab_id = m.id) AS sinf
        FROM maktablar m
+       WHERE m.deleted_at IS NULL
        ORDER BY m.id`,
     );
     res.json(rows.map((r) => ({
@@ -175,28 +207,44 @@ router.put("/maktablar/:id", async (req, res): Promise<void> => {
 });
 
 // DELETE /maktablar/:id — o'chirish (admin). 3-maktab va ma'lumotli maktab o'chmaydi.
+// #4: YUMSHOQ o'chirish — maktab (barcha ma'lumoti bilan) 15 kun arxivga tushadi.
+// Shu vaqtda tiklash mumkin; keyin avtomatik butunlay o'chadi.
 router.delete("/maktablar/:id", async (req, res): Promise<void> => {
   if (!admin(req)) { res.status(403).json({ error: "Faqat tuman admini" }); return; }
   const id = Number(req.params["id"]);
   if (!Number.isInteger(id)) { res.status(400).json({ error: "Noto'g'ri id" }); return; }
   if (id === 3) { res.status(400).json({ error: "Asosiy (3-) maktabni o'chirib bo'lmaydi" }); return; }
   try {
-    const used = await queryOne<{ n: string }>(
-      `SELECT (
-         (SELECT COUNT(*) FROM users  WHERE maktab_id = $1) +
-         (SELECT COUNT(*) FROM staff  WHERE maktab_id = $1) +
-         (SELECT COUNT(*) FROM classes WHERE maktab_id = $1)
-       ) AS n`, [id],
-    );
-    if (Number(used?.n ?? 0) > 0) {
-      res.status(400).json({ error: "Bu maktabda ma'lumot bor — avval o'quvchi/xodim/sinflarni ko'chiring yoki o'chiring" });
-      return;
-    }
-    await query("DELETE FROM maktablar WHERE id = $1", [id]);
-    res.json({ ok: true });
+    const r = await query("UPDATE maktablar SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL", [id]);
+    void r;
+    res.json({ ok: true, archived: true, archive_days: ARCHIVE_DAYS });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
+});
+
+// GET /maktablar/archive — arxivdagi (o'chirilgan) maktablar (admin). Tiklash mumkin.
+router.get("/maktablar/archive", async (req, res): Promise<void> => {
+  if (!admin(req)) { res.status(403).json({ error: "Faqat tuman admini" }); return; }
+  const rows = await query<{ id: number; nom: string; tuman: string; deleted_at: string }>(
+    "SELECT id, nom, tuman, deleted_at::text AS deleted_at FROM maktablar WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+  ).catch(() => [] as { id: number; nom: string; tuman: string; deleted_at: string }[]);
+  res.json(rows.map((r) => {
+    const gone = new Date(r.deleted_at).getTime() + ARCHIVE_DAYS * 86400000;
+    const daysLeft = Math.max(0, Math.ceil((gone - Date.now()) / 86400000));
+    return { id: r.id, nom: r.nom, tuman: r.tuman, deleted_at: r.deleted_at, purge_in_days: daysLeft };
+  }));
+});
+
+// POST /maktablar/:id/restore — arxivdan tiklash (admin)
+router.post("/maktablar/:id/restore", async (req, res): Promise<void> => {
+  if (!admin(req)) { res.status(403).json({ error: "Faqat tuman admini" }); return; }
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Noto'g'ri id" }); return; }
+  const r = await queryOne<{ id: number }>("SELECT id FROM maktablar WHERE id = $1 AND deleted_at IS NOT NULL", [id]);
+  if (!r) { res.status(404).json({ error: "Arxivda bunday maktab yo'q (yoki allaqachon tiklangan)" }); return; }
+  await query("UPDATE maktablar SET deleted_at = NULL, updated_at = NOW() WHERE id = $1", [id]);
+  res.json({ ok: true, restored: true });
 });
 
 // ============================================================

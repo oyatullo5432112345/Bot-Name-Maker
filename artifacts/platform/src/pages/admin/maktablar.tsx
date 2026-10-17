@@ -42,15 +42,29 @@ export default function MaktablarPage() {
   const [dirSaving, setDirSaving] = useState(false);
   const [dirCreds, setDirCreds] = useState<{ login: string; password: string; login_id: string } | null>(null);
 
+  // #4: arxiv (o'chirilgan maktablar)
+  const [archived, setArchived] = useState<{ id: number; nom: string; tuman: string; purge_in_days: number }[]>([]);
+
   async function refresh() {
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/maktablar`, { headers: headers() });
       if (res.ok) setList((await res.json()) as School[]);
+      const ar = await fetch(`${API_BASE}/maktablar/archive`, { headers: headers() }).catch(() => null);
+      if (ar && ar.ok) setArchived(await ar.json());
     } catch { /* jim */ }
     setLoading(false);
   }
   useEffect(() => { void refresh(); }, []);
+
+  async function restore(id: number) {
+    setBusy(id);
+    try {
+      const r = await fetch(`${API_BASE}/maktablar/${id}/restore`, { method: "POST", headers: headers() });
+      if (r.ok) { toast({ title: "Maktab tiklandi" }); await refresh(); }
+      else { const j = (await r.json().catch(() => ({}))) as { error?: string }; toast({ variant: "destructive", title: "Xatolik", description: j.error }); }
+    } finally { setBusy(null); }
+  }
 
   function startNew() { setEditId(null); setForm({ ...EMPTY }); }
   function startEdit(s: School) {
@@ -146,7 +160,7 @@ export default function MaktablarPage() {
   }
 
   async function remove(s: School) {
-    if (!window.confirm(`${s.nom} o'chirilsinmi?`)) return;
+    if (!window.confirm(`${s.nom} o'chirilsinmi?\n\nMaktab (barcha o'quvchi/xodim/ma'lumoti bilan) 15 kun ARXIVDA saqlanadi — shu vaqtda tiklash mumkin. Keyin butunlay o'chadi.`)) return;
     setBusy(s.id);
     try {
       const res = await fetch(`${API_BASE}/maktablar/${s.id}`, { method: "DELETE", headers: headers() });
@@ -271,6 +285,29 @@ export default function MaktablarPage() {
             </div>
           ))}
           {list.length === 0 && <div className="text-center text-sm text-muted-foreground py-12">Hali maktab yo'q.</div>}
+        </div>
+      )}
+
+      {/* #4: ARXIV — o'chirilgan maktablar (15 kun ichida tiklash mumkin) */}
+      {archived.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5 mt-2">
+            <Trash2 className="w-3.5 h-3.5" /> Arxiv — o'chirilgan maktablar
+          </p>
+          {archived.map((a) => (
+            <div key={a.id} className="p-3.5 rounded-2xl border border-dashed border-rose-400/40 bg-rose-500/5 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-black text-sm truncate">{a.nom}</p>
+                <p className="text-[11px] text-rose-500 font-bold">
+                  {a.purge_in_days > 0 ? `${a.purge_in_days} kundan keyin butunlay o'chadi` : "Yaqinda butunlay o'chadi"}
+                </p>
+              </div>
+              <button onClick={() => void restore(a.id)} disabled={busy === a.id}
+                className="px-3 py-2 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 font-bold text-xs cursor-pointer shrink-0 flex items-center gap-1.5">
+                {busy === a.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Tiklash
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
