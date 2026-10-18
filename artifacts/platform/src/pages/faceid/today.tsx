@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX, Download, Repeat } from "lucide-react";
+import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX, Download, Repeat, Palette } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
 import { api, API_BASE, authHeaders } from "@/lib/face";
@@ -49,7 +49,7 @@ export default function FaceTodayPage() {
   });
 
   // MUHIM: bu funksiya bosilganda ishlashi uchun FUNKSIYA qaytaradi (darhol ishga tushmaydi)
-  const act = (login: string, action: "in" | "out" | "out_excused" | "clear" | "absent_excused", name: string) => async () => {
+  const act = (login: string, action: "in" | "out" | "out_excused" | "clear" | "absent_excused" | "club", name: string) => async () => {
     // "Sababli (kelmadi)" — sababini so'raymiz; u sinf guruhiga va o'quvchiga xabar bilan boradi
     let reason: string | undefined;
     if (action === "absent_excused") {
@@ -60,7 +60,7 @@ export default function FaceTodayPage() {
     setBusy(`${login}:${action}`);
     try {
       await api("/faceid/manual", { method: "POST", body: JSON.stringify({ student_login: login, action, time: time || undefined, reason }) });
-      const msg = action === "in" ? "keldi" : action === "out" ? "ketdi" : action === "out_excused" ? "ruxsat bilan ketdi" : action === "absent_excused" ? "sababli (kelmadi)" : "tozalandi";
+      const msg = action === "in" ? "keldi" : action === "out" ? "ketdi" : action === "out_excused" ? "ruxsat bilan ketdi" : action === "absent_excused" ? "sababli (kelmadi)" : action === "club" ? "to'garakda qoldi" : "tozalandi";
       toast({ title: `${name}: ${msg}` });
       void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
     } catch (e) {
@@ -192,6 +192,10 @@ export default function FaceTodayPage() {
                 {/* Sababli — sinf rahbari ham qila oladi */}
                 <Button size="sm" variant="outline" className="text-indigo-600" disabled={b} onClick={act(r.login, "absent_excused", r.full_name)}>
                   <UserX className="w-3.5 h-3.5 mr-1" /> Sababli (kelmadi)
+                </Button>
+                {/* To'garak qoldi — sinf rahbari ham qila oladi (#10) */}
+                <Button size="sm" variant="outline" className="text-fuchsia-600" disabled={b} onClick={act(r.login, "club", r.full_name)}>
+                  <Palette className="w-3.5 h-3.5 mr-1" /> To'garak qoldi
                 </Button>
                 <Button size="sm" variant="outline" className={r.chronic ? "text-rose-600" : "text-muted-foreground"} disabled={b} onClick={toggleChronic(r.login, r.full_name, !r.chronic)}>
                   <Repeat className="w-3.5 h-3.5 mr-1" /> {r.chronic ? "Muntazamdan chiqarish" : "Muntazam"}

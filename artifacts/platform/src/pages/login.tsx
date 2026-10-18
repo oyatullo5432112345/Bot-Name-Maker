@@ -11,6 +11,7 @@ import { useEffect, useState, useRef } from "react";
 import { WelcomeAnimation } from "@/components/welcome-animation";
 import { FaceLoginDialog } from "@/components/login-face";
 import { IdLoginDialog } from "@/components/login-id";
+import { StudentPickerDialog } from "@/components/login-picker";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -213,6 +214,7 @@ export default function Login() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [faceOpen, setFaceOpen] = useState(false);
   const [idOpen, setIdOpen] = useState(false);
+  const [pickOpen, setPickOpen] = useState(false);
   const [botLoginLoading, setBotLoginLoading] = useState(false);
   const [welcomeUser, setWelcomeUser] = useState<{ name: string; role: string } | null>(null);
   const [supportOpen, setSupportOpen] = useState(false);
@@ -367,6 +369,17 @@ export default function Login() {
               <ScanFace size={20} /> Yuz bilan kirish
             </button>
             <button
+              onClick={() => setPickOpen(true)}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(255,255,255,0.15)",
+                borderRadius: 16, padding: "17px 24px",
+                color: "white", fontSize: 16, fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              🔎 Maktab orqali kirish (o'quvchi)
+            </button>
+            <button
               onClick={() => setIdOpen(true)}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
@@ -440,6 +453,13 @@ export default function Login() {
             onSuccess={handleAuthResult}
             onClose={() => setIdOpen(false)}
             onUseFace={() => { setIdOpen(false); setFaceOpen(true); }}
+          />
+        )}
+        {/* #12: Maktab orqali bosqichma-bosqich kirish */}
+        {pickOpen && (
+          <StudentPickerDialog
+            onSuccess={handleAuthResult}
+            onClose={() => setPickOpen(false)}
           />
         )}
 

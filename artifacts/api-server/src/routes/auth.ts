@@ -118,6 +118,12 @@ function parseMagicToken(token: string): MagicTokenData | null {
 
 const router: IRouter = Router();
 
+// #12/#13: bosqichma-bosqich o'quvchi kirishi uchun ustunlar.
+//   classes.smena — sinf qaysi smenada (1/2); faqat 2 smenali maktablarda ishlatiladi.
+//   users.pin_set — o'quvchi o'zining 4 xonali / chizma parolini o'rnatganmi.
+void query(`ALTER TABLE classes ADD COLUMN IF NOT EXISTS smena SMALLINT;`).catch(() => { /* migratsiya yaratadi */ });
+void query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_set BOOLEAN NOT NULL DEFAULT FALSE;`).catch(() => { /* migratsiya yaratadi */ });
+
 const ADMIN_ID = process.env["ADMIN_ID"] ?? "";
 const ADMIN_PASSWORD = process.env["ADMIN_PASSWORD"] ?? ADMIN_ID;
 
@@ -283,6 +289,110 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
   logger.warn({ login }, "Failed login attempt");
   res.status(401).json({ error: "Login yoki parol noto'g'ri" });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  #12 — BOSQICHMA-BOSQICH O'QUVCHI KIRISHI (ochiq — autentifikatsiyasiz)
+//    maktab → (smena — faqat 2 smenali maktabda) → bo'lim → sinf → o'zi → PIN
+//  Eski ID+parol bilan kirish (/auth/login) ham ishlayveradi.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 1) Maktablar ro'yxati (o'chirilmaganlar) — smena belgisi bilan
+router.get("/auth/pick/schools", async (_req, res): Promise<void> => {
+  const rows = await query<{ id: number; nom: string; tuman: string; ikki_smena: boolean }>(
+    "SELECT id, nom, COALESCE(tuman,'') AS tuman, COALESCE(ikki_smena,false) AS ikki_smena FROM maktablar WHERE deleted_at IS NULL ORDER BY id"
+  ).catch(() => [] as { id: number; nom: string; tuman: string; ikki_smena: boolean }[]);
+  res.json(rows);
+});
+
+// 2) Sinflar — maktab bo'yicha; ixtiyoriy smena (1/2) va bo'lim (boshlangich/yuqori) filtri
+router.get("/auth/pick/classes", async (req, res): Promise<void> => {
+  const mid = Number(req.query["maktab_id"]);
+  if (!Number.isInteger(mid)) { res.status(400).json({ error: "maktab_id kerak" }); return; }
+  const smenaRaw = req.query["smena"];
+  const smena = smenaRaw != null && String(smenaRaw) !== "" ? Number(smenaRaw) : null;
+  const bolim = typeof req.query["bolim"] === "string" ? String(req.query["bolim"]) : "";
+  const rows = await query<{ name: string; smena: number | null }>(
+    "SELECT name, smena FROM classes WHERE maktab_id = $1 AND name <> '' ORDER BY name",
+    [mid]
+  ).catch(() => [] as { name: string; smena: number | null }[]);
+  const grade = (nm: string): number => { const m = nm.match(/^\s*(\d{1,2})/); return m ? Number(m[1]) : 0; };
+  let out = rows;
+  // smena tanlangan bo'lsa — shu smenadagi (yoki hali belgilanmagan) sinflar
+  if (smena === 1 || smena === 2) out = out.filter((r) => r.smena == null || r.smena === smena);
+  if (bolim === "boshlangich") out = out.filter((r) => grade(r.name) >= 1 && grade(r.name) <= 4);
+  else if (bolim === "yuqori") out = out.filter((r) => grade(r.name) >= 5);
+  res.json(out.map((r) => r.name));
+});
+
+// 3) Sinfdagi o'quvchilar — o'zini tanlash uchun (parol o'rnatilgan/yo'qligi bilan)
+router.get("/auth/pick/students", async (req, res): Promise<void> => {
+  const mid = Number(req.query["maktab_id"]);
+  const cls = typeof req.query["class"] === "string" ? String(req.query["class"]).trim() : "";
+  if (!Number.isInteger(mid) || !cls) { res.status(400).json({ error: "maktab_id va class kerak" }); return; }
+  const rows = await query<{ login: string; full_name: string; pin_set: boolean }>(
+    "SELECT login, full_name, COALESCE(pin_set,false) AS pin_set FROM users WHERE maktab_id = $1 AND class_name = $2 ORDER BY full_name",
+    [mid, cls]
+  ).catch(() => [] as { login: string; full_name: string; pin_set: boolean }[]);
+  res.json(rows);
+});
+
+// 4) PIN bilan kirish. pin_set=false bo'lsa — birinchi marta o'rnatiladi; aks holda tekshiriladi.
+//    pin — 4 xonali kod YOKI chizma (pattern, masalan "0-1-2-5-8") — ikkisi ham matn sifatida keladi.
+const PinLoginBody = z.object({ login: z.string().min(1), pin: z.string().min(4).max(64) });
+router.post("/auth/pin-login", async (req, res): Promise<void> => {
+  const parsed = PinLoginBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Noto'g'ri so'rov" }); return; }
+  const login = parsed.data.login.trim();
+  const pin = parsed.data.pin.trim();
+  type Row = { id: string; telegram_id: number; full_name: string; class_name: string; login: string; password: string; pro_expires_at?: string | null; maktab_id?: number | null; pin_set?: boolean };
+  const student = await queryOne<Row>(
+    "SELECT id, telegram_id, full_name, class_name, login, password, pro_expires_at, maktab_id, COALESCE(pin_set,false) AS pin_set FROM users WHERE LOWER(login) = LOWER($1)",
+    [login]
+  );
+  if (!student) { res.status(404).json({ error: "O'quvchi topilmadi" }); return; }
+  if (student.pin_set) {
+    const ok = await verifyPassword(pin, student.password, async (newHash) => {
+      await query("UPDATE users SET password = $1 WHERE id = $2", [newHash, student.id]);
+    });
+    if (!ok) { res.status(401).json({ error: "Parol noto'g'ri" }); return; }
+  } else {
+    const hash = await hashPassword(pin);
+    await query("UPDATE users SET password = $1, pin_set = TRUE WHERE id = $2", [hash, student.id]);
+  }
+  const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1 AND maktab_id = $2", [student.class_name, student.maktab_id ?? 3]);
+  const payload = {
+    id: student.id ?? String(student.telegram_id),
+    role: "student",
+    full_name: student.full_name,
+    login: student.login,
+    class_name: student.class_name,
+    class_id: cls?.id ?? null,
+    telegram_id: student.telegram_id,
+    pro_expires_at: (student as Record<string, unknown>)["pro_expires_at"] as string | null ?? null,
+    maktab_id: student.maktab_id ?? 3,
+  };
+  const token = createToken(payload);
+  res.setHeader("X-Auth-Token", token);
+  res.json(LoginResponse.parse({ ...payload, token }));
+});
+
+// 5) PINni tiklash (admin/rahbariyat/sinf rahbari) — o'quvchi parolini unutsa, qayta o'rnatadi.
+router.post("/auth/pin-reset", async (req, res): Promise<void> => {
+  const au = getAuthUser(req.headers.authorization);
+  const role = au ? String(au["role"] ?? "") : "";
+  if (!["admin", "director", "zam_direktor", "zavuch", "sinf_rahbari"].includes(role)) {
+    res.status(403).json({ error: "Ruxsat yo'q" }); return;
+  }
+  const login = typeof (req.body as Record<string, unknown>)?.["login"] === "string" ? String((req.body as Record<string, unknown>)["login"]).trim() : "";
+  if (!login) { res.status(400).json({ error: "login kerak" }); return; }
+  const mid = schoolOf(au);
+  if (mid === null) {
+    await query("UPDATE users SET pin_set = FALSE WHERE LOWER(login) = LOWER($1)", [login]);
+  } else {
+    await query("UPDATE users SET pin_set = FALSE WHERE LOWER(login) = LOWER($1) AND maktab_id = $2", [login, mid]);
+  }
+  res.json({ ok: true });
 });
 
 function generateStudentLogin(firstName: string): string {

@@ -189,7 +189,18 @@ router.delete("/students/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const mid = schoolOf(getAuthUser(req.headers.authorization));
+  const au = getAuthUser(req.headers.authorization);
+  const mid = schoolOf(au);
+  const role = au ? String(au["role"] ?? "") : "";
+  // #3: sinf rahbari o'quvchini butunlay o'chira oladi — lekin faqat O'Z sinfidagisini.
+  if (role === "sinf_rahbari") {
+    const cname = au ? String(au["class_name"] ?? "") : "";
+    if (!cname) { res.status(403).json({ error: "Sizga sinf biriktirilmagan" }); return; }
+    if (mid !== null) await query("DELETE FROM users WHERE telegram_id = $1 AND class_name = $2 AND maktab_id = $3", [params.data.id, cname, mid]);
+    else await query("DELETE FROM users WHERE telegram_id = $1 AND class_name = $2", [params.data.id, cname]);
+    res.sendStatus(204);
+    return;
+  }
   if (mid !== null) await query("DELETE FROM users WHERE telegram_id = $1 AND maktab_id = $2", [params.data.id, mid]);
   else await query("DELETE FROM users WHERE telegram_id = $1", [params.data.id]);
   res.sendStatus(204);

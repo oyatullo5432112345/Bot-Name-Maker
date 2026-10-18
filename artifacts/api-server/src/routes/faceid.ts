@@ -55,6 +55,7 @@ ALTER TABLE face_checkins ADD COLUMN IF NOT EXISTS excused BOOLEAN NOT NULL DEFA
 ALTER TABLE face_checkins ADD COLUMN IF NOT EXISTS excuse_reason TEXT NOT NULL DEFAULT '';
 ALTER TABLE face_checkins ADD COLUMN IF NOT EXISTS excused_by TEXT NOT NULL DEFAULT '';
 ALTER TABLE face_checkins ADD COLUMN IF NOT EXISTS truant BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE face_checkins ADD COLUMN IF NOT EXISTS club BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE face_checkins ALTER COLUMN checked_at DROP NOT NULL;
 CREATE TABLE IF NOT EXISTS face_settings (
   id         SMALLINT PRIMARY KEY,
@@ -70,6 +71,16 @@ CREATE TABLE IF NOT EXISTS face_chronic (
   until         DATE,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   maktab_id     INTEGER
+);
+-- #11: chorakda 36 soat chegarasidan o'tgan o'quvchilar — bir chorakda bir marta ogohlantiriladi.
+CREATE TABLE IF NOT EXISTS hour_limit_alerts (
+  student_login TEXT NOT NULL,
+  quarter_start DATE NOT NULL,
+  maktab_id     INTEGER,
+  class_name    TEXT NOT NULL DEFAULT '',
+  hours         INTEGER NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (student_login, quarter_start)
 );`;
 
 void query(FACE_SCHEMA_SQL)
@@ -89,11 +100,13 @@ export interface FaceSettings {
   close_after: string; // "14:30" — shu vaqtdan keyin Face ID yopiladi, kunlik faoliyat tugaydi
   late_until: string; // "10:00" — shu vaqtgacha kelsa "kech keldi" (lekin kelgan), keyin kelmagan hisoblanadi
   quarter_start: string; // "YYYY-MM-DD" — chorak boshlanishi (sababsiz dars soatlari shu sanadan hisoblanadi); bo'sh = avtomatik
+  quarter_end: string;   // "YYYY-MM-DD" — chorak tugashi (#11: shu sanagача soat hisoblanadi); bo'sh = bugungi kun
+  hour_limit: number;    // #11: chorakda ruxsat etilgan sababsiz qoldirilgan soat chegarasi (odatda 36)
 }
 
 const DEFAULT_SETTINGS: FaceSettings = {
   late_after: "08:00", notify: true, notify_group: true, threshold: 0.48, min_stay: 20, default_end: "13:30",
-  open_from: "06:00", close_after: "14:30", late_until: "10:00", quarter_start: "",
+  open_from: "06:00", close_after: "14:30", late_until: "10:00", quarter_start: "", quarter_end: "", hour_limit: 36,
 };
 
 async function getSettings(): Promise<FaceSettings> {
@@ -326,6 +339,8 @@ router.post("/faceid/settings", async (req, res): Promise<void> => {
     close_after: typeof b.close_after === "string" && /^\d{2}:\d{2}$/.test(b.close_after) ? b.close_after : cur.close_after,
     late_until: typeof b.late_until === "string" && /^\d{2}:\d{2}$/.test(b.late_until) ? b.late_until : cur.late_until,
     quarter_start: typeof b.quarter_start === "string" && (/^\d{4}-\d{2}-\d{2}$/.test(b.quarter_start) || b.quarter_start === "") ? b.quarter_start : cur.quarter_start,
+    quarter_end: typeof b.quarter_end === "string" && (/^\d{4}-\d{2}-\d{2}$/.test(b.quarter_end) || b.quarter_end === "") ? b.quarter_end : cur.quarter_end,
+    hour_limit: typeof b.hour_limit === "number" && b.hour_limit >= 1 && b.hour_limit <= 500 ? Math.round(b.hour_limit) : cur.hour_limit,
   };
   await query(
     `INSERT INTO face_settings (id, data, updated_at) VALUES (1, $1, NOW())
@@ -763,6 +778,30 @@ async function postClassGroupExcused(
   }
 }
 
+/**
+ * #10: Sinf guruhiga — o'quvchi maktab to'garig'ida qoldi. Fire-and-forget.
+ */
+async function postClassGroupClub(
+  st: FacePerson,
+  mid: number | null,
+  by: string
+): Promise<void> {
+  if (st.kind !== "student" || !st.class_name) return;
+  const cls = mid !== null
+    ? await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1 AND maktab_id = $2", [st.class_name, mid])
+    : await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [st.class_name]);
+  if (!cls) return;
+  const chats = await getClassChats(cls.id);
+  if (chats.length === 0) return;
+  const text =
+    `🎨 <b>${esc(st.full_name)}</b> bugun maktab to'garig'ida qoldi` +
+    `\n👤 Belgiladi: ${esc(by)} · ${uzTime()}`;
+  for (const ch of chats) {
+    await sendToChat(ch.chat_id, text);
+    await sleep(50);
+  }
+}
+
 async function handleScan(
   login: string,
   mode: ScanMode,
@@ -934,7 +973,7 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
   const u = authAs(req, ENROLL);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const { student_login, action, time, reason } = req.body as { student_login?: string; action?: string; time?: string; reason?: string };
-  if (!student_login || !["in", "out", "out_excused", "clear", "absent_excused"].includes(String(action))) {
+  if (!student_login || !["in", "out", "out_excused", "clear", "absent_excused", "club"].includes(String(action))) {
     res.status(400).json({ error: "Noto'g'ri so'rov" }); return;
   }
   // #8: keldi/ketdi va "ruxsat bilan ketish" ni faqat maktab rahbariyati qo'lda qo'yadi.
@@ -964,9 +1003,34 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
     return;
   }
 
+  // #10: "Maktab to'garig'ida qoldi" — o'quvchi darsdan keyin to'garakda qoladi.
+  //   Kech chiqsa yoki chiqishi belgilanmasa ham 14:30 yakunida "qochgan" deb belgilanmaydi.
+  //   Sinf rahbari ham, rahbariyat ham qo'ya oladi (to'garakni olib boruvchi biladi).
+  if (action === "club") {
+    await query(
+      `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device, club, maktab_id)
+       VALUES ($1, $2, $3, $4::date, COALESCE($5::timestamptz, NOW()), 'present', 'manual', TRUE, $6)
+       ON CONFLICT (student_login, date) DO UPDATE SET
+         club = TRUE, student_name = EXCLUDED.student_name`,
+      [student_login, person.full_name, person.class_name, today, ts, mid ?? 3]
+    );
+    if (messagingAllowed(settings) && settings.notify_group && person.kind === "student") {
+      void postClassGroupClub(person, mid, byName);
+    }
+    res.json({ ok: true, club: true });
+    return;
+  }
+
   // Sababli kelmagan (ruxsat bilan yo'q) — "sababsizlar" ro'yxatidan chiqadi.
   // Sabab va kim belgilagani saqlanadi; sinf guruhiga va o'quvchiga darhol xabar.
   if (action === "absent_excused") {
+    // #9: "Sababli" ni sinf rahbari faqat ertalab (soat 9:00 gacha) qo'ya oladi;
+    //     maktab rahbariyati vaqt chegarasisiz qo'ya oladi. (excuse_until sozlamadan olinadi, bo'lmasa 09:00)
+    const excuseUntil = String((settings as Record<string, unknown>).excuse_until || "09:00");
+    if (!MANUAL_MARK_ROLES.includes(String(u.role)) && uzTime() > excuseUntil) {
+      res.status(403).json({ error: `Sababli belgilashni sinf rahbari soat ${excuseUntil} gacha qila oladi. Undan keyin faqat maktab rahbariyati belgilaydi.` });
+      return;
+    }
     await query(
       `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device, excused, excuse_reason, excused_by, maktab_id)
        VALUES ($1, $2, $3, $4::date, NULL, 'excused', 'manual', TRUE, $5, $6, $7)
@@ -1084,6 +1148,23 @@ async function classRoster(className: string, today: string, mid: number): Promi
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  #7 — TUMAN KUNLIK DAVOMAT GURUHI
+//  Barcha maktablarning kunlik davomat xulosasi YAGONA tuman guruhiga tushadi
+//  (har bir maktab nomi bilan belgilanadi). Tuman guruhi ulanmagan bo'lsa —
+//  eski "maktab guruhi" (mid bo'yicha) ga tushadi (orqaga moslik).
+// ═══════════════════════════════════════════════════════════════════════════
+async function schoolName(mid: number | null): Promise<string> {
+  if (mid === null) return "Maktab";
+  const r = await queryOne<{ nom: string }>("SELECT nom FROM maktablar WHERE id = $1", [mid]).catch(() => null);
+  return (r?.nom && r.nom.trim()) || `${mid}-maktab`;
+}
+async function dailyAttendanceChats(mid: number | null) {
+  const tuman = await getChatsByPurpose("tuman").catch(() => []);
+  if (tuman.length) return tuman;
+  return getChatsByPurpose("school", mid);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  08:00 — MAKTAB GURUHIGA: shu paytgacha kelganlar soni (qisqa snapshot)
 // ═══════════════════════════════════════════════════════════════════════════
 export async function faceidArrivedCount(mid: number): Promise<{ sent: number; arrived: number; total: number }> {
@@ -1098,10 +1179,11 @@ export async function faceidArrivedCount(mid: number): Promise<{ sent: number; a
     [today, mid]
   );
   const total = agg?.total ?? 0, arrived = agg?.arrived ?? 0, late = agg?.late ?? 0;
-  const schoolChats = await getChatsByPurpose("school", mid);
+  const schoolChats = await dailyAttendanceChats(mid);
+  const sName = await schoolName(mid);
   let sent = 0;
   const text =
-    `🏫 <b>Maktab — darslar boshlandi (08:00)</b> (${dateStr})\n\n` +
+    `🏫 <b>${esc(sName)} — darslar boshlandi (08:00)</b> (${dateStr})\n\n` +
     `✅ Hozirgacha kelganlar: <b>${arrived}</b>/${total}` +
     (late ? `\n⏰ Shundan kech kelganlar: ${late}` : "") +
     `\n\n<i>To'liq ro'yxat (kech/sababli/sababsiz) soat 10:00 da chiqadi.</i>`;
@@ -1158,11 +1240,12 @@ export async function faceidGroupSummary(mid: number): Promise<{ classes: number
     for (const ch of chats) { if (await sendToChat(ch.chat_id, text)) sent++; done++; await sleep(80); }
   }
 
-  // ── Maktab guruhiga — umumiy holat + sababli/sababsiz ro'yxatlar
-  const schoolChats = await getChatsByPurpose("school", mid);
+  // ── Tuman/maktab guruhiga — umumiy holat + sababli/sababsiz ro'yxatlar
+  const schoolChats = await dailyAttendanceChats(mid);
   if (schoolChats.length) {
+    const sName = await schoolName(mid);
     const lines: string[] = [
-      `🏫 <b>Maktab — bugungi davomat (Face ID, 10:00)</b> (${dateStr})`,
+      `🏫 <b>${esc(sName)} — bugungi davomat (Face ID, 10:00)</b> (${dateStr})`,
       ``,
       `👥 Jami: <b>${sTotal}</b>`,
       `✅ Keldi: <b>${sArrived}</b>${sLate ? ` (shundan kech: ${sLate})` : ""}`,
@@ -1243,7 +1326,8 @@ export async function faceidDepartureSummary(mid: number): Promise<{ classes: nu
        FROM users u
       WHERE fc.student_login = u.login
         AND fc.date = $1::date AND fc.checked_at IS NOT NULL AND fc.left_at IS NULL
-        AND fc.excused = FALSE AND fc.class_name <> $2 AND u.maktab_id = $3
+        AND fc.excused = FALSE AND COALESCE(fc.club, FALSE) = FALSE
+        AND fc.class_name <> $2 AND u.maktab_id = $3
       RETURNING fc.student_login, fc.student_name, fc.class_name, u.telegram_id`,
     [today, STAFF_GROUP, mid]
   ).catch(() => [] as { student_login: string; student_name: string; class_name: string; telegram_id: number | null }[]);
@@ -1272,7 +1356,16 @@ export async function faceidDepartureSummary(mid: number): Promise<{ classes: nu
     for (const r of runaway) schoolTruant.push(`${c.name} — ${r.full_name}${r.truant ? " (chiqishi belgilanmagan)" : ` (${r.t})`}`);
     for (const r of excusedOut) schoolExcusedOut.push(`${c.name} — ${r.full_name} — ${r.t}`);
 
-    if (chats.length === 0 || left.length === 0) continue;
+    // #10: bugun maktab to'garig'ida qolganlar (qochgan deb belgilanmaydi).
+    const clubRows = await query<{ full_name: string }>(
+      `SELECT u.full_name
+         FROM face_checkins fc JOIN users u ON u.login = fc.student_login
+        WHERE fc.class_name = $1 AND fc.date = $2::date AND COALESCE(fc.club, FALSE) = TRUE AND fc.maktab_id = $3
+        ORDER BY u.full_name`,
+      [c.name, today, mid]
+    ).catch(() => [] as { full_name: string }[]);
+
+    if (chats.length === 0 || (left.length === 0 && clubRows.length === 0)) continue;
     const lines: string[] = [`🏁 <b>${esc(c.name)} — kun yakuni (Face ID, 14:30)</b> (${dateStr})`];
     if (normal.length) {
       lines.push(``, `🏠 <b>Ketganlar (${normal.length}):</b>`);
@@ -1286,6 +1379,10 @@ export async function faceidDepartureSummary(mid: number): Promise<{ classes: nu
       lines.push(``, `📝 <b>Javob so'raganlar (ruxsat bilan, ${excusedOut.length}):</b>`);
       excusedOut.slice(0, 80).forEach((r, i) => lines.push(`${i + 1}. ${esc(r.full_name)} — ${r.t}`));
     }
+    if (clubRows.length) {
+      lines.push(``, `🎨 <b>Maktab to'garig'ida qolganlar (${clubRows.length}):</b>`);
+      clubRows.slice(0, 80).forEach((r, i) => lines.push(`${i + 1}. ${esc(r.full_name)}`));
+    }
     const text = lines.join("\n");
     for (const ch of chats) { if (await sendToChat(ch.chat_id, text)) sent++; done++; await sleep(80); }
   }
@@ -1298,11 +1395,12 @@ export async function faceidDepartureSummary(mid: number): Promise<{ classes: nu
     }
   }
 
-  // 3) Maktab guruhiga umumiy yakun
-  const schoolChats = await getChatsByPurpose("school", mid);
+  // 3) Tuman/maktab guruhiga umumiy yakun
+  const schoolChats = await dailyAttendanceChats(mid);
   if (schoolChats.length) {
+    const sName = await schoolName(mid);
     const lines: string[] = [
-      `🏫 <b>Maktab — kun yakuni (Face ID, 14:30)</b> (${dateStr})`,
+      `🏫 <b>${esc(sName)} — kun yakuni (Face ID, 14:30)</b> (${dateStr})`,
       ``,
       `🏃 Erta / ruxsatsiz ketganlar: <b>${schoolTruant.length}</b>`,
       `📝 Javob so'raganlar (ruxsat bilan): <b>${schoolExcusedOut.length}</b>`,
@@ -1654,15 +1752,132 @@ export async function faceidArchiveToTelegram(mid: number, date = uzDateStr()): 
   const buf = Buffer.from(renderArchiveDoc(data), "utf-8");
   const fname = `davomat-${date}.doc`;
   const dateStr = date.split("-").reverse().join(".");
+  const sName = await schoolName(mid);
   const caption =
-    `🗂 <b>Kunlik davomat hisoboti</b> (${dateStr})\n` +
+    `🗂 <b>${esc(sName)} — kunlik davomat hisoboti</b> (${dateStr})\n` +
     `✅ Keldi: ${data.counts.arrived}/${data.counts.total} · ` +
     `📝 sababli: ${data.counts.excusedAbsent} · ⛔️ sababsiz: ${data.counts.unexcusedAbsent}`;
   let sent = 0;
-  const schoolChats = await getChatsByPurpose("school", mid);
+  const schoolChats = await dailyAttendanceChats(mid);
   for (const ch of schoolChats) { if (await sendDocumentToChat(ch.chat_id, buf, fname, caption)) sent++; await sleep(120); }
   for (const id of await mgmtRecipients(mid)) { if (await sendDocumentToChat(id, buf, fname, caption)) sent++; await sleep(120); }
   return { sent };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  #11 — CHORAKDA SABABSIZ QOLDIRILGAN SOAT CHEGARASI (odatda 36 soat)
+//  Har o'quvchining chorakdagi (quarter_start → quarter_end/bugun) sababsiz
+//  qoldirilgan dars soatlari hisoblanadi. Chegaraga yetganda — o'quvchiga,
+//  sinf guruhiga (sinf rahbari), rahbariyatga va tuman guruhiga xabar + Word
+//  hisobot (maktab/sinf/FISH/soat). Har o'quvchi har chorakda bir marta.
+// ═══════════════════════════════════════════════════════════════════════════
+interface HourOffender { login: string; class_name: string; full_name: string; telegram_id: number | null; hours: number }
+
+async function quarterOffenders(mid: number, quarterStart: string, quarterEnd: string, limit: number): Promise<HourOffender[]> {
+  return await query<HourOffender>(
+    `WITH lc AS (
+       SELECT c.name AS class_name, t.day_of_week AS dow, COUNT(*)::int AS n
+         FROM timetable t JOIN classes c ON c.id = t.class_id
+        WHERE c.maktab_id = $1 GROUP BY c.name, t.day_of_week
+     )
+     SELECT a.student_login AS login, u.class_name, u.full_name, u.telegram_id,
+            COALESCE(SUM(lc.n), 0)::int AS hours
+       FROM attendance a
+       JOIN users u ON u.login = a.student_login
+       LEFT JOIN lc ON lc.class_name = a.class_name AND lc.dow = EXTRACT(DOW FROM a.date)::int
+      WHERE u.maktab_id = $1 AND u.class_name <> '' AND a.status = 'absent'
+        AND a.date >= $2::date AND a.date <= $3::date
+      GROUP BY a.student_login, u.class_name, u.full_name, u.telegram_id
+     HAVING COALESCE(SUM(lc.n), 0) >= $4
+      ORDER BY u.class_name, u.full_name`,
+    [mid, quarterStart, quarterEnd, limit]
+  ).catch(() => [] as HourOffender[]);
+}
+
+export async function checkHourLimits(mid: number): Promise<{ newly: number }> {
+  const settings = await getSettings();
+  const today = uzDateStr();
+  const quarterStart = autoQuarterStart(today, settings.quarter_start);
+  const quarterEnd = /^\d{4}-\d{2}-\d{2}$/.test(settings.quarter_end) && settings.quarter_end < today ? settings.quarter_end : today;
+  const limit = settings.hour_limit > 0 ? settings.hour_limit : 36;
+
+  const offenders = await quarterOffenders(mid, quarterStart, quarterEnd, limit);
+  if (offenders.length === 0) return { newly: 0 };
+
+  // Bu chorakda allaqachon ogohlantirilganlar — qayta xabar bermaymiz (idempotent).
+  const already = await query<{ student_login: string }>(
+    "SELECT student_login FROM hour_limit_alerts WHERE quarter_start = $1::date AND maktab_id = $2",
+    [quarterStart, mid]
+  ).catch(() => [] as { student_login: string }[]);
+  const alertedSet = new Set(already.map((r) => r.student_login));
+  const fresh = offenders.filter((o) => !alertedSet.has(o.login));
+  if (fresh.length === 0) return { newly: 0 };
+
+  const qStr = quarterStart.split("-").reverse().join(".");
+  const sName = await schoolName(mid);
+
+  for (const o of fresh) {
+    await query(
+      `INSERT INTO hour_limit_alerts (student_login, quarter_start, maktab_id, class_name, hours)
+       VALUES ($1, $2::date, $3, $4, $5)
+       ON CONFLICT (student_login, quarter_start) DO NOTHING`,
+      [o.login, quarterStart, mid, o.class_name, o.hours]
+    ).catch(() => {});
+
+    // 1) o'quvchiga (ota-onasiga)
+    if (isRealTelegramId(o.telegram_id)) {
+      void notifyUser(o.telegram_id!,
+        `⚠️ <b>Diqqat!</b> Bu chorakda sababsiz qoldirilgan dars soatlaringiz <b>${o.hours} soat</b>ga yetdi (chegara: ${limit} soat).\n` +
+        `Iltimos, sinf rahbaringiz bilan bog'laning.`);
+      await sleep(40);
+    }
+    // 2) sinf guruhiga — sinf rahbari va ota-onalar ko'radi
+    const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1 AND maktab_id = $2", [o.class_name, mid]).catch(() => null);
+    if (cls) {
+      for (const ch of await getClassChats(cls.id)) {
+        await sendToChat(ch.chat_id,
+          `⚠️ <b>${esc(o.full_name)}</b> (${esc(o.class_name)}) — bu chorakda sababsiz <b>${o.hours} soat</b> dars qoldirdi (chegara: ${limit} soat).\nSinf rahbari e'tiboriga.`);
+        await sleep(40);
+      }
+    }
+  }
+
+  // 3) rahbariyatga + 4) tuman guruhiga — umumiy Word hisobot
+  const buf = Buffer.from(renderHourLimitDoc(fresh, sName, quarterStart, limit), "utf-8");
+  const fname = `${limit}-soat-chegara-${today}.doc`;
+  const caption = `🚨 <b>${esc(sName)} — ${limit} soat chegarasidan o'tganlar</b> (chorak: ${qStr} dan)\nYangi: ${fresh.length} ta o'quvchi`;
+  for (const id of await mgmtRecipients(mid)) { await sendDocumentToChat(id, buf, fname, caption); await sleep(120); }
+  for (const ch of await dailyAttendanceChats(mid)) { await sendDocumentToChat(ch.chat_id, buf, fname, caption); await sleep(120); }
+
+  return { newly: fresh.length };
+}
+
+function renderHourLimitDoc(rows: HourOffender[], sName: string, quarterStart: string, limit: number): string {
+  const qStr = quarterStart.split("-").reverse().join(".");
+  const row = (cells: string[]) => `<tr>${cells.map((c) => `<td>${c}</td>`).join("")}</tr>`;
+  const head = (cells: string[]) => `<tr>${cells.map((c) => `<th>${c}</th>`).join("")}</tr>`;
+  const table =
+    `<table class="list">${head(["#", "Maktab", "Sinf", "Familya, ism", "Qoldirilgan soat"])}` +
+    rows.map((r, i) => row([String(i + 1), esc(sName), esc(r.class_name), esc(r.full_name), String(r.hours)])).join("") +
+    `</table>`;
+  return `<!doctype html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>${limit} soat chegara</title>
+<style>
+  body { font-family: "Times New Roman", serif; font-size: 12pt; color: #111; }
+  h1 { font-size: 16pt; text-align: center; margin: 0 0 2pt; }
+  .sub { text-align: center; color: #555; margin: 0 0 12pt; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0; }
+  table.list th, table.list td { border: 1px solid #bbb; padding: 4pt 6pt; font-size: 11pt; }
+  table.list th { background: #eee; }
+  table.list td:first-child { text-align: center; width: 28pt; }
+  table.list td:last-child { text-align: center; font-weight: bold; }
+</style></head>
+<body>
+  <h1>${limit} soat chegarasidan o'tgan o'quvchilar</h1>
+  <div class="sub">${esc(sName)} · chorak: ${qStr} dan</div>
+  ${table}
+</body></html>`;
 }
 
 export default router;

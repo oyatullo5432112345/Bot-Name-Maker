@@ -28,6 +28,10 @@ void query(`ALTER TABLE maktablar ADD COLUMN IF NOT EXISTS pro_until TIMESTAMPTZ
 // #4: yumshoq o'chirish — maktab o'chirilsa 15 kun arxivda turadi (tiklanadi), keyin avto butunlay o'chadi.
 void query(`ALTER TABLE maktablar ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`)
   .catch(() => { /* migratsiya yaratadi */ });
+// #13: 2 smenali maktab belgisi. FALSE = oddiy (bir smenali) maktab — smena tushunchasi
+//       hech qayerda ko'rinmaydi. TRUE bo'lsagina smena (1/2) login va sozlamalarda chiqadi.
+void query(`ALTER TABLE maktablar ADD COLUMN IF NOT EXISTS ikki_smena BOOLEAN NOT NULL DEFAULT FALSE;`)
+  .catch(() => { /* migratsiya yaratadi */ });
 
 const ARCHIVE_DAYS = 15; // arxivda necha kun saqlanadi
 
@@ -100,15 +104,15 @@ router.get("/maktablar/mine", async (req, res): Promise<void> => {
       mid = row?.maktab_id ?? 3;
     }
     if (mid === null) mid = 3;
-    const m = await queryOne<{ id: number; nom: string; tuman: string; pro_until: string | null; deleted_at: string | null }>(
-      "SELECT id, nom, tuman, pro_until::text AS pro_until, deleted_at::text AS deleted_at FROM maktablar WHERE id = $1", [mid],
+    const m = await queryOne<{ id: number; nom: string; tuman: string; pro_until: string | null; deleted_at: string | null; ikki_smena: boolean }>(
+      "SELECT id, nom, tuman, pro_until::text AS pro_until, deleted_at::text AS deleted_at, COALESCE(ikki_smena,false) AS ikki_smena FROM maktablar WHERE id = $1", [mid],
     );
     const sub = subInfo(m?.pro_until ?? null);
     const is_mgmt = MGMT_ROLES.includes(String(u["role"]));
     const deleted = !!m?.deleted_at;
     res.json(m
-      ? { id: m.id, nom: m.nom, tuman: m.tuman, is_admin: false, sub, locked: deleted || !sub.active, deleted, is_mgmt }
-      : { id: mid, nom: `${mid}-maktab`, tuman: "Toshloq", is_admin: false, sub: subInfo(null), locked: false, deleted: false, is_mgmt });
+      ? { id: m.id, nom: m.nom, tuman: m.tuman, is_admin: false, sub, locked: deleted || !sub.active, deleted, is_mgmt, ikki_smena: m.ikki_smena }
+      : { id: mid, nom: `${mid}-maktab`, tuman: "Toshloq", is_admin: false, sub: subInfo(null), locked: false, deleted: false, is_mgmt, ikki_smena: false });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -120,9 +124,9 @@ router.get("/maktablar", async (req, res): Promise<void> => {
   try {
     const rows = await query<{
       id: number; nom: string; tuman: string; manzil: string; direktor: string;
-      is_active: boolean; pro_until: string | null; oquvchi: string; xodim: string; sinf: string;
+      is_active: boolean; ikki_smena: boolean; pro_until: string | null; oquvchi: string; xodim: string; sinf: string;
     }>(
-      `SELECT m.id, m.nom, m.tuman, m.manzil, m.direktor, m.is_active, m.pro_until::text AS pro_until,
+      `SELECT m.id, m.nom, m.tuman, m.manzil, m.direktor, m.is_active, COALESCE(m.ikki_smena,false) AS ikki_smena, m.pro_until::text AS pro_until,
          (SELECT COUNT(*) FROM users u  WHERE u.maktab_id  = m.id) AS oquvchi,
          (SELECT COUNT(*) FROM staff s  WHERE s.maktab_id  = m.id) AS xodim,
          (SELECT COUNT(*) FROM classes c WHERE c.maktab_id = m.id) AS sinf
@@ -132,7 +136,7 @@ router.get("/maktablar", async (req, res): Promise<void> => {
     );
     res.json(rows.map((r) => ({
       id: r.id, nom: r.nom, tuman: r.tuman, manzil: r.manzil, direktor: r.direktor,
-      is_active: r.is_active,
+      is_active: r.is_active, ikki_smena: r.ikki_smena,
       sub: subInfo(r.pro_until),
       counts: { oquvchi: Number(r.oquvchi), xodim: Number(r.xodim), sinf: Number(r.sinf) },
     })));
@@ -245,6 +249,16 @@ router.post("/maktablar/:id/restore", async (req, res): Promise<void> => {
   if (!r) { res.status(404).json({ error: "Arxivda bunday maktab yo'q (yoki allaqachon tiklangan)" }); return; }
   await query("UPDATE maktablar SET deleted_at = NULL, updated_at = NOW() WHERE id = $1", [id]);
   res.json({ ok: true, restored: true });
+});
+
+// #13: maktabni 2 smenali / oddiy qilib belgilash (admin). TRUE bo'lsagina smena login va sozlamalarda chiqadi.
+router.post("/maktablar/:id/smena", async (req, res): Promise<void> => {
+  if (!admin(req)) { res.status(403).json({ error: "Faqat tuman admini" }); return; }
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Noto'g'ri id" }); return; }
+  const ikki = !!(req.body as { ikki_smena?: boolean }).ikki_smena;
+  await query("UPDATE maktablar SET ikki_smena = $2, updated_at = NOW() WHERE id = $1", [id, ikki]);
+  res.json({ ok: true, ikki_smena: ikki });
 });
 
 // ============================================================

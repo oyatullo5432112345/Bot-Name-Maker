@@ -18,7 +18,7 @@ import { api } from "@/lib/face";
 interface Overview {
   date: string;
   time: string;
-  settings: { late_after: string; notify: boolean; threshold: number; min_stay: number; default_end: string };
+  settings: { late_after: string; notify: boolean; threshold: number; min_stay: number; default_end: string; quarter_start?: string; quarter_end?: string; hour_limit?: number };
   students: number;
   enrolled: number;
   arrived: number;
@@ -68,6 +68,9 @@ export default function FaceIdPage() {
   const [threshold, setThreshold] = useState("0.48");
   const [minStay, setMinStay] = useState("20");
   const [defaultEnd, setDefaultEnd] = useState("13:30");
+  const [quarterStart, setQuarterStart] = useState("");
+  const [quarterEnd, setQuarterEnd] = useState("");
+  const [hourLimit, setHourLimit] = useState("36");
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [summing, setSumming] = useState(false);
@@ -80,12 +83,15 @@ export default function FaceIdPage() {
     setThreshold(String(ov.data.settings.threshold));
     setMinStay(String(ov.data.settings.min_stay ?? 20));
     setDefaultEnd(ov.data.settings.default_end ?? "13:30");
-  }, [ov.data?.settings.late_after, ov.data?.settings.notify, ov.data?.settings.threshold, ov.data?.settings.min_stay, ov.data?.settings.default_end]); // eslint-disable-line react-hooks/exhaustive-deps
+    setQuarterStart(ov.data.settings.quarter_start ?? "");
+    setQuarterEnd(ov.data.settings.quarter_end ?? "");
+    setHourLimit(String(ov.data.settings.hour_limit ?? 36));
+  }, [ov.data?.settings.late_after, ov.data?.settings.notify, ov.data?.settings.threshold, ov.data?.settings.min_stay, ov.data?.settings.default_end, ov.data?.settings.quarter_start, ov.data?.settings.quarter_end, ov.data?.settings.hour_limit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveSettings = async () => {
     setSaving(true);
     try {
-      await api("/faceid/settings", { method: "POST", body: JSON.stringify({ late_after: lateAfter, notify, threshold: Number(threshold), min_stay: Number(minStay), default_end: defaultEnd }) });
+      await api("/faceid/settings", { method: "POST", body: JSON.stringify({ late_after: lateAfter, notify, threshold: Number(threshold), min_stay: Number(minStay), default_end: defaultEnd, quarter_start: quarterStart, quarter_end: quarterEnd, hour_limit: Number(hourLimit) }) });
       toast({ title: "✅ Sozlamalar saqlandi" });
       void qc.invalidateQueries({ queryKey: ["faceid-overview"] });
     } catch (e) {
@@ -270,6 +276,14 @@ export default function FaceIdPage() {
                       {THRESHOLDS.map((t) => <SelectItem key={t.v} value={String(t.v)}>{t.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-3 items-center border-t pt-3">
+                  <label className="text-sm">Chorak boshlanishi<br /><span className="text-xs text-muted-foreground">sababsiz soat shu sanadan hisoblanadi (bo'sh = avtomatik)</span></label>
+                  <Input type="date" value={quarterStart} onChange={(e) => setQuarterStart(e.target.value)} />
+                  <label className="text-sm">Chorak tugashi<br /><span className="text-xs text-muted-foreground">bo'sh = bugungi kungacha</span></label>
+                  <Input type="date" value={quarterEnd} onChange={(e) => setQuarterEnd(e.target.value)} />
+                  <label className="text-sm">Soat chegarasi (chorakda)<br /><span className="text-xs text-muted-foreground">shu soatga yetganda ogohlantiriladi (odatda 36)</span></label>
+                  <Input type="number" min={1} max={500} value={hourLimit} onChange={(e) => setHourLimit(e.target.value)} />
                 </div>
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <input type="checkbox" className="h-4 w-4 accent-primary" checked={notify} onChange={(e) => setNotify(e.target.checked)} />

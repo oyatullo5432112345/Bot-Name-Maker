@@ -445,6 +445,31 @@ function LockedScreen({ nom, onLogout, deleted }: { nom?: string; onLogout: () =
   );
 }
 
+// Face ID qulfi: obuna tugagan (yoki maktab arxivga olingan) bo'lsa — rahbariyat uchun
+// Face ID (va kiosk) butunlay yopiladi. Super-admin (admin) hech qachon qulflanmaydi.
+export function FaceLockGuard({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const sub = useSubscription();
+  if (!user || user.role === "admin") return <>{children}</>;
+  const locked = !!sub?.deleted || !!sub?.locked;
+  if (!locked) return <>{children}</>;
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-background">
+      <div className="max-w-md w-full text-center space-y-5">
+        <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-500/15 flex items-center justify-center">
+          <Lock className="w-8 h-8 text-rose-500" />
+        </div>
+        <h1 className="text-xl font-extrabold">Face ID yopiq</h1>
+        <p className="text-sm text-muted-foreground">
+          {sub?.deleted ? "Maktab o'chirilgan (arxivda)." : "1 oylik bepul versiya tugadi."}{" "}
+          Face ID va davomat vaqtincha ishlamaydi. To'lovdan so'ng qayta ochiladi.
+        </p>
+        <Link href="/dashboard" className="inline-block text-xs text-primary underline">Bosh sahifaga</Link>
+      </div>
+    </div>
+  );
+}
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout: authLogout } = useAuth();
   const [location] = useLocation();

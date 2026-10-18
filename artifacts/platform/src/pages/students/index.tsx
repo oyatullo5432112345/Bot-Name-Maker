@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useSearch } from "wouter";
 import { useAuth } from "@/lib/use-auth";
-import { 
-  useListStudents, 
+import {
+  useListStudents,
   getListStudentsQueryKey,
   useDeleteStudent
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/face";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -80,6 +82,51 @@ export default function StudentsList() {
   // Direktor va rahbariyat ham o'z maktabiga o'quvchi qo'sha oladi
   const canManage = ["admin", "director", "zam_direktor", "zavuch"].includes(user?.role ?? "");
 
+  // #3: sinf rahbari ham o'z sinfidagi o'quvchini butunlay o'chira oladi
+  const canDelete = canManage || isSinfRahbari;
+
+  // Sinf nomini tabiiy tartiblash: avval raqam (1..11), keyin harf (A, B...)
+  const gradeNum = (c: string): number => { const m = c.match(/^\s*(\d{1,2})/); return m ? parseInt(m[1]!, 10) : 999; };
+  const classCmp = (a: string, b: string): number => { const ga = gradeNum(a), gb = gradeNum(b); return ga !== gb ? ga - gb : a.localeCompare(b, "uz"); };
+
+  // #4/#5: rahbariyat va super-admin uchun qulay filtr (smena / bo'lim / sinf)
+  const showFilters = !classFromUrl && !isSinfRahbari && canManage;
+  const [isTwoShift, setIsTwoShift] = useState(false);
+  const [smenaByClass, setSmenaByClass] = useState<Record<string, number | null>>({});
+  const [classNames, setClassNames] = useState<string[]>([]);
+  const [smenaSel, setSmenaSel] = useState("all");
+  const [bolimSel, setBolimSel] = useState("all");
+  const [classSel, setClassSel] = useState("all");
+  useEffect(() => {
+    if (!showFilters) return;
+    void (async () => {
+      try {
+        const mine = await api<{ ikki_smena?: boolean }>("/maktablar/mine");
+        setIsTwoShift(!!mine.ikki_smena);
+        const rows = await api<{ name: string; smena: number | null }[]>("/classes/smenalar");
+        const map: Record<string, number | null> = {};
+        for (const r of rows) map[r.name] = r.smena;
+        setSmenaByClass(map);
+        setClassNames(rows.map((r) => r.name).sort(classCmp));
+      } catch { /* jim */ }
+    })();
+  }, [showFilters]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const classMatches = (cn: string): boolean => {
+    if (classSel !== "all" && cn !== classSel) return false;
+    if (bolimSel === "boshlangich" && !(gradeNum(cn) >= 1 && gradeNum(cn) <= 4)) return false;
+    if (bolimSel === "yuqori" && gradeNum(cn) < 5) return false;
+    if (smenaSel !== "all") { const sm = smenaByClass[cn]; if (sm != null && sm !== Number(smenaSel)) return false; }
+    return true;
+  };
+  // tanlangan smena/bo'lim bo'yicha sinf ro'yxati (dropdown uchun)
+  const classOptions = classNames.filter((cn) => {
+    if (bolimSel === "boshlangich" && !(gradeNum(cn) >= 1 && gradeNum(cn) <= 4)) return false;
+    if (bolimSel === "yuqori" && gradeNum(cn) < 5) return false;
+    if (smenaSel !== "all") { const sm = smenaByClass[cn]; if (sm != null && sm !== Number(smenaSel)) return false; }
+    return true;
+  });
+
   const [grantingLogin, setGrantingLogin] = useState<string | null>(null);
   const getToken = () => localStorage.getItem("talim_auth_token");
   const handleGrantPro = async (login: string) => {
@@ -119,10 +166,16 @@ export default function StudentsList() {
     } finally { setFidBusy(null); }
   };
 
-  const filteredStudents = students?.filter(s =>
-    s.full_name.toLowerCase().includes(search.toLowerCase()) || 
-    s.class_name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredStudents = (students ?? [])
+    .filter((s) =>
+      (s.full_name.toLowerCase().includes(search.toLowerCase()) ||
+        s.class_name.toLowerCase().includes(search.toLowerCase())) &&
+      (!showFilters || classMatches(s.class_name))
+    )
+    .sort((a, b) => {
+      const c = classCmp(a.class_name, b.class_name);
+      return c !== 0 ? c : a.full_name.localeCompare(b.full_name, "uz");
+    });
 
   const pageTitle = classFromUrl
     ? `${classFromUrl} sinfi o'quvchilari`
@@ -163,8 +216,8 @@ export default function StudentsList() {
         )}
       </div>
 
-      <div className="flex items-center gap-2 max-w-sm">
-        <div className="relative flex-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[180px] max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Izlash (ism, sinf)..."
@@ -173,6 +226,35 @@ export default function StudentsList() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        {showFilters && (
+          <>
+            {isTwoShift && (
+              <Select value={smenaSel} onValueChange={(v) => { setSmenaSel(v); setClassSel("all"); }}>
+                <SelectTrigger className="w-[130px]"><SelectValue placeholder="Smena" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Barcha smena</SelectItem>
+                  <SelectItem value="1">1-smena</SelectItem>
+                  <SelectItem value="2">2-smena</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            <Select value={bolimSel} onValueChange={(v) => { setBolimSel(v); setClassSel("all"); }}>
+              <SelectTrigger className="w-[150px]"><SelectValue placeholder="Bo'lim" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha bo'lim</SelectItem>
+                <SelectItem value="boshlangich">Boshlang'ich (1–4)</SelectItem>
+                <SelectItem value="yuqori">Yuqori (5–11)</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={classSel} onValueChange={setClassSel}>
+              <SelectTrigger className="w-[130px]"><SelectValue placeholder="Sinf" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha sinf</SelectItem>
+                {classOptions.map((cn) => <SelectItem key={cn} value={cn}>{cn}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </>
+        )}
       </div>
 
       <div className="border rounded-md bg-card">
@@ -190,13 +272,13 @@ export default function StudentsList() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 6 : 5} className="h-24 text-center">
+                <TableCell colSpan={6} className="h-24 text-center">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
                 </TableCell>
               </TableRow>
             ) : filteredStudents?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 6 : 5} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   Ma'lumot topilmadi
                 </TableCell>
               </TableRow>
@@ -219,7 +301,7 @@ export default function StudentsList() {
                           <CreditCard className="w-4 h-4 text-primary" />
                         </Link>
                       </Button>
-                      {canManage && (
+                      {canDelete && (
                         <Button
                           variant="ghost" size="icon" title="Face ID (yuz ma'lumoti) ni o'chirish"
                           onClick={() => void handleDeleteFaceId(student.login, student.full_name)}
@@ -241,7 +323,7 @@ export default function StudentsList() {
                             : <Crown className="w-4 h-4 text-amber-500" />}
                         </Button>
                       )}
-                      {isAdmin && (
+                      {canDelete && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10">

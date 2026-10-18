@@ -10,7 +10,7 @@ import { ProWelcomeModal } from "@/components/pro-welcome-modal";
 import { PwaUpdatePrompt } from "@/components/pwa-update-prompt";
 import { useAuth } from "@/lib/use-auth";
 import { AuthGuard } from "@/components/auth-guard";
-import { AppLayout } from "@/components/layout";
+import { AppLayout, FaceLockGuard } from "@/components/layout";
 import { SkeletonPage } from "@/components/skeleton-page";
 
 const Login = lazy(() => import("@/pages/login"));
@@ -78,25 +78,31 @@ const queryClient = new QueryClient({
   },
 });
 
-function ProtectedRoute({ component: Component, roles }: { component: React.ComponentType; roles?: string[] }) {
+function ProtectedRoute({ component: Component, roles, faceLock }: { component: React.ComponentType; roles?: string[]; faceLock?: boolean }) {
+  const inner = (
+    <Suspense fallback={<SkeletonPage />}>
+      <Component />
+    </Suspense>
+  );
   return (
     <AuthGuard roles={roles}>
       <AppLayout>
-        <Suspense fallback={<SkeletonPage />}>
-          <Component />
-        </Suspense>
+        {faceLock ? <FaceLockGuard>{inner}</FaceLockGuard> : inner}
       </AppLayout>
     </AuthGuard>
   );
 }
 
 // To'liq ekran sahifa (menyusiz) — Face ID kiosk uchun
-function KioskRoute({ component: Component, roles }: { component: React.ComponentType; roles?: string[] }) {
+function KioskRoute({ component: Component, roles, faceLock }: { component: React.ComponentType; roles?: string[]; faceLock?: boolean }) {
+  const inner = (
+    <Suspense fallback={<div className="fixed inset-0 bg-[#05070F]" />}>
+      <Component />
+    </Suspense>
+  );
   return (
     <AuthGuard roles={roles}>
-      <Suspense fallback={<div className="fixed inset-0 bg-[#05070F]" />}>
-        <Component />
-      </Suspense>
+      {faceLock ? <FaceLockGuard>{inner}</FaceLockGuard> : inner}
     </AuthGuard>
   );
 }
@@ -175,10 +181,10 @@ function Router() {
 
       <Route path="/qollanmalar"><ProtectedRoute component={QollanmalarPage} /></Route>
       <Route path="/announcements"><ProtectedRoute component={AnnouncementsPage} /></Route>
-      <Route path="/faceid/kiosk"><KioskRoute component={FaceKioskPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
-      <Route path="/faceid/enroll"><ProtectedRoute component={FaceEnrollPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
-      <Route path="/faceid/today"><ProtectedRoute component={FaceTodayPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
-      <Route path="/faceid"><ProtectedRoute component={FaceIdPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
+      <Route path="/faceid/kiosk"><KioskRoute component={FaceKioskPage} roles={["admin","director","zam_direktor","zavuch"]} faceLock /></Route>
+      <Route path="/faceid/enroll"><ProtectedRoute component={FaceEnrollPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
+      <Route path="/faceid/today"><ProtectedRoute component={FaceTodayPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
+      <Route path="/faceid"><ProtectedRoute component={FaceIdPage} roles={["admin","director","zam_direktor","zavuch"]} faceLock /></Route>
       <Route path="/lab"><ProtectedRoute component={LabPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/admin/login-ids"><ProtectedRoute component={LoginIdsPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/chat"><ProtectedRoute component={ChatPage} /></Route>

@@ -121,6 +121,29 @@ router.delete("/classes/:id", requireAuth, async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
+// #13: sinflar smenasi ro'yxati (id, nom, smena) — 2 smenali maktab admin paneli uchun.
+router.get("/classes/smenalar", requireAuth, async (req, res): Promise<void> => {
+  const mid = schoolOf(getAuthUser(req.headers.authorization));
+  const wsql = mid !== null ? "WHERE maktab_id = $1 AND name <> ''" : "WHERE name <> ''";
+  const rows = await query<{ id: string; name: string; smena: number | null }>(
+    `SELECT id, name, smena FROM classes ${wsql} ORDER BY name`,
+    mid !== null ? [mid] : []
+  ).catch(() => [] as { id: string; name: string; smena: number | null }[]);
+  res.json(rows);
+});
+
+// #13: sinf smenasini belgilash (1/2 yoki null). Faqat 2 smenali maktablarda ishlatiladi.
+router.patch("/classes/:id/smena", requireAuth, async (req, res): Promise<void> => {
+  const id = String(req.params["id"] ?? "");
+  if (!id) { res.status(400).json({ error: "id kerak" }); return; }
+  const raw = (req.body as { smena?: number | null }).smena;
+  const smena = raw === 1 || raw === 2 ? raw : null; // boshqa qiymat → tozalanadi
+  const mid = schoolOf(getAuthUser(req.headers.authorization));
+  if (mid !== null) await query("UPDATE classes SET smena = $2 WHERE id = $1 AND maktab_id = $3", [id, smena, mid]);
+  else await query("UPDATE classes SET smena = $2 WHERE id = $1", [id, smena]);
+  res.json({ ok: true, smena });
+});
+
 // PATCH /api/classes/:id/assign-teacher
 router.patch("/classes/:id/assign-teacher", requireAuth, async (req, res): Promise<void> => {
   const params = AssignTeacherParams.safeParse(req.params);

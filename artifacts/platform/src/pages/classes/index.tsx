@@ -11,6 +11,7 @@ import {
   getListStaffQueryKey
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/face";
 import {
   Table,
   TableBody,
@@ -111,6 +112,37 @@ export default function ClassesList() {
 
   // Direktor va rahbariyat ham o'z maktabiga sinf qo'sha/boshqara oladi
   const isAdmin = ["admin", "director", "zam_direktor", "zavuch"].includes(user?.role ?? "");
+
+  // #13: maktab 2 smenali bo'lsagina sinflarni smenaga ajratish ko'rinadi
+  const [isTwoShift, setIsTwoShift] = useState(false);
+  const [smenaMap, setSmenaMap] = useState<Record<string, number | null>>({});
+  useEffect(() => {
+    if (!isAdmin) return;
+    void (async () => {
+      try {
+        const mine = await api<{ ikki_smena?: boolean }>("/maktablar/mine");
+        setIsTwoShift(!!mine.ikki_smena);
+        if (mine.ikki_smena) {
+          const rows = await api<{ id: string; smena: number | null }[]>("/classes/smenalar");
+          const map: Record<string, number | null> = {};
+          for (const r of rows) map[r.id] = r.smena;
+          setSmenaMap(map);
+        }
+      } catch { /* jim */ }
+    })();
+  }, [isAdmin, classes]);
+
+  const cycleSmena = async (clsId: string) => {
+    const cur = smenaMap[clsId] ?? null;
+    const next = cur === null ? 1 : cur === 1 ? 2 : null; // — → 1 → 2 → —
+    setSmenaMap((m) => ({ ...m, [clsId]: next }));
+    try {
+      await api(`/classes/${clsId}/smena`, { method: "PATCH", body: JSON.stringify({ smena: next }) });
+    } catch {
+      setSmenaMap((m) => ({ ...m, [clsId]: cur })); // xato — ortga
+      toast({ variant: "destructive", title: "Smenani saqlab bo'lmadi" });
+    }
+  };
 
   // Sinf rahbarlari: barcha xodimlar sinf rahbari bo'la oladi
   const sinfRahbarlari = staff;
@@ -423,8 +455,19 @@ export default function ClassesList() {
                   {isAdmin && (
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <Button 
-                          variant="ghost" 
+                        {isTwoShift && (
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            title="Smena (bosilsa: — → 1 → 2 → —)"
+                            onClick={() => void cycleSmena(cls.id)}
+                            className="text-violet-600 font-bold"
+                          >
+                            {smenaMap[cls.id] ? smenaMap[cls.id] : "—"}
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
                           size="icon"
                           title="Fanlar va o'qituvchilar"
                           onClick={() => {

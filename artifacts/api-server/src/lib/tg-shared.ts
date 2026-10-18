@@ -78,7 +78,7 @@ export function nextSchoolDay(day: number): number {
 
 // ─── Ulangan guruh / kanallar ────────────────────────────────────────────────
 
-export type ChatPurpose = "class" | "school" | "teachers";
+export type ChatPurpose = "class" | "school" | "teachers" | "tuman";
 
 export interface ChatSettings {
   morning_schedule?: boolean;
@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS tg_chats (
   chat_type   TEXT NOT NULL DEFAULT 'group',
   title       TEXT NOT NULL DEFAULT '',
   purpose     TEXT NOT NULL DEFAULT 'class'
-                CHECK (purpose IN ('class', 'school', 'teachers')),
+                CHECK (purpose IN ('class', 'school', 'teachers', 'tuman')),
   class_id    UUID REFERENCES classes(id) ON DELETE SET NULL,
   settings    JSONB NOT NULL DEFAULT '{"morning_schedule": true, "birthdays": true, "weekly_top": true}'::jsonb,
   linked_by   BIGINT,
@@ -304,6 +304,10 @@ CREATE INDEX IF NOT EXISTS idx_tg_chats_purpose  ON tg_chats(purpose);
 -- Ko'p-maktab: har bir bog'langan chat qaysi maktabga tegishli (eski chatlar → 3-maktab)
 ALTER TABLE tg_chats ADD COLUMN IF NOT EXISTS maktab_id INT NOT NULL DEFAULT 3;
 CREATE INDEX IF NOT EXISTS idx_tg_chats_maktab ON tg_chats(maktab_id);
+-- #7: butun tuman uchun yagona "kunlik davomat" guruhi — 'tuman' maqsadi.
+--     Eski CHECK cheklovini (3 ta qiymat) yangilab, 'tuman' ni qo'shamiz.
+ALTER TABLE tg_chats DROP CONSTRAINT IF EXISTS tg_chats_purpose_check;
+ALTER TABLE tg_chats ADD CONSTRAINT tg_chats_purpose_check CHECK (purpose IN ('class', 'school', 'teachers', 'tuman'));
 
 -- Rejalashtirilgan ishlar bir kunda ikki marta ishlamasligi uchun
 -- (server qayta ishga tushsa ham). job_key misol: "morning:2026-09-25".

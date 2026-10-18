@@ -22,7 +22,7 @@ import {
 } from "../lib/tg-shared.js";
 import { createSessionStore } from "./session-store.js";
 import { addChannel, removeChannel, loadSettings } from "./settings.js";
-import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify, faceidArrivedCount, faceidArchiveToTelegram, faceidChronicNotify } from "../routes/faceid.js";
+import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify, faceidArrivedCount, faceidArchiveToTelegram, faceidChronicNotify, checkHourLimits } from "../routes/faceid.js";
 import { purgeExpiredSchools } from "../routes/maktablar.js";
 
 // Kanal "maktab kanali" sifatida ulanganda — uni MAJBURIY a'zolik ro'yxatiga ham
@@ -1235,7 +1235,7 @@ async function showChats(ctx: Context): Promise<void> {
        FROM tg_chats t LEFT JOIN classes c ON c.id = t.class_id
       ORDER BY t.purpose, c.name NULLS LAST, t.title`
   );
-  const icon: Record<string, string> = { school: "🏫", teachers: "👨‍🏫", class: "👥" };
+  const icon: Record<string, string> = { school: "🏫", teachers: "👨‍🏫", class: "👥", tuman: "🏙" };
   let text = `🔗 <b>Ulangan guruh va kanallar</b> (${rows.length})\n\n`;
   text += rows.length
     ? rows.map((r) => `${icon[r.purpose] ?? "•"} ${esc(r.title)}${r.class_name ? ` → <b>${esc(r.class_name)}</b>` : ""}`).join("\n")
@@ -1408,7 +1408,7 @@ function registerGroup(group: Composer<Context>): void {
   group.command(["start", "yordam", "help"], async (ctx) => {
     const linked = await getLinkedChat(ctx.chat.id);
     const status = linked
-      ? `✅ Bu guruh ulangan: <b>${linked.purpose === "class" ? "sinf guruhi" : linked.purpose === "school" ? "maktab guruhi" : "ustozlar guruhi"}</b>`
+      ? `✅ Bu guruh ulangan: <b>${linked.purpose === "class" ? "sinf guruhi" : linked.purpose === "school" ? "maktab guruhi" : linked.purpose === "tuman" ? "tuman davomat guruhi" : "ustozlar guruhi"}</b>`
       : "⚪ Bu guruh hali ulanmagan. Guruh admini yoki o'qituvchi /boglash yozsin.";
     await ctx.reply(
       `${status}\n\n/jadval — bugungi darslar\n/reyting — haftalik reyting\n/natija — o'yindagi hisob\n/oyin, /boglash, /uzish, /sozlamalar — guruh adminlari va o'qituvchilar uchun`,
@@ -1429,6 +1429,24 @@ function registerGroup(group: Composer<Context>): void {
     const arg = (typeof ctx.match === "string" ? ctx.match : "").trim();
     const a = normClass(arg);
     const by = ctx.from && !auth.anonymous ? ctx.from.id : null;
+
+    // #7: butun tuman uchun yagona "kunlik davomat" guruhi — barcha maktablarning
+    //     kunlik Face ID davomati (08:00 / 10:00 / 14:30 va hisobot fayli) shu guruhga tushadi.
+    const argLow = arg.toLowerCase().replace(/\s+/g, "");
+    if (argLow === "tuman" || argLow === "davomat" || argLow === "tumandavomat") {
+      if (!(auth.groupAdmin || isManagement(auth.who))) {
+        await ctx.reply("⛔ Tuman davomat guruhini faqat guruh admini yoki maktab rahbariyati ulay oladi.");
+        return;
+      }
+      await linkChat({ chatId: ctx.chat.id, chatType: ctx.chat.type, title, purpose: "tuman", linkedBy: by });
+      await ctx.reply(
+        "✅ Guruh <b>tuman kunlik davomat guruhi</b> sifatida ulandi.\n\n" +
+        "Barcha maktablarning kunlik Face ID davomati (08:00 / 10:00 / 14:30 xulosalari va hisobot fayli) shu guruhga avtomatik, maktab nomi bilan tushadi.",
+        { parse_mode: "HTML" }
+      );
+      await notifyLinked(ctx, title, "tuman davomat guruhi", null, auth);
+      return;
+    }
 
     // Maktab / ustozlar guruhi — ichki e'lonlar keladi, shuning uchun faqat maktab xodimi
     if (a === "maktab" || a === "ustozlar" || a === "oqituvchilar" || a === "o'qituvchilar") {
@@ -1666,6 +1684,14 @@ function startScheduler(): void {
           if (await claimJob(`faceid-departures:${date}:${mid}`)) {
             await faceidDepartureSummary(mid).catch((err) => logger.warn({ err, mid }, "faceid 14:30 kun yakuni"));
             await faceidArchiveToTelegram(mid).catch((err) => logger.warn({ err, mid }, "faceid kunlik arxiv"));
+          }
+        }
+      }
+      // #11: har kuni 14:40 da — chorakda 36 soat chegarasidan o'tganlarni tekshirish
+      if (schoolDay && inWindow(hour, min, 14, 40)) {
+        for (const mid of await faceSchools()) {
+          if (await claimJob(`faceid-hourlimit:${date}:${mid}`)) {
+            await checkHourLimits(mid).catch((err) => logger.warn({ err, mid }, "faceid 36 soat chegara"));
           }
         }
       }

@@ -21,7 +21,7 @@ function headers(json = false): Record<string, string> {
 
 interface School {
   id: number; nom: string; tuman: string; manzil: string; direktor: string;
-  is_active: boolean; counts: { oquvchi: number; xodim: number; sinf: number };
+  is_active: boolean; ikki_smena?: boolean; counts: { oquvchi: number; xodim: number; sinf: number };
   sub?: { pro_until: string | null; active: boolean; days_left: number | null; warn: boolean };
 }
 interface FormState { id: string; nom: string; tuman: string; manzil: string; direktor: string }
@@ -112,6 +112,18 @@ export default function MaktablarPage() {
     try {
       await fetch(`${API_BASE}/maktablar/${s.id}`, {
         method: "PUT", headers: headers(true), body: JSON.stringify({ is_active: !s.is_active }),
+      });
+      await refresh();
+    } catch { /* jim */ }
+    setBusy(null);
+  }
+
+  // #13: 2 smenali / oddiy maktab belgisi
+  async function toggleSmena(s: School) {
+    setBusy(s.id);
+    try {
+      await fetch(`${API_BASE}/maktablar/${s.id}/smena`, {
+        method: "POST", headers: headers(true), body: JSON.stringify({ ikki_smena: !s.ikki_smena }),
       });
       await refresh();
     } catch { /* jim */ }
@@ -273,6 +285,11 @@ export default function MaktablarPage() {
                     title={s.is_active ? "Faol" : "Nofaol"}
                     className={`px-2.5 py-2 rounded-lg text-[11px] font-bold cursor-pointer ${s.is_active ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300" : "bg-slate-500/15 text-slate-400"}`}>
                     {busy === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (s.is_active ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />)}
+                  </button>
+                  <button onClick={() => void toggleSmena(s)} disabled={busy === s.id}
+                    title={s.ikki_smena ? "2 smenali maktab (bosilsa — oddiy qilinadi)" : "Oddiy maktab (bosilsa — 2 smenali qilinadi)"}
+                    className={`px-2.5 py-2 rounded-lg text-[11px] font-bold cursor-pointer ${s.ikki_smena ? "bg-violet-500/15 text-violet-600 dark:text-violet-300" : "bg-slate-500/15 text-slate-400"}`}>
+                    {s.ikki_smena ? "2-smena" : "1-smena"}
                   </button>
                   <button onClick={() => openDirector(s)} className="p-2 rounded-lg bg-blue-500/15 text-blue-600 dark:text-blue-300 cursor-pointer" title="Direktor biriktirish"><UserPlus className="w-3.5 h-3.5" /></button>
                   <button onClick={() => void extendSub(s)} disabled={busy === s.id} className="p-2 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-300 cursor-pointer" title="Obuna (PRO): uzaytirish / qulflash / cheksiz"><CreditCard className="w-3.5 h-3.5" /></button>
