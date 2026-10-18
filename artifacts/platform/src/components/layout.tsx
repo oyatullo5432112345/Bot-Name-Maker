@@ -496,14 +496,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const subDeleted = !!subState?.deleted;         // #4: maktab o'chirilgan (arxivda)
   const subExpired = !subDeleted && !!subState?.locked; // #5: obuna tugagan (o'chirilmagan)
   const isAdminUser = user.role === "admin";
-  const isMgmtUser = ["director", "mudir", "zam_direktor", "zavuch"].includes(user.role);
-  // O'chirilgan maktab → HAMMANI (rahbariyat ham) qulflaydi.
-  // Obuna tugagan → faqat oddiy foydalanuvchini (rahbariyatga Face ID yopiladi). Adminга hech qachon tegmaydi.
-  if (!isAdminUser && (subDeleted || (subExpired && !isMgmtUser))) {
+  // Obuna BIR XIL: o'quvchi, o'qituvchi, rahbariyat — hammasi bir maktab obunasiga bo'ysunadi.
+  // Obuna tugasa yoki maktab o'chirilsa — adminдan boshqa HAMMA (rahbariyat ham) qulflanadi.
+  if (!isAdminUser && (subDeleted || subExpired)) {
     return <LockedScreen deleted={subDeleted} nom={subState?.nom} onLogout={handleLogout} />;
   }
   const subWarn = !!subState?.sub?.warn;          // 3 kundan kam qoldi
-  const faceLockedForMgmt = subExpired;           // rahbariyatga faqat Face ID yopiladi
+  const faceLockedForMgmt = false;                // obuna tugasa hamma qulflanadi — alohida Face-ID grace yo'q
 
   const isMudir = user.role === "mudir";
   // Super-admin: Sinflar/Xodimlar/Face ID faqat biror maktab tanlab ICHIGA kirganда ko'rinadi.
@@ -610,21 +609,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Footer */}
       <div className="border-t px-3 py-3 space-y-2">
-        {/* Pro status badge */}
-        {user.pro_expires_at && new Date(user.pro_expires_at).getTime() > Date.now() && (
-          <div
-            className="flex items-center gap-2 px-3 py-2 rounded-xl"
-            style={{ background: "linear-gradient(135deg, #f59e0b15, #f9731615)", border: "1px solid #f59e0b40" }}
-          >
-            <span className="text-base shrink-0">⭐</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-bold" style={{ color: "#f59e0b" }}>Pro versiya</p>
-              <p className="text-[10px] text-muted-foreground">
-                {Math.max(0, Math.ceil((new Date(user.pro_expires_at).getTime() - Date.now()) / 86400000))} kun qoldi
-              </p>
-            </div>
-          </div>
-        )}
         {/* Tanga info for students */}
         {isStudent && tanga && (
           <Link href="/tanga">

@@ -12,7 +12,6 @@ import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, U
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
-import { OnboardingTour } from "@/components/onboarding-tour";
 
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
@@ -288,10 +287,6 @@ function TangaHeaderWidget() {
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const [showTour, setShowTour] = useState(false);
-  useEffect(() => {
-    try { if (!localStorage.getItem("talim_onboarding_v1")) setShowTour(true); } catch { /* localStorage yo'q */ }
-  }, []);
   if (!user) return null;
 
   const isAdminOrDir = ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
@@ -307,15 +302,8 @@ export default function Dashboard() {
 
   const motivation = UZ_MOTIVATIONAL[new Date().getDate() % UZ_MOTIVATIONAL.length]!;
 
-  const closeTour = () => {
-    setShowTour(false);
-    try { localStorage.setItem("talim_onboarding_v1", "1"); } catch { /* localStorage yo'q */ }
-  };
-
   return (
     <div className="space-y-6">
-      <OnboardingTour open={showTour} role={user.role} onClose={closeTour} />
-
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="mb-1.5"><DateWidget /></div>
