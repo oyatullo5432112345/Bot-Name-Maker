@@ -6,6 +6,28 @@ import { z } from "zod";
 const router: IRouter = Router();
 
 // ============================================================
+// O'YIN (Maktab Olami) — binolar darajasi + qahramon/avatar
+// Tangalar shu o'yinда sarflanadi (shop_purchases ledgeriga yoziladi,
+// shuning uchun balans hamma joyда bir xil kamayadi).
+// ============================================================
+void query(`
+  CREATE TABLE IF NOT EXISTS game_buildings (
+    user_login TEXT NOT NULL,
+    bkey       TEXT NOT NULL,
+    level      INT NOT NULL DEFAULT 0,
+    maktab_id  INT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_login, bkey)
+  );
+  CREATE TABLE IF NOT EXISTS game_player (
+    user_login TEXT PRIMARY KEY,
+    avatar     TEXT NOT NULL DEFAULT 'bek',
+    maktab_id  INT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+`).catch(() => { /* migratsiya keyin yaratadi */ });
+
+// ============================================================
 // UNVONLAR
 // ============================================================
 interface Unvon {
@@ -383,6 +405,101 @@ router.post("/tanga/shop/buy", async (req, res): Promise<void> => {
 // ============================================================
 router.get("/tanga/unvonlar", async (req, res): Promise<void> => {
   res.json(UNVONLAR);
+});
+
+// ============================================================
+// O'YIN — Maktab Olami (binolarni kuchaytirish)
+// ============================================================
+const MAX_LEVEL = 10;
+function upgradeCost(base: number, level: number): number {
+  return Math.round(base * Math.pow(1.7, level)); // 0->base, keyin har daraja qimmatroq
+}
+const BUILDINGS = [
+  { key: "maktab",       name: "Maktab",               emoji: "🏫", base: 50 },
+  { key: "kutubxona",    name: "Kutubxona",            emoji: "📚", base: 40 },
+  { key: "ingliz",       name: "Ingliz tili markazi",  emoji: "🇬🇧", base: 45 },
+  { key: "matematika",   name: "Matematika markazi",   emoji: "🔢", base: 45 },
+  { key: "milliy_kiyim", name: "Milliy kiyim do'koni", emoji: "🧵", base: 60 },
+  { key: "qahramon",     name: "Qahramon (o'zing)",    emoji: "🦸", base: 70 },
+];
+const AVATARS = [
+  { id: "bek",       name: "Bek",       emoji: "👦" },
+  { id: "lola",      name: "Lola",      emoji: "👧" },
+  { id: "olim",      name: "Olim",      emoji: "🧑‍🎓" },
+  { id: "sportchi",  name: "Sportchi",  emoji: "🏃" },
+  { id: "rassom",    name: "Rassom",    emoji: "🧑‍🎨" },
+  { id: "dasturchi", name: "Dasturchi", emoji: "🧑‍💻" },
+];
+
+// Balans = baho tangasi + bonuslar − sarflangan (do'kon + o'yin). /tanga/my bilan bir xil.
+async function calcBalance(login: string): Promise<number> {
+  const grade = await calcGradeTanga(login);
+  const bonusRows = await query<{ total: string }>("SELECT COALESCE(SUM(amount),0) AS total FROM tanga_logs WHERE user_login = $1", [login]);
+  const spentRows = await query<{ total: string }>("SELECT COALESCE(SUM(cost),0) AS total FROM shop_purchases WHERE user_login = $1", [login]);
+  return grade + parseInt(bonusRows[0]?.total ?? "0") - parseInt(spentRows[0]?.total ?? "0");
+}
+
+// GET /api/tanga/game — o'yin holati (balans, binolar, avatar)
+router.get("/tanga/game", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || user["role"] !== "student") { res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return; }
+  const login = user["login"] as string;
+  try {
+    const total = await calcBalance(login);
+    const rows = await query<{ bkey: string; level: number }>("SELECT bkey, level FROM game_buildings WHERE user_login = $1", [login]);
+    const levelMap: Record<string, number> = {};
+    for (const r of rows) levelMap[r.bkey] = r.level;
+    const buildings = BUILDINGS.map(b => {
+      const lvl = levelMap[b.key] ?? 0;
+      return { key: b.key, name: b.name, emoji: b.emoji, level: lvl, max: MAX_LEVEL, next_cost: lvl >= MAX_LEVEL ? null : upgradeCost(b.base, lvl) };
+    });
+    const pr = await query<{ avatar: string }>("SELECT avatar FROM game_player WHERE user_login = $1", [login]);
+    res.json({ total, buildings, avatar: pr[0]?.avatar ?? "bek", avatars: AVATARS });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
+// POST /api/tanga/game/upgrade { key } — binoni 1 daraja kuchaytirish
+const UpgradeBody = z.object({ key: z.string() });
+router.post("/tanga/game/upgrade", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || user["role"] !== "student") { res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return; }
+  const login = user["login"] as string;
+  const mid = schoolOf(user);
+  const parsed = UpgradeBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Noto'g'ri so'rov" }); return; }
+  const b = BUILDINGS.find(x => x.key === parsed.data.key);
+  if (!b) { res.status(404).json({ error: "Bino topilmadi" }); return; }
+  try {
+    const row = await query<{ level: number }>("SELECT level FROM game_buildings WHERE user_login = $1 AND bkey = $2", [login, b.key]);
+    const level = row[0]?.level ?? 0;
+    if (level >= MAX_LEVEL) { res.status(400).json({ error: "Eng yuqori daraja" }); return; }
+    const cost = upgradeCost(b.base, level);
+    const total = await calcBalance(login);
+    if (total < cost) { res.status(400).json({ error: `Yetarli tanga yo'q. Kerak: ${cost} 🪙, sizda: ${total} 🪙` }); return; }
+
+    await query("INSERT INTO shop_purchases (user_login, item_id, item_name, cost, maktab_id) VALUES ($1, $2, $3, $4, $5)",
+      [login, `game_${b.key}_${level + 1}`, `O'yin: ${b.name} ${level + 1}-daraja`, cost, mid ?? 3]);
+    await query(`INSERT INTO game_buildings (user_login, bkey, level, maktab_id) VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (user_login, bkey) DO UPDATE SET level = $3, updated_at = NOW()`,
+      [login, b.key, level + 1, mid ?? 3]);
+
+    const newLevel = level + 1;
+    res.json({ ok: true, key: b.key, level: newLevel, total: total - cost, next_cost: newLevel >= MAX_LEVEL ? null : upgradeCost(b.base, newLevel) });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
+// POST /api/tanga/game/avatar { avatar } — qahramon avatarini tanlash (bepul)
+const AvatarBody = z.object({ avatar: z.string() });
+router.post("/tanga/game/avatar", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || user["role"] !== "student") { res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return; }
+  const login = user["login"] as string;
+  const mid = schoolOf(user);
+  const parsed = AvatarBody.safeParse(req.body);
+  if (!parsed.success || !AVATARS.some(a => a.id === parsed.data.avatar)) { res.status(400).json({ error: "Noto'g'ri avatar" }); return; }
+  await query(`INSERT INTO game_player (user_login, avatar, maktab_id) VALUES ($1, $2, $3)
+               ON CONFLICT (user_login) DO UPDATE SET avatar = $2, updated_at = NOW()`, [login, parsed.data.avatar, mid ?? 3]);
+  res.json({ ok: true, avatar: parsed.data.avatar });
 });
 
 export default router;

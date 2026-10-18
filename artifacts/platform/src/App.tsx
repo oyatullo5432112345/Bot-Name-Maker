@@ -31,6 +31,7 @@ const WheelList = lazy(() => import("@/pages/games/wheel/index"));
 const WheelSpin = lazy(() => import("@/pages/games/wheel/spin"));
 const ZukkoLevels = lazy(() => import("@/pages/games/zukko/index"));
 const ZukkoPlay = lazy(() => import("@/pages/games/zukko/play"));
+const MaktabOlami = lazy(() => import("@/pages/oyin/index"));
 const SayohatIndex = lazy(() => import("@/pages/sayohat/index"));
 const SayohatPlay = lazy(() => import("@/pages/sayohat/play"));
 const SayohatAdmin = lazy(() => import("@/pages/sayohat/admin"));
@@ -201,6 +202,7 @@ function Router() {
       <Route path="/sayohat/:region"><ProtectedRoute component={SayohatPlay} /></Route>
       <Route path="/sayohat"><ProtectedRoute component={SayohatIndex} /></Route>
       <Route path="/pro"><ProtectedRoute component={ProPage} /></Route>
+      <Route path="/oyin"><ProtectedRoute component={MaktabOlami} /></Route>
       <Route path="/games"><ProtectedRoute component={GamesPage} /></Route>
 
       <Route><Suspense fallback={<LoadingSpinner />}><NotFound /></Suspense></Route>
