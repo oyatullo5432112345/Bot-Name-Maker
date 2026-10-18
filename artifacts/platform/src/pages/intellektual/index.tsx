@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { Lock, ArrowRight } from "lucide-react";
+import { useAuth } from "@/lib/use-auth";
 
 // ═══════════════════════════════════════════════════════════════════
 //  INTELEKTUAL O'YINLAR — hub.
-//  48 soatlik "tez kunda" countdown bilan qulflangan. Vaqt tugaganda —
-//  katta portlash effekti bilan ochiladi va o'yinlar ko'rinadi.
+//  • Admin uchun DOIMIY OCHIQ (countdown yo'q).
+//  • Boshqalar uchun 48 soatlik countdown; tugaganда portlash bilan ochiladi.
 //
 //  ⬇⬇⬇  MUHIM: deploy qilganда shu sanani "hozir + 48 soat" ga qo'ying.
-//  (Masalan hozir 2026-10-18 08:00 bo'lsa → 2026-10-20 08:00)
 const LAUNCH_AT = new Date("2026-10-20T08:00:00+05:00").getTime();
 const BOOM_SEEN_KEY = "intellektual_boom_seen";
 // ═══════════════════════════════════════════════════════════════════
@@ -16,10 +16,10 @@ const BOOM_SEEN_KEY = "intellektual_boom_seen";
 const CSS = `
 @keyframes intel-flash { 0%{opacity:0} 10%{opacity:1} 100%{opacity:0} }
 @keyframes intel-ring { 0%{transform:translate(-50%,-50%) scale(0);opacity:.9} 100%{transform:translate(-50%,-50%) scale(14);opacity:0} }
-@keyframes intel-particle { 0%{transform:translate(-50%,-50%) translate(0,0) scale(1);opacity:1} 100%{opacity:0} }
+@keyframes intel-particle { 0%{opacity:1} 100%{opacity:0} }
 @keyframes intel-title { 0%{transform:scale(.3);opacity:0} 60%{transform:scale(1.15);opacity:1} 100%{transform:scale(1);opacity:1} }
-@keyframes intel-glow { 0%,100%{opacity:.5} 50%{opacity:1} }
-@keyframes intel-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+@keyframes intel-glow { 0%,100%{opacity:.4} 50%{opacity:.9} }
+@keyframes intel-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
 `;
 
 function Boom() {
@@ -44,11 +44,8 @@ function Boom() {
           <div key={i} className="absolute left-1/2 top-1/2 rounded-full"
             style={{
               width: 14, height: 14, background: col,
-              transform: "translate(-50%,-50%)",
+              transform: "translate(-50%,-50%)", translate: `${dx}px ${dy}px`,
               animation: `intel-particle 1.2s ${0.1 + Math.random() * 0.2}s ease-out forwards`,
-              // CSS o'zgaruvchisi bilan tarqalish
-              ["--none" as string]: "0",
-              translate: `${dx}px ${dy}px`,
             }} />
         );
       })}
@@ -61,23 +58,26 @@ function Boom() {
 function pad(n: number) { return String(n).padStart(2, "0"); }
 
 export default function Intellektual() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
   const [now, setNow] = useState(Date.now());
   const [boom, setBoom] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const started = useRef(false);
 
   useEffect(() => {
-    // Agar allaqachon ochilgan bo'lsa va portlashni ko'rgan bo'lsa — to'g'ridan-to'g'ri ko'rsatamiz
+    // Admin — doimiy ochiq. Oddiy foydalanuvchi: allaqachon ochilган va portlashni ko'rgan bo'lsa — to'g'ridan-to'g'ri.
     const seen = (() => { try { return localStorage.getItem(BOOM_SEEN_KEY) === "1"; } catch { return false; } })();
-    if (Date.now() >= LAUNCH_AT && seen) { setRevealed(true); started.current = true; }
+    if (isAdmin || (Date.now() >= LAUNCH_AT && seen)) { setRevealed(true); started.current = true; }
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [isAdmin]);
 
   const launched = now >= LAUNCH_AT;
 
   useEffect(() => {
-    if (launched && !revealed && !started.current) {
+    if (!isAdmin && launched && !revealed && !started.current) {
       started.current = true;
       setBoom(true);
       const t = setTimeout(() => {
@@ -86,7 +86,7 @@ export default function Intellektual() {
       }, 2600);
       return () => clearTimeout(t);
     }
-  }, [launched, revealed]);
+  }, [isAdmin, launched, revealed]);
 
   // ─────────── OCHILGAN: o'yinlar ───────────
   if (revealed) {
@@ -99,7 +99,6 @@ export default function Intellektual() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">Aqlingni charxla, maktabingni kuchaytir!</p>
         </div>
-
         <div className="grid sm:grid-cols-2 gap-4">
           <GameCard href="/oyin" emoji="🏰" title="Maktab Olami"
             desc="Tangalaringga maktab binolarini va qahramoningni kuchaytir."
@@ -108,13 +107,12 @@ export default function Intellektual() {
             desc="Bir xil plitkalarni birlashtirib yuqori darajaga chiq."
             from="from-fuchsia-600" via="via-pink-600" to="to-rose-500" cta="O'YNASH" />
         </div>
-
         <p className="text-center text-xs text-muted-foreground">Yana yangi o'yinlar tez orada qo'shiladi.</p>
       </div>
     );
   }
 
-  // ─────────── QULF: countdown ───────────
+  // ─────────── QULF: faqat countdown soati ───────────
   const rem = Math.max(0, LAUNCH_AT - now);
   const d = Math.floor(rem / 86400000);
   const h = Math.floor((rem % 86400000) / 3600000);
@@ -122,33 +120,30 @@ export default function Intellektual() {
   const s = Math.floor((rem % 60000) / 1000);
 
   return (
-    <div className="fixed inset-0 z-[40] flex flex-col items-center justify-center p-6 overflow-hidden
+    <div className="relative min-h-[78vh] flex flex-col items-center justify-center rounded-3xl overflow-hidden p-6
       bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-950">
       <style>{CSS}</style>
       {boom && <Boom />}
 
-      {/* fon halqalari */}
+      {/* fon halqalari (matnsiz) */}
       {[0, 1, 2].map((i) => (
         <div key={i} className="absolute rounded-full pointer-events-none"
           style={{
-            width: 300 + i * 220, height: 300 + i * 220,
+            width: 280 + i * 200, height: 280 + i * 200,
             border: "1px solid rgba(168,85,247,0.12)",
             animation: "intel-glow 4s ease-in-out infinite", animationDelay: `${i * 0.5}s`,
           }} />
       ))}
 
-      <div className="relative z-10 text-center" style={{ animation: "intel-float 4s ease-in-out infinite" }}>
-        <div className="w-20 h-20 mx-auto rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center mb-5">
-          <Lock className="w-9 h-9 text-amber-300" />
+      {/* FAQAT qulf + soat */}
+      <div className="relative z-10 flex flex-col items-center" style={{ animation: "intel-pulse 4s ease-in-out infinite" }}>
+        <div className="w-16 h-16 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center mb-7">
+          <Lock className="w-8 h-8 text-amber-300" />
         </div>
-        <div className="text-amber-300/90 text-xs font-bold tracking-[0.2em] uppercase mb-2">Tez kunda</div>
-        <h1 className="text-white font-extrabold text-3xl sm:text-4xl mb-2">Intelektual o'yinlar</h1>
-        <p className="text-white/50 text-sm mb-8 max-w-xs mx-auto">Katta ochilishga tayyorlaning — vaqt tugaganda portlash bilan ochiladi!</p>
-
-        <div className="flex items-center justify-center gap-2.5">
-          {[{ v: d, l: "kun" }, { v: h, l: "soat" }, { v: m, l: "daq" }, { v: s, l: "son" }].map((x, i) => (
+        <div className="flex items-center justify-center gap-2 sm:gap-3">
+          {[{ v: d, l: "kun" }, { v: h, l: "soat" }, { v: m, l: "daqiqa" }, { v: s, l: "soniya" }].map((x, i) => (
             <div key={i} className="flex flex-col items-center">
-              <div className="w-[70px] h-[84px] rounded-2xl bg-white/8 border border-white/12 backdrop-blur flex items-center justify-center text-white font-black text-4xl tabular-nums">
+              <div className="w-[68px] sm:w-[76px] h-[84px] rounded-2xl bg-white/8 border border-white/12 backdrop-blur flex items-center justify-center text-white font-black text-4xl sm:text-5xl tabular-nums">
                 {pad(x.v)}
               </div>
               <div className="text-white/40 text-[11px] mt-1.5 uppercase tracking-wider">{x.l}</div>
@@ -156,8 +151,6 @@ export default function Intellektual() {
           ))}
         </div>
       </div>
-
-      <Link href="/games" className="relative z-10 mt-10 text-white/40 text-xs underline">← O'yinlarга qaytish</Link>
     </div>
   );
 }
