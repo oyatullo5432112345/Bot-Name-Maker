@@ -566,15 +566,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {!isMudir && (
           <NavSection label="Ta'lim">
-            <NavLink href="/darslik" icon={BookOpen} label="Darslik" active={isActive("/darslik")} />
             <NavLink href="/baholash" icon={ClipboardList} label="Baholash" active={isActive("/baholash")} />
-            {canViewDavomat && <NavLink href="/davomat" icon={CalendarCheck} label="Davomat" active={isActive("/davomat")} />}
             {canUseFaceId && <NavLink href={(user.role === "sinf_rahbari" || user.role === "boshlangich_oqituvchi") ? "/faceid/enroll" : "/faceid"} icon={ScanFace} label="Face ID" active={isActive("/faceid")} />}
-            {canUseLab && <NavLink href="/lab" icon={Monitor} label="Kompyuterlar" active={isActive("/lab")} />}
             {canSeeLoginIds && <NavLink href="/admin/login-ids" icon={KeyRound} label="Kirish IDlari" active={isActive("/admin/login-ids")} />}
             <NavLink href="/dars-jadvali" icon={CalendarDays} label="Dars jadvali" active={isActive("/dars-jadvali")} />
-            <NavLink href="/library" icon={Library} label="Kutubxona" active={isActive("/library")} />
-            <NavLink href="/certificate" icon={Award} label="Sertifikat" active={isActive("/certificate")} />
             <NavLink href="/olimpiada" icon={Trophy} label="Olimpiada.Uz" active={isActive("/olimpiada")} />
           </NavSection>
         )}
@@ -597,13 +592,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <NavSection label="Tuman boshqaruvi">
             <NavLink href="/admin/maktablar" icon={Building2} label="Maktablar" active={isActive("/admin/maktablar")} />
             <NavLink href="/admin/reset" icon={AlertTriangle} label="Xavfli zona" active={isActive("/admin/reset")} />
-          </NavSection>
-        )}
-
-        {canManageLibrary && (
-          <NavSection label="Kutubxona boshqaruvi">
-            <NavLink href="/library/loans" icon={ClipboardList} label="Ijara jurnali" active={isActive("/library/loans")} />
-            <NavLink href="/library/new" icon={BookOpen} label="Kitob qo'shish" active={isActive("/library/new")} />
           </NavSection>
         )}
 

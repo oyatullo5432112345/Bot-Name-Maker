@@ -37,14 +37,8 @@ const SayohatPlay = lazy(() => import("@/pages/sayohat/play"));
 const SayohatAdmin = lazy(() => import("@/pages/sayohat/admin"));
 const SayohatAdminQuestions = lazy(() => import("@/pages/sayohat/admin-questions"));
 const ProPage = lazy(() => import("@/pages/pro"));
-const DarslikPage = lazy(() => import("@/pages/darslik/index"));
-const NewDarslikPage = lazy(() => import("@/pages/darslik/new"));
 const BaholashPage = lazy(() => import("@/pages/baholash/index"));
 const DarsJadvaliPage = lazy(() => import("@/pages/dars-jadvali/index"));
-const LibraryPage = lazy(() => import("@/pages/library/index"));
-const NewBookPage = lazy(() => import("@/pages/library/new"));
-const LibraryLoansPage = lazy(() => import("@/pages/library/loans"));
-const CertificatePage = lazy(() => import("@/pages/certificate"));
 
 const AdminResetPage = lazy(() => import("@/pages/admin/reset"));
 const MaktablarPage = lazy(() => import("@/pages/admin/maktablar"));
@@ -52,7 +46,6 @@ const ReytingPage = lazy(() => import("@/pages/reyting/index"));
 const QollanmalarPage = lazy(() => import("@/pages/qollanmalar"));
 const OlimpiyadaPage = lazy(() => import("@/pages/olimpiada/index"));
 const AnnouncementsPage = lazy(() => import("@/pages/announcements/index"));
-const DavomatPage = lazy(() => import("@/pages/davomat/index"));
 const ChatPage = lazy(() => import("@/pages/chat/index"));
 const StudentIdCard = lazy(() => import("@/pages/students/id-card"));
 const TangaPage = lazy(() => import("@/pages/tanga/index"));
@@ -64,7 +57,6 @@ const FaceIdPage = lazy(() => import("@/pages/faceid/index"));
 const FaceEnrollPage = lazy(() => import("@/pages/faceid/enroll"));
 const FaceKioskPage = lazy(() => import("@/pages/faceid/kiosk"));
 const FaceTodayPage = lazy(() => import("@/pages/faceid/today"));
-const LabPage = lazy(() => import("@/pages/lab/index"));
 const LoginIdsPage = lazy(() => import("@/pages/admin/login-ids"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -154,18 +146,8 @@ function Router() {
       <Route path="/staff/bulk-new"><ProtectedRoute component={BulkNewStaff} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/staff/:id/subjects"><ProtectedRoute component={StaffSubjectsPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
 
-      <Route path="/darslik/new"><ProtectedRoute component={NewDarslikPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
-      <Route path="/darslik"><ProtectedRoute component={DarslikPage} /></Route>
-
       <Route path="/baholash"><ProtectedRoute component={BaholashPage} /></Route>
       <Route path="/dars-jadvali"><ProtectedRoute component={DarsJadvaliPage} /></Route>
-      <Route path="/davomat"><ProtectedRoute component={DavomatPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
-
-      <Route path="/library/new"><ProtectedRoute component={NewBookPage} roles={["admin","kutubxonachi"]} /></Route>
-      <Route path="/library/loans"><ProtectedRoute component={LibraryLoansPage} roles={["admin","kutubxonachi"]} /></Route>
-      <Route path="/library"><ProtectedRoute component={LibraryPage} /></Route>
-
-      <Route path="/certificate"><ProtectedRoute component={CertificatePage} /></Route>
       <Route path="/olimpiada"><ProtectedRoute component={OlimpiyadaPage} /></Route>
 
       {/* Mahfiy kodlar bekor qilindi — Kirish IDlari sahifasiga yo'naltiramiz */}
@@ -186,7 +168,6 @@ function Router() {
       <Route path="/faceid/enroll"><ProtectedRoute component={FaceEnrollPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
       <Route path="/faceid/today"><ProtectedRoute component={FaceTodayPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
       <Route path="/faceid"><ProtectedRoute component={FaceIdPage} roles={["admin","director","zam_direktor","zavuch"]} faceLock /></Route>
-      <Route path="/lab"><ProtectedRoute component={LabPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/admin/login-ids"><ProtectedRoute component={LoginIdsPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/chat"><ProtectedRoute component={ChatPage} /></Route>
 
