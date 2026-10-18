@@ -280,6 +280,35 @@ function AdminScheduleView() {
   const [scheduleText, setScheduleText] = useState("");
   const [textImporting, setTextImporting] = useState(false);
 
+  // Sinf tanlashni qulaylashtirish: bo'lim (boshlang'ich/yuqori) + smena filtri + tabiiy tartib
+  const [isTwoShift, setIsTwoShift] = useState(false);
+  const [smenaMap, setSmenaMap] = useState<Record<string, number | null>>({});
+  const [bolimSel, setBolimSel] = useState<"all" | "boshlangich" | "yuqori">("all");
+  const [smenaSel, setSmenaSel] = useState<"all" | "1" | "2">("all");
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/maktablar/mine`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const mine = await res.json() as { ikki_smena?: boolean };
+        setIsTwoShift(!!mine.ikki_smena);
+        if (mine.ikki_smena) {
+          const sRes = await fetch(`${API_BASE}/classes/smenalar`, { headers: authHeaders() });
+          if (sRes.ok) {
+            const rows = await sRes.json() as { id: string; smena: number | null }[];
+            const map: Record<string, number | null> = {};
+            for (const r of rows) map[r.id] = r.smena;
+            setSmenaMap(map);
+          }
+        }
+      } catch { /* ixtiyoriy — filtrsiz ham ishlaydi */ }
+    })();
+  }, []);
+
+  const gradeNum = (c: string): number => { const m = c.match(/^\s*(\d{1,2})/); return m ? parseInt(m[1]!, 10) : 999; };
+  const classLetter = (c: string): string => c.replace(/^\s*\d{1,2}\s*-?\s*/, "");
+
   useEffect(() => {
     void (async () => {
       const res = await fetch(`${API_BASE}/staff`, { headers: authHeaders() });
@@ -312,9 +341,9 @@ function AdminScheduleView() {
     .filter(e => e.day_of_week === selectedDay)
     .sort((a, b) => a.period - b.period);
 
-  const openAdd = () => {
+  const openAdd = (presetPeriod?: number) => {
     setEditEntry(null);
-    setFormPeriod("");
+    setFormPeriod(presetPeriod ? String(presetPeriod) : "");
     setFormSubject("");
     setFormTeacherId("");
     setDialogOpen(true);
@@ -328,7 +357,7 @@ function AdminScheduleView() {
     setDialogOpen(true);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (keepOpen = false) => {
     if (!formPeriod || !formSubject.trim() || !selectedClassId) return;
     setSaving(true);
     try {
@@ -366,8 +395,20 @@ function AdminScheduleView() {
           toast({ variant: "destructive", title: "Xatolik", description: d.error });
         } else {
           toast({ title: "Qo'shildi" });
+          const justAdded = Number(formPeriod);
           void loadTimetable(selectedClassId);
-          setDialogOpen(false);
+          if (keepOpen) {
+            // Oynani yopmasdan keyingi bo'sh darsga o'tamiz — ketma-ket tez kiritish uchun
+            const used = new Set(timetable.filter(e => e.day_of_week === selectedDay).map(e => e.period));
+            used.add(justAdded);
+            let next = justAdded + 1;
+            while (next <= 8 && used.has(next)) next++;
+            setFormPeriod(next <= 8 ? String(next) : "");
+            setFormSubject("");
+            setFormTeacherId("");
+          } else {
+            setDialogOpen(false);
+          }
         }
       }
     } catch {
@@ -483,6 +524,20 @@ function AdminScheduleView() {
 
   const selectedClassName = classes?.find((c: { id: string; name: string }) => c.id === selectedClassId)?.name ?? "";
 
+  // Tabiiy tartib (5-A, 5-B, ... 10-A) + bo'lim/smena filtri — uzun ro'yxatdan sinfni tez topish uchun
+  const sortedClasses = ([...((classes ?? []) as { id: string; name: string }[])]).sort((a, b) => {
+    const ga = gradeNum(a.name), gb = gradeNum(b.name);
+    if (ga !== gb) return ga - gb;
+    return classLetter(a.name).localeCompare(classLetter(b.name), "uz");
+  });
+  const visibleClasses = sortedClasses.filter((c) => {
+    const g = gradeNum(c.name);
+    if (bolimSel === "boshlangich" && !(g >= 1 && g <= 4)) return false;
+    if (bolimSel === "yuqori" && g < 5) return false;
+    if (smenaSel !== "all") { const sm = smenaMap[c.id]; if (sm != null && sm !== Number(smenaSel)) return false; }
+    return true;
+  });
+
   // O'qituvchilar + can_teach=true bo'lgan rahbariyat xodimlari
   const teacherStaff = staff.filter(s =>
     ["teacher", "sinf_rahbari"].includes(s.role) ||
@@ -496,27 +551,51 @@ function AdminScheduleView() {
         <p className="text-muted-foreground mt-1">Sinflar bo'yicha haftalik dars jadvali</p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-        <div className="w-full sm:w-64">
-          <Select value={selectedClassId} onValueChange={setSelectedClassId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Sinf tanlang..." />
-            </SelectTrigger>
-            <SelectContent>
-              {classes?.map((c: { id: string; name: string }) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+      <div className="space-y-3">
+        {/* Bo'lim + smena filtri — uzun ro'yxatni qisqartirib, sinfni tez topish uchun */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground mr-1">Bo'lim:</span>
+            {([["all", "Hammasi"], ["boshlangich", "Boshlang'ich (1–4)"], ["yuqori", "Yuqori (5+)"]] as const).map(([val, lbl]) => (
+              <Button key={val} size="sm" variant={bolimSel === val ? "secondary" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setBolimSel(val)}>{lbl}</Button>
+            ))}
+          </div>
+          {isTwoShift && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted-foreground mr-1">Smena:</span>
+              {([["all", "Hammasi"], ["1", "1-smena"], ["2", "2-smena"]] as const).map(([val, lbl]) => (
+                <Button key={val} size="sm" variant={smenaSel === val ? "secondary" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setSmenaSel(val)}>{lbl}</Button>
               ))}
-            </SelectContent>
-          </Select>
+            </div>
+          )}
+        </div>
+
+        {/* Sinflar — bir bosishda tanlanadi (ochib, aylantirib o'tirish shart emas) */}
+        <div className="flex flex-wrap gap-1.5">
+          {visibleClasses.length === 0 ? (
+            <span className="text-sm text-muted-foreground">Bu filtrda sinf topilmadi</span>
+          ) : (
+            visibleClasses.map((c) => (
+              <Button
+                key={c.id}
+                size="sm"
+                variant={selectedClassId === c.id ? "default" : "outline"}
+                className="h-8"
+                onClick={() => setSelectedClassId(c.id)}
+              >
+                {c.name}
+              </Button>
+            ))
+          )}
         </div>
 
         {selectedClassId && isEditor && (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={openAdd}>
-              <Pencil className="w-4 h-4 mr-2" />
-              Bitta darsni qo'lda tuzatish
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => openAdd()}>
+              <Plus className="w-4 h-4 mr-2" />
+              Dars qo'shish
             </Button>
-            <Button variant="outline" onClick={() => setTextImportOpen(true)}>
+            <Button variant="outline" size="sm" onClick={() => setTextImportOpen(true)}>
               <Upload className="w-4 h-4 mr-2" />
               Matndan yuklash
             </Button>
@@ -600,48 +679,65 @@ function AdminScheduleView() {
                 <div className="flex justify-center py-8">
                   <Loader2 className="w-5 h-5 animate-spin text-primary" />
                 </div>
-              ) : dayEntries.length === 0 ? (
+              ) : (!isEditor && dayEntries.length === 0) ? (
                 <div className="text-center py-8 text-muted-foreground text-sm">
                   Bu kun uchun dars kiritilmagan
-                  {isEditor && (
-                    <div className="mt-3">
-                      <Button variant="outline" size="sm" onClick={openAdd}>
-                        <Plus className="w-4 h-4 mr-1" /> Qo'lda qo'shish
-                      </Button>
-                    </div>
-                  )}
                 </div>
               ) : (
+                // 8 ta dars uyasi — to'ldirilganlari ko'rinadi, bo'shlarini bosib darhol qo'shiladi
                 <div className="space-y-2">
-                  {dayEntries.map(entry => (
-                    <div
-                      key={entry.id}
-                      className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 hover:bg-accent/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="text-center min-w-[2.5rem]">
-                          <div className="text-lg font-bold text-primary">{entry.period}</div>
-                          <div className="text-xs text-muted-foreground">dars</div>
-                        </div>
-                        <div className="border-l pl-4">
-                          <div className="font-medium">{entry.subject}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {PERIOD_TIMES[entry.period]} · {entry.teacher_name ?? "O'qituvchi belgilanmagan"}
+                  {Array.from({ length: 8 }, (_, i) => i + 1).map((p) => {
+                    const entry = dayEntries.find(e => e.period === p);
+                    if (!entry) {
+                      if (!isEditor) return null;
+                      return (
+                        <button
+                          key={`empty-${p}`}
+                          type="button"
+                          onClick={() => openAdd(p)}
+                          className="flex w-full items-center gap-4 rounded-lg border border-dashed bg-muted/20 px-4 py-3 text-left text-muted-foreground hover:bg-accent/40 hover:text-foreground transition-colors"
+                        >
+                          <div className="text-center min-w-[2.5rem]">
+                            <div className="text-lg font-bold">{p}</div>
+                            <div className="text-xs">dars</div>
+                          </div>
+                          <div className="border-l pl-4 flex items-center gap-2">
+                            <Plus className="w-4 h-4" />
+                            <span className="text-sm">{PERIOD_TIMES[p]} — dars qo'shish</span>
+                          </div>
+                        </button>
+                      );
+                    }
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 hover:bg-accent/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="text-center min-w-[2.5rem]">
+                            <div className="text-lg font-bold text-primary">{entry.period}</div>
+                            <div className="text-xs text-muted-foreground">dars</div>
+                          </div>
+                          <div className="border-l pl-4">
+                            <div className="font-medium">{entry.subject}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {PERIOD_TIMES[entry.period]} · {entry.teacher_name ?? "O'qituvchi belgilanmagan"}
+                            </div>
                           </div>
                         </div>
+                        {isEditor && (
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => openEdit(entry)}>
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => void handleDelete(entry.id)}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                      {isEditor && (
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => openEdit(entry)}>
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => void handleDelete(entry.id)}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -707,9 +803,19 @@ function AdminScheduleView() {
               </Select>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Bekor qilish</Button>
-            <Button onClick={handleSave} disabled={saving || !formSubject.trim() || (!editEntry && !formPeriod)}>
+            {!editEntry && (
+              <Button
+                variant="secondary"
+                onClick={() => void handleSave(true)}
+                disabled={saving || !formSubject.trim() || !formPeriod}
+              >
+                {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Saqlab, yana qo'shish
+              </Button>
+            )}
+            <Button onClick={() => void handleSave(false)} disabled={saving || !formSubject.trim() || (!editEntry && !formPeriod)}>
               {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Saqlash
             </Button>
