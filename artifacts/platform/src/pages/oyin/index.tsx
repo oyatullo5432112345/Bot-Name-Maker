@@ -9,7 +9,8 @@ import { Loader2, Coins, ArrowUp, Check } from "lucide-react";
 
 type Building = { key: string; name: string; emoji: string; level: number; max: number; next_cost: number | null };
 type Avatar = { id: string; name: string; emoji: string };
-type GameState = { total: number; buildings: Building[]; avatar: string; avatars: Avatar[] };
+type Unvon = { title: string; emoji: string; color?: string };
+type GameState = { total: number; buildings: Building[]; avatar: string; avatars: Avatar[]; unvon?: Unvon };
 
 export default function MaktabOlami() {
   const { toast } = useToast();
@@ -55,7 +56,7 @@ export default function MaktabOlami() {
     return <div className="min-h-[60vh] flex items-center justify-center"><Loader2 className="w-7 h-7 animate-spin text-primary" /></div>;
   }
   if (!state) {
-    return <div className="p-6 text-center text-muted-foreground">O'yin yuklanmadi. Bu sahifa faqat o'quvchilar uchun.</div>;
+    return <div className="p-6 text-center text-muted-foreground">O'yin yuklanmadi. Qaytadan urinib ko'ring.</div>;
   }
 
   const hero = state.buildings.find((b) => b.key === "qahramon");
@@ -70,8 +71,13 @@ export default function MaktabOlami() {
           <div>
             <h1 className="text-2xl font-extrabold">🏰 Maktab Olami</h1>
             <p className="text-sm text-white/70">Binolarni va qahramoningni kuchaytir!</p>
+            {state.unvon && (
+              <span className="inline-flex items-center gap-1 mt-2 text-xs font-bold bg-white/15 rounded-full px-2.5 py-1">
+                {state.unvon.emoji} {state.unvon.title}
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-1.5 bg-black/25 rounded-full px-4 py-2 font-bold">
+          <div className="flex items-center gap-1.5 bg-black/25 rounded-full px-4 py-2 font-bold shrink-0">
             <Coins className="w-5 h-5 text-amber-300" /> {state.total}
           </div>
         </div>

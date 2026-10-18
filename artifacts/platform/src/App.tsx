@@ -29,8 +29,6 @@ const BoardGameNew = lazy(() => import("@/pages/games/board/new"));
 const BoardGamePlay = lazy(() => import("@/pages/games/board/play"));
 const WheelList = lazy(() => import("@/pages/games/wheel/index"));
 const WheelSpin = lazy(() => import("@/pages/games/wheel/spin"));
-const ZukkoLevels = lazy(() => import("@/pages/games/zukko/index"));
-const ZukkoPlay = lazy(() => import("@/pages/games/zukko/play"));
 const MaktabOlami = lazy(() => import("@/pages/oyin/index"));
 const MergeGame = lazy(() => import("@/pages/oyin/merge"));
 const Intellektual = lazy(() => import("@/pages/intellektual/index"));
@@ -197,8 +195,6 @@ function Router() {
       <Route path="/games/board"><ProtectedRoute component={BoardGameList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/games/wheel/:id"><ProtectedRoute component={WheelSpin} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/games/wheel"><ProtectedRoute component={WheelList} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
-      <Route path="/games/zukko/:level"><ProtectedRoute component={ZukkoPlay} /></Route>
-      <Route path="/games/zukko"><ProtectedRoute component={ZukkoLevels} /></Route>
       <Route path="/sayohat/admin/savollar"><ProtectedRoute component={SayohatAdminQuestions} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/sayohat/admin"><ProtectedRoute component={SayohatAdmin} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/sayohat/:region"><ProtectedRoute component={SayohatPlay} /></Route>

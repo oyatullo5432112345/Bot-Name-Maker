@@ -72,56 +72,6 @@ export default function GamesPage() {
         </Link>
       </div>
 
-      {/* 1. ZUKKO O'YINI */}
-      <div className="space-y-2">
-        <p className="text-[11px] font-bold text-muted-foreground/70 uppercase tracking-wider">Hamma uchun</p>
-
-        <div className="relative rounded-2xl border border-sky-500/30 bg-gradient-to-r from-sky-950/40 via-indigo-950/40 to-card p-4 sm:p-5 overflow-hidden shadow-md">
-          <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-cyan-500/10 blur-xl pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5 min-w-0">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-500 border border-cyan-300/30 flex items-center justify-center shrink-0 shadow-md">
-                <Gamepad2 className="w-6 h-6 text-white" strokeWidth={2} />
-              </div>
-
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-lg tracking-tight text-white">Zukko</h3>
-                  <div className="flex items-center gap-0.5 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full text-amber-400 text-xs">
-                    <Star className="w-3 h-3 fill-amber-400" />
-                    <Star className="w-3 h-3 fill-amber-400" />
-                    <Star className="w-3 h-3 fill-amber-400" />
-                    <Star className="w-3 h-3 fill-amber-400" />
-                    <Star className="w-3 h-3 text-amber-400/40" />
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-300/90 mt-1 leading-relaxed max-w-sm">
-                  Topishmoq va mantiqiy savollar — bosqichma-bosqich yechib, bilimingizni sinang.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-border/40">
-              <Link href="/games/zukko" className="flex-1 sm:flex-initial">
-                <button className="btn-pulse-blue w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all cursor-pointer">
-                  <span>PLAY</span>
-                  <Play className="w-3.5 h-3.5 fill-white" />
-                </button>
-              </Link>
-
-              <Link href="/games/zukko">
-                <button className="px-3.5 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 hover:bg-amber-500/25 text-amber-300 font-bold text-xs transition-all cursor-pointer flex items-center gap-1">
-                  <span>Bosqichlar</span>
-                  <ArrowRight className="w-3 h-3" />
-                </button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* 2. GURUH O'YINLARI */}
       {isStaff && (
         <div className="space-y-2">

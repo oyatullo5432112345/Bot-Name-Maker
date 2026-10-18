@@ -442,7 +442,7 @@ async function calcBalance(login: string): Promise<number> {
 // GET /api/tanga/game — o'yin holati (balans, binolar, avatar)
 router.get("/tanga/game", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || user["role"] !== "student") { res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return; }
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
   const login = user["login"] as string;
   try {
     const total = await calcBalance(login);
@@ -454,7 +454,8 @@ router.get("/tanga/game", async (req, res): Promise<void> => {
       return { key: b.key, name: b.name, emoji: b.emoji, level: lvl, max: MAX_LEVEL, next_cost: lvl >= MAX_LEVEL ? null : upgradeCost(b.base, lvl) };
     });
     const pr = await query<{ avatar: string }>("SELECT avatar FROM game_player WHERE user_login = $1", [login]);
-    res.json({ total, buildings, avatar: pr[0]?.avatar ?? "bek", avatars: AVATARS });
+    // "Tanga Tizimi" ma'lumotini shu yerга birlashtiramiz: unvon ham qaytadi.
+    res.json({ total, buildings, avatar: pr[0]?.avatar ?? "bek", avatars: AVATARS, unvon: getUnvon(total) });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 });
 
@@ -462,7 +463,7 @@ router.get("/tanga/game", async (req, res): Promise<void> => {
 const UpgradeBody = z.object({ key: z.string() });
 router.post("/tanga/game/upgrade", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || user["role"] !== "student") { res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return; }
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
   const login = user["login"] as string;
   const mid = schoolOf(user);
   const parsed = UpgradeBody.safeParse(req.body);
@@ -492,7 +493,7 @@ router.post("/tanga/game/upgrade", async (req, res): Promise<void> => {
 const AvatarBody = z.object({ avatar: z.string() });
 router.post("/tanga/game/avatar", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || user["role"] !== "student") { res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return; }
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
   const login = user["login"] as string;
   const mid = schoolOf(user);
   const parsed = AvatarBody.safeParse(req.body);

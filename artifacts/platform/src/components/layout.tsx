@@ -274,7 +274,7 @@ function QuickSheet({
     { href: "/baholash", icon: ClipboardList, label: "Baholar", emoji: "📝" },
     { href: "/dars-jadvali", icon: CalendarDays, label: "Jadval", emoji: "📅" },
     { href: "/announcements", icon: Megaphone, label: "E'lonlar", emoji: "📢", badge: unreadCount },
-    { href: "/tanga", icon: Wallet, label: "Tanga 🪙", emoji: "🪙" },
+    { href: "/intellektual", icon: Gamepad2, label: "Intelektual o'yinlar", emoji: "🧠" },
     { href: "/olimpiada", icon: Trophy, label: "Olimpiada", emoji: "🏆" },
   ];
 
@@ -580,7 +580,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         )}
 
         <NavSection label="Boshqa">
-          <NavLink href="/tanga" icon={Wallet} label="Tanga Tizimi 🪙" active={isActive("/tanga")} />
           {!isMudir && (
             <NavLink
               href="/announcements"
