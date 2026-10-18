@@ -460,32 +460,6 @@ function AdminDashboard() {
         ))}
       </div>
 
-      <Card>
-        <CardHeader><CardTitle>Sinflar jadvali</CardTitle></CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Sinf</TableHead>
-                <TableHead className="text-right">O'quvchilar soni</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {stats.students_by_class.map((stat: { class_name: string; count: number | string }, i: number) => (
-                <TableRow key={i}>
-                  <TableCell className="font-medium">{stat.class_name}</TableCell>
-                  <TableCell className="text-right font-bold">{stat.count}</TableCell>
-                </TableRow>
-              ))}
-              {stats.students_by_class.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={2} className="text-center text-muted-foreground py-6">Ma'lumot topilmadi</TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   );
 }
