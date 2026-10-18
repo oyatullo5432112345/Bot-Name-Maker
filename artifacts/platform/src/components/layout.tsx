@@ -556,7 +556,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <NavSection>
           {!isMudir && <NavLink href="/dashboard" icon={LayoutDashboard} label="Bosh sahifa" active={isActive("/dashboard")} />}
           <NavLink href="/monitoring" icon={ClipboardCheck} label="Monitoring" active={isActive("/monitoring")} />
-          {canViewStudents && <NavLink href="/students" icon={GraduationCap} label="O'quvchilar" active={isActive("/students")} />}
+          {/* O'quvchilar ro'yxati — faqat sinf rahbari/boshlang'ich o'qituvchiga. Rahbariyat Sinflar → sinf ichidan topadi. */}
+          {["sinf_rahbari","boshlangich_oqituvchi"].includes(user.role) && <NavLink href="/students" icon={GraduationCap} label="O'quvchilar" active={isActive("/students")} />}
           {canViewClasses && <NavLink href="/classes" icon={School} label="Sinflar" active={isActive("/classes")} />}
           {canViewStaff && <NavLink href="/staff" icon={Users} label="Xodimlar" active={isActive("/staff")} />}
           <NavLink href="/games" icon={Gamepad2} label="O'yinlar" active={isActive("/games")} />

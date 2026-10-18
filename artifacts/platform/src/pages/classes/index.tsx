@@ -132,6 +132,17 @@ export default function ClassesList() {
     })();
   }, [isAdmin, classes]);
 
+  // Ko'p sinfli maktab uchun qulay filtr: bo'lim (boshlang'ich/yuqori) + smena (2 smenali bo'lsa)
+  const [bolimSel, setBolimSel] = useState("all");
+  const [smenaSel, setSmenaSel] = useState("all");
+  const gradeNum = (c: string): number => { const m = c.match(/^\s*(\d{1,2})/); return m ? parseInt(m[1]!, 10) : 999; };
+  const classMatchesFilter = (cls: { id: string; name: string }): boolean => {
+    if (bolimSel === "boshlangich" && !(gradeNum(cls.name) >= 1 && gradeNum(cls.name) <= 4)) return false;
+    if (bolimSel === "yuqori" && gradeNum(cls.name) < 5) return false;
+    if (smenaSel !== "all") { const sm = smenaMap[cls.id]; if (sm != null && sm !== Number(smenaSel)) return false; }
+    return true;
+  };
+
   const cycleSmena = async (clsId: string) => {
     const cur = smenaMap[clsId] ?? null;
     const next = cur === null ? 1 : cur === 1 ? 2 : null; // — → 1 → 2 → —
@@ -308,8 +319,8 @@ export default function ClassesList() {
     }
   };
 
-  const filteredClasses = classes?.filter(c => 
-    c.name.toLowerCase().includes(search.toLowerCase())
+  const filteredClasses = classes?.filter(c =>
+    c.name.toLowerCase().includes(search.toLowerCase()) && classMatchesFilter(c)
   );
 
   const COMMON_SUBJECTS = [
@@ -398,8 +409,8 @@ export default function ClassesList() {
         )}
       </div>
 
-      <div className="flex items-center gap-2 max-w-sm">
-        <div className="relative flex-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[180px] max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Izlash..."
@@ -408,6 +419,28 @@ export default function ClassesList() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        {isAdmin && (
+          <>
+            {isTwoShift && (
+              <Select value={smenaSel} onValueChange={setSmenaSel}>
+                <SelectTrigger className="w-[130px]"><SelectValue placeholder="Smena" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Barcha smena</SelectItem>
+                  <SelectItem value="1">1-smena</SelectItem>
+                  <SelectItem value="2">2-smena</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            <Select value={bolimSel} onValueChange={setBolimSel}>
+              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Bo'lim" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha bo'lim</SelectItem>
+                <SelectItem value="boshlangich">Boshlang'ich (1–4)</SelectItem>
+                <SelectItem value="yuqori">Yuqori (5–11)</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
+        )}
       </div>
 
       <div className="border rounded-md bg-card">
