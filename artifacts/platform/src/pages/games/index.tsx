@@ -1,7 +1,6 @@
 import { Link } from "wouter";
 import { Users, Grid3x3, PlayCircle, Trophy, Zap, Gamepad2, ArrowRight, Play, Star, Compass, Sparkles, Lock } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
-import { isSayohatOpen } from "@/pages/sayohat/sayohatData";
 
 const STAFF_ROLES = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari"];
 
@@ -32,7 +31,6 @@ const gameStyles = `
 export default function GamesPage() {
   const { user } = useAuth();
   const isStaff = !!user && STAFF_ROLES.includes(user.role);
-  const gameOpen = isSayohatOpen(user?.role);
 
   return (
     <div className="space-y-6 max-w-3xl pb-6">
@@ -45,74 +43,33 @@ export default function GamesPage() {
         <p className="text-muted-foreground text-xs mt-0.5 max-w-md">Bilim va zavq bir joyda — o'zingiz yoki sinf bilan birga</p>
       </div>
 
-      {/* 0. BEK VA LOLA: SAYOHAT (yangi) */}
-      <div className="space-y-2">
-        <p className="text-[11px] font-bold text-fuchsia-400/80 uppercase tracking-wider flex items-center gap-1">
-          <Sparkles className="w-3 h-3" /> Yangi — ta'limiy sarguzasht
-        </p>
-
-        <div className="relative rounded-2xl border border-fuchsia-500/30 bg-gradient-to-r from-violet-950/50 via-fuchsia-950/40 to-card p-4 sm:p-5 overflow-hidden shadow-md">
-          <div className="absolute -top-12 -right-8 w-32 h-32 rounded-full bg-fuchsia-500/15 blur-2xl pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5 min-w-0">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-fuchsia-600 via-violet-600 to-purple-500 border border-fuchsia-300/30 flex items-center justify-center shrink-0 shadow-md">
-                <Compass className="w-6 h-6 text-white" strokeWidth={2} />
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-extrabold text-lg tracking-tight text-white">Bek va Lola: Sayohat</h3>
-                <p className="text-xs text-slate-300/90 mt-1 leading-relaxed max-w-sm">
-                  O'zbekiston bo'ylab sayohat qiling — bosh qotirmalarni yeching, esdalik yig'ing va tanga yutib oling!
-                </p>
-              </div>
-            </div>
-
-            <div className="w-full sm:w-auto shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-border/40">
-              {gameOpen ? (
-                <Link href="/sayohat" className="block">
-                  <button className="btn-pulse-rose w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-600 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all cursor-pointer">
-                    <span>SAYOHATNI BOSHLASH</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </Link>
-              ) : (
-                <button disabled className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-secondary text-muted-foreground font-extrabold text-xs cursor-not-allowed opacity-70">
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>TEZ KUNDA</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 0b. MAKTAB OLAMI — kuchaytirish o'yini */}
+      {/* 0. INTELEKTUAL O'YINLAR (yangi) */}
       <div className="space-y-2">
         <p className="text-[11px] font-bold text-amber-400/80 uppercase tracking-wider flex items-center gap-1">
-          <Sparkles className="w-3 h-3" /> Yangi — maktabingni kuchaytir
+          <Sparkles className="w-3 h-3" /> Yangi — aqlni charxla
         </p>
-        <div className="relative rounded-2xl border border-amber-500/30 bg-gradient-to-r from-indigo-950/50 via-violet-950/40 to-card p-4 sm:p-5 overflow-hidden shadow-md">
-          <div className="absolute -top-12 -right-8 w-32 h-32 rounded-full bg-amber-500/15 blur-2xl pointer-events-none" />
-          <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5 min-w-0">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-amber-500 border border-amber-300/30 flex items-center justify-center shrink-0 shadow-md text-2xl">🏰</div>
-              <div className="min-w-0">
-                <h3 className="font-extrabold text-lg tracking-tight text-white">Maktab Olami</h3>
-                <p className="text-xs text-slate-300/90 mt-1 leading-relaxed max-w-sm">
-                  Tangalaringga maktab binolarini — kutubxona, ingliz tili, matematika va o'z qahramoningni kuchaytir!
-                </p>
+
+        <Link href="/intellektual" className="block">
+          <div className="relative rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/60 via-violet-950/50 to-card p-4 sm:p-5 overflow-hidden shadow-md hover:border-indigo-400/50 transition group cursor-pointer">
+            <div className="absolute -top-12 -right-8 w-32 h-32 rounded-full bg-amber-500/15 blur-2xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-amber-500 border border-indigo-300/30 flex items-center justify-center shrink-0 shadow-md text-2xl">🧠</div>
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-lg tracking-tight text-white">Intelektual o'yinlar</h3>
+                  <p className="text-xs text-slate-300/90 mt-1 leading-relaxed max-w-sm">
+                    Maktab Olami, Merge va boshqa aqliy o'yinlar — maktabingni va qahramoningni kuchaytir!
+                  </p>
+                </div>
+              </div>
+              <div className="w-full sm:w-auto shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-border/40">
+                <span className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white font-extrabold text-xs shadow-md group-active:scale-95 transition-all">
+                  OCHISH <ArrowRight className="w-3.5 h-3.5" />
+                </span>
               </div>
             </div>
-            <div className="w-full sm:w-auto shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-border/40">
-              <Link href="/oyin" className="block">
-                <button className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all cursor-pointer">
-                  <span>KUCHAYTIRISHNI BOSHLASH</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </Link>
-            </div>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* 1. ZUKKO O'YINI */}

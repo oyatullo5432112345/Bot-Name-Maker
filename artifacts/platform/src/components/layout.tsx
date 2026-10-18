@@ -12,7 +12,6 @@ import {
   Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace, Monitor, Compass, Building2, Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { isSayohatOpen } from "@/pages/sayohat/sayohatData";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -514,7 +513,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const canUseFaceId = !isMudir && !faceLockedForMgmt && ["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
   const canUseLab = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
   const canSeeLoginIds = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
-  const sayohatOpen = isSayohatOpen(user.role);
   const canManageLibrary = !isMudir && ["admin","kutubxonachi"].includes(user.role);
   const initials = user.full_name?.[0]?.toUpperCase() ?? "U";
   const isDark = theme === "dark";
@@ -562,7 +560,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {canViewClasses && <NavLink href="/classes" icon={School} label="Sinflar" active={isActive("/classes")} />}
           {canViewStaff && <NavLink href="/staff" icon={Users} label="Xodimlar" active={isActive("/staff")} />}
           <NavLink href="/games" icon={Gamepad2} label="O'yinlar" active={isActive("/games")} />
-          <NavLink href="/sayohat" icon={Compass} label={sayohatOpen ? "Sayohat 🧭" : "Sayohat 🔒"} active={isActive("/sayohat")} />
+          <NavLink href="/intellektual" icon={Compass} label="Intelektual o'yinlar" active={isActive("/intellektual")} />
         </NavSection>
 
         {!isMudir && (

@@ -13,7 +13,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { OnboardingTour } from "@/components/onboarding-tour";
-import { isSayohatOpen } from "@/pages/sayohat/sayohatData";
 
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
@@ -305,7 +304,6 @@ export default function Dashboard() {
   const faceIdSub = isClassTeacher
     ? "O'z sinfingiz o'quvchilarini ro'yxatdan o'tkazing"
     : "Kirish-chiqish davomati va hisobotlar";
-  const gameOpen = isSayohatOpen(user.role);
 
   const motivation = UZ_MOTIVATIONAL[new Date().getDate() % UZ_MOTIVATIONAL.length]!;
 
@@ -356,36 +354,18 @@ export default function Dashboard() {
           </Link>
         )}
 
-        {gameOpen ? (
-          <Link href="/sayohat" className={canUseFaceId ? "" : "sm:col-span-2"}>
-            <div className="h-full rounded-2xl border border-fuchsia-500/30 bg-gradient-to-br from-violet-950/40 via-fuchsia-950/30 to-card p-4 cursor-pointer hover:scale-[1.01] transition-transform shadow-md">
-              <div className="flex items-center gap-3.5">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-fuchsia-500 to-violet-600 flex items-center justify-center shrink-0 shadow">
-                  <Compass className="w-6 h-6 text-white" strokeWidth={2} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-extrabold text-base text-foreground">Bek va Lola: Sayohat</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-snug">O'zbekiston bo'ylab ta'limiy sayohat o'yini</p>
-                </div>
-                <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
-              </div>
-            </div>
-          </Link>
-        ) : (
-          <div className={`h-full rounded-2xl border border-fuchsia-500/20 bg-gradient-to-br from-violet-950/20 via-fuchsia-950/15 to-card p-4 shadow-md opacity-80 ${canUseFaceId ? "" : "sm:col-span-2"}`}>
+        <Link href="/intellektual" className={canUseFaceId ? "" : "sm:col-span-2"}>
+          <div className="h-full rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 via-violet-950/30 to-card p-4 cursor-pointer hover:scale-[1.01] transition-transform shadow-md">
             <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-fuchsia-500/70 to-violet-600/70 flex items-center justify-center shrink-0 shadow">
-                <Compass className="w-6 h-6 text-white" strokeWidth={2} />
-              </div>
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 via-violet-600 to-amber-500 flex items-center justify-center shrink-0 shadow text-2xl">🧠</div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-extrabold text-base text-foreground">Bek va Lola: Sayohat</h3>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-snug flex items-center gap-1">
-                  <Lock className="w-3 h-3" /> Tez kunda ochiladi
-                </p>
+                <h3 className="font-extrabold text-base text-foreground">Intelektual o'yinlar</h3>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">Maktab Olami, Merge — aqlni charxla, kuchaytir</p>
               </div>
+              <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
             </div>
           </div>
-        )}
+        </Link>
       </div>
 
       <OlimpiyadaBanner />

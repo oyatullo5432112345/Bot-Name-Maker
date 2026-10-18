@@ -36,7 +36,7 @@ function getSteps(role: string): Step[] {
       { icon: Sparkles, title: "Xush kelibsiz!", text: "Platformaga xush kelibsiz! Bu yerda nima borligini qisqa ko'rsataman.", color: "#DB2777", accent: "#F472B6" },
       { icon: ClipboardList, title: "Baholar va jadval", text: "Baholaringiz, dars jadvalingiz va sinf ma'lumotlaringiz bosh sahifada.", color: "#2563EB", accent: "#60A5FA" },
       { icon: Wallet, title: "Tanga tizimi", text: "Yaxshi baho va faollik uchun tanga yig'asiz, unvonlar va mukofotlar ochasiz.", color: "#D97706", accent: "#FBBF24" },
-      { icon: Compass, title: "Bek va Lola: Sayohat", text: "O'zbekiston bo'ylab sayohat qiling, bosh qotirmalarni yeching, esdalik va tanga yutib oling!", color: "#7C3AED", accent: "#C084FC", cta: { label: "O'yinni boshlash", href: "/sayohat" } },
+      { icon: Compass, title: "Intelektual o'yinlar", text: "Maktab Olami va Merge — aqlingni charxla, tangalaringga maktabingni va qahramoningni kuchaytir!", color: "#7C3AED", accent: "#C084FC", cta: { label: "O'ynashni boshlash", href: "/intellektual" } },
     ];
   }
   if (role === "teacher") {
@@ -51,7 +51,7 @@ function getSteps(role: string): Step[] {
       { icon: Sparkles, title: "Xush kelibsiz!", text: "Rahbariyat paneliga xush kelibsiz. Asosiy bo'limlarni ko'rsataman.", color: "#7C3AED", accent: "#A78BFA" },
       { icon: Users, title: "Boshqaruv", text: "O'quvchilar, sinflar va xodimlarni menyudagi tegishli bo'limlardan boshqarasiz.", color: "#2563EB", accent: "#60A5FA" },
       { icon: ScanFace, title: "Face ID davomat", text: "Kirish eshigidagi kiosk, sinflarni ro'yxatga olish va davomat hisobotlari shu bo'limda.", color: "#0891B2", accent: "#22D3EE", cta: { label: "Face ID bo'limi", href: "/faceid" } },
-      { icon: Gamepad2, title: "O'yinlar", text: "O'quvchilar uchun «Bek va Lola: Sayohat» va boshqa interaktiv o'yinlar.", color: "#DB2777", accent: "#C084FC", cta: { label: "O'yinlarni ko'rish", href: "/games" } },
+      { icon: Gamepad2, title: "O'yinlar", text: "O'quvchilar uchun «Intelektual o'yinlar» (Maktab Olami, Merge) va boshqa interaktiv o'yinlar.", color: "#DB2777", accent: "#C084FC", cta: { label: "O'yinlarni ko'rish", href: "/games" } },
     ];
   }
   // boshqa rollar uchun qisqa
