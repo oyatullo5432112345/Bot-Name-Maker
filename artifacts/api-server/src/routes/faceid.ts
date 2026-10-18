@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS face_settings (
   data       JSONB NOT NULL DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Har maktab o'z sozlamasini (tugash vaqti va h.k.) belgilaydi; 2 smenali maktabda
+-- har smenaga alohida. smena = 0 → maktabning umumiy (1 smenali yoki standart) sozlamasi.
+CREATE TABLE IF NOT EXISTS face_settings_school (
+  maktab_id  INTEGER  NOT NULL,
+  smena      SMALLINT NOT NULL DEFAULT 0,
+  data       JSONB    NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (maktab_id, smena)
+);
 -- "Muntazam kelmaydigan" o'quvchilar — doimiy belgi (yil oxirigacha).
 CREATE TABLE IF NOT EXISTS face_chronic (
   student_login TEXT PRIMARY KEY,
@@ -109,9 +118,30 @@ const DEFAULT_SETTINGS: FaceSettings = {
   open_from: "06:00", close_after: "14:30", late_until: "10:00", quarter_start: "", quarter_end: "", hour_limit: 36,
 };
 
-async function getSettings(): Promise<FaceSettings> {
-  const row = await queryOne<{ data: Partial<FaceSettings> }>("SELECT data FROM face_settings WHERE id = 1").catch(() => null);
-  return { ...DEFAULT_SETTINGS, ...(row?.data ?? {}) };
+// Sozlamalar: DEFAULT → global(id=1) → maktab(smena=0) → maktab(smena).
+// maktabId berilmasa — faqat global (orqaga mos: eski chaqiruvlar o'zgarmaydi).
+async function getSettings(maktabId?: number | null, smena = 0): Promise<FaceSettings> {
+  const base = await queryOne<{ data: Partial<FaceSettings> }>("SELECT data FROM face_settings WHERE id = 1").catch(() => null);
+  let merged: FaceSettings = { ...DEFAULT_SETTINGS, ...(base?.data ?? {}) };
+  if (maktabId != null) {
+    const sch0 = await queryOne<{ data: Partial<FaceSettings> }>(
+      "SELECT data FROM face_settings_school WHERE maktab_id = $1 AND smena = 0", [maktabId]).catch(() => null);
+    if (sch0?.data) merged = { ...merged, ...sch0.data };
+    if (smena && smena > 0) {
+      const schS = await queryOne<{ data: Partial<FaceSettings> }>(
+        "SELECT data FROM face_settings_school WHERE maktab_id = $1 AND smena = $2", [maktabId, smena]).catch(() => null);
+      if (schS?.data) merged = { ...merged, ...schS.data };
+    }
+  }
+  return merged;
+}
+
+/** Sinfning smenasi (2 smenali maktab uchun) — 1 yoki 2, topilmasa/1 smenali bo'lsa 0. */
+async function classSmena(className: string, maktabId: number | null): Promise<number> {
+  if (maktabId == null || !className) return 0;
+  const r = await queryOne<{ smena: number | null }>(
+    "SELECT smena FROM classes WHERE name = $1 AND maktab_id = $2", [className, maktabId]).catch(() => null);
+  return (r?.smena === 1 || r?.smena === 2) ? r.smena : 0;
 }
 
 // ─── Yordamchilar ───────────────────────────────────────────────────────────
@@ -199,7 +229,7 @@ router.get("/faceid/overview", async (req, res): Promise<void> => {
   try {
     const today = uzDateStr();
     const [settings, classes, recent, totals] = await Promise.all([
-      getSettings(),
+      getSettings(mid),
       mid !== null
         ? query<{ class_name: string; total: number; enrolled: number; arrived: number; late: number; left: number; early: number }>(
             `SELECT u.class_name,
@@ -318,16 +348,22 @@ router.get("/faceid/overview", async (req, res): Promise<void> => {
   }
 });
 
-// GET/POST /api/faceid/settings
+// GET/POST /api/faceid/settings  (?smena=1|2 — 2 smenali maktabda har smenaga alohida)
 router.get("/faceid/settings", async (req, res): Promise<void> => {
-  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
-  res.json(await getSettings());
+  const u = authAs(req, MANAGE);
+  if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(u);
+  const smena = Number(req.query.smena) === 1 || Number(req.query.smena) === 2 ? Number(req.query.smena) : 0;
+  res.json(await getSettings(mid, smena));
 });
 
 router.post("/faceid/settings", async (req, res): Promise<void> => {
-  if (!authAs(req, MANAGE)) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
-  const b = req.body as Partial<FaceSettings>;
-  const cur = await getSettings();
+  const u = authAs(req, MANAGE);
+  if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(u);
+  const b = req.body as Partial<FaceSettings> & { smena?: number };
+  const smena = Number(b.smena) === 1 || Number(b.smena) === 2 ? Number(b.smena) : 0;
+  const cur = await getSettings(mid, smena);
   const next: FaceSettings = {
     late_after: typeof b.late_after === "string" && /^\d{2}:\d{2}$/.test(b.late_after) ? b.late_after : cur.late_after,
     notify: typeof b.notify === "boolean" ? b.notify : cur.notify,
@@ -342,11 +378,21 @@ router.post("/faceid/settings", async (req, res): Promise<void> => {
     quarter_end: typeof b.quarter_end === "string" && (/^\d{4}-\d{2}-\d{2}$/.test(b.quarter_end) || b.quarter_end === "") ? b.quarter_end : cur.quarter_end,
     hour_limit: typeof b.hour_limit === "number" && b.hour_limit >= 1 && b.hour_limit <= 500 ? Math.round(b.hour_limit) : cur.hour_limit,
   };
-  await query(
-    `INSERT INTO face_settings (id, data, updated_at) VALUES (1, $1, NOW())
-     ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
-    [JSON.stringify(next)]
-  );
+  if (mid == null) {
+    // Super-admin — global standart (barcha maktablar uchun asos)
+    await query(
+      `INSERT INTO face_settings (id, data, updated_at) VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+      [JSON.stringify(next)]
+    );
+  } else {
+    // Maktab rahbariyati — o'z maktabi (va smenasi) uchun
+    await query(
+      `INSERT INTO face_settings_school (maktab_id, smena, data, updated_at) VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (maktab_id, smena) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+      [mid, smena, JSON.stringify(next)]
+    );
+  }
   res.json(next);
 });
 
@@ -670,7 +716,7 @@ router.get("/faceid/descriptors", async (req, res): Promise<void> => {
           WHERE fp.consent AND (u.login IS NOT NULL OR s.login IS NOT NULL)`,
         [today]
       );
-  const [settings, starts] = await Promise.all([getSettings(), classStarts()]);
+  const [settings, starts] = await Promise.all([getSettings(mid), classStarts()]);
   res.setHeader("Cache-Control", "no-store");
   res.json({ date: today, now: Date.now(), settings, starts, people: rows });
 });
@@ -818,7 +864,9 @@ async function handleScan(
 
   const today = uzDateStr();
   const time = uzTime();
-  const settings = await getSettings();
+  // Shu o'quvchi/sinf qaysi smenada — shunga qarab maktabning (va smenaning) sozlamasi olinadi.
+  const smena = await classSmena(st.class_name, mid);
+  const settings = await getSettings(mid, smena);
   // Kamera istalgan vaqt ishlaydi (sinov uchun), lekin xabarlar faqat faol oynada ketadi.
   const canMsg = messagingAllowed(settings);
   const row = await queryOne<{ arrived: string | null; arrived_ms: number | null; left: string | null; left_ms: number | null; status: string }>(
@@ -831,7 +879,9 @@ async function handleScan(
     [login, today]
   );
   const base = { name: st.full_name, class_name: st.class_name };
-  const minStayMs = settings.min_stay * 60_000;
+  // "Keldidan keyin 10/20 daqiqa" (min_stay) mantig'i olib tashlandi. O'rniga faqat
+  // tasodifiy darhol qayta skanni "ketdi" deb hisoblamaslik uchun qisqa (1 daqiqa) himoya.
+  const RESCAN_GUARD_MS = 60_000;
 
   // ── Qaror: keldi yoki ketdi
   let action: "in" | "out";
@@ -845,7 +895,7 @@ async function handleScan(
     action = "in";
   } else if (row.left) {
     return { ...base, event: "already_out", time: row.left };
-  } else if (row.arrived_ms && Date.now() - row.arrived_ms < minStayMs) {
+  } else if (row.arrived_ms && Date.now() - row.arrived_ms < RESCAN_GUARD_MS) {
     return { ...base, event: "already_in", time: row.arrived, status: row.status };
   } else {
     action = "out";
@@ -994,7 +1044,7 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
   const excuseReason = String(reason ?? "").trim().slice(0, 300);
 
   const today = uzDateStr();
-  const settings = await getSettings();
+  const settings = await getSettings(mid);
   const t = typeof time === "string" && /^\d{2}:\d{2}$/.test(time) ? time : null;
   const ts = t ? `${today}T${t}:00+05:00` : null; // O'zbekiston = UTC+5
   const shownTime = t ?? uzTime();
@@ -1603,7 +1653,7 @@ interface ArchiveData {
 
 /** Arxiv uchun ma'lumotlarni yig'adi (bitta sana bo'yicha, butun maktab). */
 async function collectArchive(date: string, mid: number): Promise<ArchiveData> {
-  const settings = await getSettings();
+  const settings = await getSettings(mid);
   const quarterStart = autoQuarterStart(date, settings.quarter_start);
 
   const counts = await queryOne<{ total: number; arrived: number; excused_absent: number; left_early: number; excused_out: number }>(
@@ -1819,7 +1869,7 @@ async function quarterOffenders(mid: number, quarterStart: string, quarterEnd: s
 }
 
 export async function checkHourLimits(mid: number): Promise<{ newly: number }> {
-  const settings = await getSettings();
+  const settings = await getSettings(mid);
   const today = uzDateStr();
   const quarterStart = autoQuarterStart(today, settings.quarter_start);
   const quarterEnd = /^\d{4}-\d{2}-\d{2}$/.test(settings.quarter_end) && settings.quarter_end < today ? settings.quarter_end : today;

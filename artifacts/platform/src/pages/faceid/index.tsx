@@ -18,7 +18,7 @@ import { api } from "@/lib/face";
 interface Overview {
   date: string;
   time: string;
-  settings: { late_after: string; notify: boolean; threshold: number; min_stay: number; default_end: string; quarter_start?: string; quarter_end?: string; hour_limit?: number };
+  settings: { late_after: string; notify: boolean; threshold: number; min_stay: number; default_end: string; open_from?: string; close_after?: string; quarter_start?: string; quarter_end?: string; hour_limit?: number };
   students: number;
   enrolled: number;
   arrived: number;
@@ -66,32 +66,58 @@ export default function FaceIdPage() {
   const [lateAfter, setLateAfter] = useState("08:00");
   const [notify, setNotify] = useState(true);
   const [threshold, setThreshold] = useState("0.48");
-  const [minStay, setMinStay] = useState("20");
   const [defaultEnd, setDefaultEnd] = useState("13:30");
+  const [openFrom, setOpenFrom] = useState("06:00");
+  const [closeAfter, setCloseAfter] = useState("14:30");
   const [quarterStart, setQuarterStart] = useState("");
   const [quarterEnd, setQuarterEnd] = useState("");
   const [hourLimit, setHourLimit] = useState("36");
+  // 2 smenali maktab — har smenaga alohida sozlama
+  const [isTwoShift, setIsTwoShift] = useState(false);
+  const [smenaSel, setSmenaSel] = useState<"1" | "2">("1");
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [summing, setSumming] = useState(false);
   const [resetting, setResetting] = useState(false);
 
+  // Maktab 2 smenali bo'lsa — smena tanlagich ko'rinadi (faqat shunda)
   useEffect(() => {
-    if (!ov.data) return;
-    setLateAfter(ov.data.settings.late_after);
-    setNotify(ov.data.settings.notify);
-    setThreshold(String(ov.data.settings.threshold));
-    setMinStay(String(ov.data.settings.min_stay ?? 20));
-    setDefaultEnd(ov.data.settings.default_end ?? "13:30");
-    setQuarterStart(ov.data.settings.quarter_start ?? "");
-    setQuarterEnd(ov.data.settings.quarter_end ?? "");
-    setHourLimit(String(ov.data.settings.hour_limit ?? 36));
-  }, [ov.data?.settings.late_after, ov.data?.settings.notify, ov.data?.settings.threshold, ov.data?.settings.min_stay, ov.data?.settings.default_end, ov.data?.settings.quarter_start, ov.data?.settings.quarter_end, ov.data?.settings.hour_limit]); // eslint-disable-line react-hooks/exhaustive-deps
+    void (async () => {
+      try {
+        const mine = await api<{ ikki_smena?: boolean }>("/maktablar/mine");
+        setIsTwoShift(!!mine.ikki_smena);
+      } catch { /* 1 smenali / super-admin — jim o'tadi */ }
+    })();
+  }, []);
+
+  const applySettings = (s: Overview["settings"]) => {
+    setLateAfter(s.late_after);
+    setNotify(s.notify);
+    setThreshold(String(s.threshold));
+    setDefaultEnd(s.default_end ?? "13:30");
+    setOpenFrom(s.open_from ?? "06:00");
+    setCloseAfter(s.close_after ?? "14:30");
+    setQuarterStart(s.quarter_start ?? "");
+    setQuarterEnd(s.quarter_end ?? "");
+    setHourLimit(String(s.hour_limit ?? 36));
+  };
+
+  // Sozlamani maktab (va smena) bo'yicha yuklash — smena almashganda qayta yuklanadi
+  useEffect(() => {
+    const smena = isTwoShift ? Number(smenaSel) : 0;
+    void (async () => {
+      try {
+        const s = await api<Overview["settings"]>(`/faceid/settings?smena=${smena}`);
+        applySettings(s);
+      } catch { /* ignore */ }
+    })();
+  }, [isTwoShift, smenaSel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveSettings = async () => {
     setSaving(true);
     try {
-      await api("/faceid/settings", { method: "POST", body: JSON.stringify({ late_after: lateAfter, notify, threshold: Number(threshold), min_stay: Number(minStay), default_end: defaultEnd, quarter_start: quarterStart, quarter_end: quarterEnd, hour_limit: Number(hourLimit) }) });
+      const smena = isTwoShift ? Number(smenaSel) : 0;
+      await api("/faceid/settings", { method: "POST", body: JSON.stringify({ smena, late_after: lateAfter, notify, threshold: Number(threshold), default_end: defaultEnd, open_from: openFrom, close_after: closeAfter, quarter_start: quarterStart, quarter_end: quarterEnd, hour_limit: Number(hourLimit) }) });
       toast({ title: "✅ Sozlamalar saqlandi" });
       void qc.invalidateQueries({ queryKey: ["faceid-overview"] });
     } catch (e) {
@@ -255,20 +281,26 @@ export default function FaceIdPage() {
 
           <div className="grid lg:grid-cols-2 gap-4">
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Settings2 className="w-4 h-4" />Sozlamalar</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Settings2 className="w-4 h-4" />Sozlamalar{isTwoShift && <span className="text-xs font-normal text-muted-foreground">({smenaSel}-smena)</span>}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
+                {isTwoShift && (
+                  <div className="flex items-center gap-2 rounded-lg bg-muted/40 p-1.5">
+                    <span className="text-xs text-muted-foreground px-1">Smena:</span>
+                    {(["1", "2"] as const).map((s) => (
+                      <Button key={s} size="sm" variant={smenaSel === s ? "default" : "ghost"} className="h-7 px-3 text-xs" onClick={() => setSmenaSel(s)}>{s}-smena</Button>
+                    ))}
+                    <span className="text-xs text-muted-foreground ml-auto pr-1">har smenaga alohida vaqt</span>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3 items-center">
                   <label className="text-sm">Kech qolish vaqti</label>
                   <Input type="time" value={lateAfter} onChange={(e) => setLateAfter(e.target.value)} />
                   <label className="text-sm">Darslar tugashi (standart)<br /><span className="text-xs text-muted-foreground">jadval yo'q bo'lsa; shundan oldin ketsa "erta"</span></label>
                   <Input type="time" value={defaultEnd} onChange={(e) => setDefaultEnd(e.target.value)} />
-                  <label className="text-sm">Ketish hisoblanadi (kelgandan keyin)</label>
-                  <Select value={minStay} onValueChange={setMinStay}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {[10, 20, 30, 60, 120].map((m) => <SelectItem key={m} value={String(m)}>{m} daqiqadan keyin</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <label className="text-sm">Face ID ochilishi<br /><span className="text-xs text-muted-foreground">shu vaqtdan kamera ishlaydi</span></label>
+                  <Input type="time" value={openFrom} onChange={(e) => setOpenFrom(e.target.value)} />
+                  <label className="text-sm">Face ID yopilishi (tugash)<br /><span className="text-xs text-muted-foreground">shu vaqtdan keyin kun yakunlanadi</span></label>
+                  <Input type="time" value={closeAfter} onChange={(e) => setCloseAfter(e.target.value)} />
                   <label className="text-sm">Tanish aniqligi</label>
                   <Select value={threshold} onValueChange={setThreshold}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
