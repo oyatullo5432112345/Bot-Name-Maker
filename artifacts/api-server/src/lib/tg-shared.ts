@@ -222,6 +222,81 @@ export async function sendDocumentToChat(
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  QO'LDA TUZATISH — XABARNI ALMASHTIRISH
+//  Har o'quvchi/sana/chat/kind bo'yicha oxirgi yuborilган xabar id si saqlanadi.
+//  Qayta (tuzatib) yuborilganда — oldingi xabar o'chiriladi (bot o'chira olmasa — tahrirlanadi),
+//  so'ng yangisi yuboriladi. Shunда guruhда va o'quvchi chatiда ikki qarama-qarshi xabar qolmaydi.
+// ─────────────────────────────────────────────────────────────────────────────
+void query(`CREATE TABLE IF NOT EXISTS fc_messages (
+  student_login TEXT NOT NULL,
+  date          DATE NOT NULL,
+  chat_id       BIGINT NOT NULL,
+  kind          TEXT NOT NULL,
+  message_id    BIGINT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (student_login, date, chat_id, kind)
+);`).catch(() => { /* migratsiya keyin yaratadi */ });
+
+export async function sendTrackedMessage(
+  chatId: number,
+  html: string,
+  track: { login: string; date: string; kind: string }
+): Promise<boolean> {
+  if (!tgApi) return false;
+  // 1) Oldingi xabar bo'lsa — o'chiramiz (bo'lmasa tahrir qilamiz)
+  let editedInPlace = false;
+  try {
+    const prev = await queryOne<{ message_id: string }>(
+      "SELECT message_id FROM fc_messages WHERE student_login = $1 AND date = $2::date AND chat_id = $3 AND kind = $4",
+      [track.login, track.date, chatId, track.kind]
+    );
+    if (prev?.message_id) {
+      const mid = Number(prev.message_id);
+      const deleted = await tgApi.deleteMessage(chatId, mid).then(() => true).catch(() => false);
+      if (!deleted) {
+        editedInPlace = await tgApi.editMessageText(chatId, mid, html, {
+          parse_mode: "HTML", link_preview_options: { is_disabled: true },
+        }).then(() => true).catch(() => false);
+      }
+    }
+  } catch { /* e'tiborsiz */ }
+
+  if (editedInPlace) return true; // eski xabar yangisiga tahrirlandi; id o'zgarmaydi
+
+  // 2) Yangi xabar yuboramiz va id ni saqlaymiz
+  try {
+    const msg = await tgApi.sendMessage(chatId, html, {
+      parse_mode: "HTML", link_preview_options: { is_disabled: true },
+    });
+    await query(
+      `INSERT INTO fc_messages (student_login, date, chat_id, kind, message_id)
+       VALUES ($1, $2::date, $3, $4, $5)
+       ON CONFLICT (student_login, date, chat_id, kind) DO UPDATE SET message_id = $5, created_at = NOW()`,
+      [track.login, track.date, chatId, track.kind, msg.message_id]
+    ).catch(() => {});
+    return true;
+  } catch (err) {
+    await handleSendError(chatId, err);
+    return false;
+  }
+}
+
+/** "Tozalash" (checkin o'chirilганда) — o'quvchining shu kungi barcha kuzatilган xabarlarini o'chiradi. */
+export async function clearTrackedMessages(login: string, date: string): Promise<void> {
+  if (!tgApi) return;
+  try {
+    const rows = await query<{ chat_id: string; message_id: string }>(
+      "SELECT chat_id, message_id FROM fc_messages WHERE student_login = $1 AND date = $2::date",
+      [login, date]
+    );
+    for (const r of rows) {
+      await tgApi.deleteMessage(Number(r.chat_id), Number(r.message_id)).catch(() => { /* eskirgan bo'lishi mumkin */ });
+    }
+    await query("DELETE FROM fc_messages WHERE student_login = $1 AND date = $2::date", [login, date]).catch(() => {});
+  } catch { /* e'tiborsiz */ }
+}
+
 /** Faqat bir marta bajariladigan ish (kun/hafta kaliti bilan). true → hozir bajarish kerak. */
 export async function claimJob(jobKey: string): Promise<boolean> {
   try {

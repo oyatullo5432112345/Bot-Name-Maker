@@ -17,7 +17,7 @@ import { logger } from "../lib/logger.js";
 import { getAuthUser, schoolOf } from "./auth.js";
 import { schoolActive } from "./maktablar.js";
 import { notifyUser } from "../lib/notify.js";
-import { isRealTelegramId, uzDateStr, uzHourMin, uzDay, sendToChat, sendDocumentToChat, esc, PERIOD_TIMES, getClassChats, getChatsByPurpose, sleep } from "../lib/tg-shared.js";
+import { isRealTelegramId, uzDateStr, uzHourMin, uzDay, sendToChat, sendDocumentToChat, esc, PERIOD_TIMES, getClassChats, getChatsByPurpose, sleep, sendTrackedMessage, clearTrackedMessages } from "../lib/tg-shared.js";
 
 const router: IRouter = Router();
 
@@ -170,7 +170,7 @@ function canTouchClass(u: AuthUser, className: string): boolean {
 // (login baribir ID bilan; bu faqat eshikdagi davomat — keldi/ketdi uchun)
 const STAFF_GROUP = "Xodimlar";
 
-interface FacePerson { full_name: string; class_name: string; telegram_id: number | null; kind: "student" | "staff" }
+interface FacePerson { login: string; full_name: string; class_name: string; telegram_id: number | null; kind: "student" | "staff" }
 
 /** Loginni avval o'quvchilardan (users), keyin xodimlardan (staff) qidiradi */
 async function findPerson(login: string): Promise<FacePerson | null> {
@@ -178,12 +178,12 @@ async function findPerson(login: string): Promise<FacePerson | null> {
     "SELECT full_name, class_name, telegram_id FROM users WHERE login = $1",
     [login]
   );
-  if (u) return { full_name: u.full_name, class_name: u.class_name, telegram_id: u.telegram_id, kind: "student" };
+  if (u) return { login, full_name: u.full_name, class_name: u.class_name, telegram_id: u.telegram_id, kind: "student" };
   const s = await queryOne<{ full_name: string; telegram_id: number | null }>(
     "SELECT full_name, telegram_id FROM staff WHERE login = $1",
     [login]
   );
-  if (s) return { full_name: s.full_name, class_name: STAFF_GROUP, telegram_id: s.telegram_id, kind: "staff" };
+  if (s) return { login, full_name: s.full_name, class_name: STAFF_GROUP, telegram_id: s.telegram_id, kind: "staff" };
   return null;
 }
 
@@ -745,8 +745,10 @@ async function postClassGroup(
   const text = (kind === "in"
     ? `${flags.late ? "⏰" : "✅"} <b>${esc(st.full_name)}</b> maktabga keldi — <b>${time}</b>${flags.late ? " (kech qoldi)" : ""}`
     : `🏠 <b>${esc(st.full_name)}</b> maktabdan ketdi — <b>${time}</b>${flags.excused ? " (ruxsat bilan)" : flags.early ? " (erta)" : ""}`) + manualNote;
+  const today = uzDateStr();
   for (const ch of chats) {
-    await sendToChat(ch.chat_id, text);
+    // Qo'lda tuzatilsa — shu o'quvchining shu kungi "kirish/chiqish" xabari almashadi (eski o'chadi/tahrirlanadi)
+    await sendTrackedMessage(ch.chat_id, text, { login: st.login, date: today, kind });
     await sleep(50);
   }
 }
@@ -772,8 +774,9 @@ async function postClassGroupExcused(
     `📝 <b>${esc(st.full_name)}</b> bugun maktabga kela olmaydi (sababli)` +
     (reason ? `\n📌 Sabab: ${esc(reason)}` : "") +
     `\n👤 Belgiladi: ${esc(by)} · ${uzTime()}`;
+  const today = uzDateStr();
   for (const ch of chats) {
-    await sendToChat(ch.chat_id, text);
+    await sendTrackedMessage(ch.chat_id, text, { login: st.login, date: today, kind: "excused" });
     await sleep(50);
   }
 }
@@ -796,8 +799,9 @@ async function postClassGroupClub(
   const text =
     `🎨 <b>${esc(st.full_name)}</b> bugun maktab to'garig'ida qoldi` +
     `\n👤 Belgiladi: ${esc(by)} · ${uzTime()}`;
+  const today = uzDateStr();
   for (const ch of chats) {
-    await sendToChat(ch.chat_id, text);
+    await sendTrackedMessage(ch.chat_id, text, { login: st.login, date: today, kind: "club" });
     await sleep(50);
   }
 }
@@ -873,12 +877,10 @@ async function handleScan(
     }
 
     if (canMsg && settings.notify && isRealTelegramId(st.telegram_id)) {
-      void notifyUser(
-        st.telegram_id,
-        status === "late"
-          ? `⏰ Maktabga keldingiz: ${time} (kechikish — dars ${startsAt} da boshlanadi)`
-          : `✅ Maktabga keldingiz: ${time}. Xayrli kun!`
-      );
+      const pText = status === "late"
+        ? `⏰ Maktabga keldingiz: ${time} (kechikish — dars ${startsAt} da boshlanadi)`
+        : `✅ Maktabga keldingiz: ${time}. Xayrli kun!`;
+      void sendTrackedMessage(st.telegram_id!, pText, { login: st.login, date: today, kind: "in" });
     }
     if (canMsg && settings.notify_group) void postClassGroup(st, mid, "in", time, { late: status === "late" });
     return { ...base, event: "in", time, status };
@@ -902,7 +904,7 @@ async function handleScan(
   }
 
   if (canMsg && settings.notify && isRealTelegramId(st.telegram_id)) {
-    void notifyUser(st.telegram_id, `🏠 Maktabdan chiqdingiz: ${time}${early ? ` (darslar ${end} da tugaydi)` : ""}. Yaxshi dam oling!`);
+    void sendTrackedMessage(st.telegram_id!, `🏠 Maktabdan chiqdingiz: ${time}${early ? ` (darslar ${end} da tugaydi)` : ""}. Yaxshi dam oling!`, { login: st.login, date: today, kind: "out" });
   }
   if (canMsg && settings.notify_group) void postClassGroup(st, mid, "out", time, { early });
   return { ...base, event: "out", time, early, arrived: row?.arrived ?? null, lessons_end: end };
@@ -999,6 +1001,9 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
 
   if (action === "clear") {
     await query("DELETE FROM face_checkins WHERE student_login = $1 AND date = $2::date", [student_login, today]);
+    // Belgi bekor qilinsa — shu o'quvchining shu kungi barcha yuborilgan xabarlari
+    // (guruhdagi va o'zining chatidagi) ham o'chiriladi.
+    void clearTrackedMessages(student_login, today);
     res.json({ ok: true });
     return;
   }
@@ -1062,7 +1067,16 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
          checked_at = COALESCE($5::timestamptz, NOW()), status = $6, student_name = EXCLUDED.student_name`,
       [student_login, person.full_name, person.class_name, today, ts, status, mid ?? 3]
     );
-    if (messagingAllowed(settings) && settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "in", shownTime, { late: status === "late", manualBy: byName });
+    if (messagingAllowed(settings) && person.kind === "student") {
+      if (settings.notify_group) void postClassGroup(person, mid, "in", shownTime, { late: status === "late", manualBy: byName });
+      // O'quvchining o'z chatidagi xabar ham almashadi (eski "keldi/ketdi" o'chadi/tahrirlanadi)
+      if (settings.notify && isRealTelegramId(person.telegram_id)) {
+        const pText = status === "late"
+          ? `⏰ Maktabga keldingiz: ${shownTime} (kechikish)`
+          : `✅ Maktabga keldingiz: ${shownTime}. Xayrli kun!`;
+        void sendTrackedMessage(person.telegram_id!, pText, { login: student_login, date: today, kind: "in" });
+      }
+    }
     res.json({ ok: true, status });
     return;
   }
@@ -1078,7 +1092,17 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
        left_at = COALESCE($5::timestamptz, NOW()), left_early = $6, excused = $7`,
     [student_login, person.full_name, person.class_name, today, ts, early, excused, mid ?? 3]
   );
-  if (messagingAllowed(settings) && settings.notify_group && person.kind === "student") void postClassGroup(person, mid, "out", shownTime, { early, excused, manualBy: byName });
+  if (messagingAllowed(settings) && person.kind === "student") {
+    if (settings.notify_group) void postClassGroup(person, mid, "out", shownTime, { early, excused, manualBy: byName });
+    // O'quvchining o'z chatidagi "ketish" xabari ham almashadi (eski o'chadi/tahrirlanadi)
+    if (settings.notify && isRealTelegramId(person.telegram_id)) {
+      void sendTrackedMessage(
+        person.telegram_id!,
+        `🏠 Maktabdan chiqdingiz: ${shownTime}${excused ? " (ruxsat bilan)" : early ? ` (darslar ${end} da tugaydi)` : ""}. Yaxshi dam oling!`,
+        { login: student_login, date: today, kind: "out" }
+      );
+    }
+  }
   res.json({ ok: true, early, excused, lessons_end: end });
 });
 
