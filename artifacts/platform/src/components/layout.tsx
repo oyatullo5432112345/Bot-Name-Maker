@@ -506,11 +506,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const faceLockedForMgmt = subExpired;           // rahbariyatga faqat Face ID yopiladi
 
   const isMudir = user.role === "mudir";
-  const canViewStaff = !isMudir && ["admin","director","zam_direktor","zavuch"].includes(user.role);
-  const canViewClasses = !isMudir && ["admin","director","zam_direktor","zavuch"].includes(user.role);
-  const canViewStudents = !isMudir && ["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
+  // Super-admin: Sinflar/Xodimlar/Face ID faqat biror maktab tanlab ICHIGA kirganда ko'rinadi.
+  // Maktab "Tuman boshqaruvi → Maktablar" dan tanlanadi (yoki yuqoridagi almashtirgichdan).
+  const isAdminRole = user.role === "admin";
+  const adminInSchool = isAdminRole && currentViewMaktab() !== "";
+  const mgmtSchoolRoles = ["director","zam_direktor","zavuch"];
+  const canViewStaff = !isMudir && (mgmtSchoolRoles.includes(user.role) || adminInSchool);
+  const canViewClasses = !isMudir && (mgmtSchoolRoles.includes(user.role) || adminInSchool);
+  const canViewStudents = !isMudir && ["sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
   const canViewDavomat = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
-  const canUseFaceId = !isMudir && !faceLockedForMgmt && ["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
+  const canUseFaceId = !isMudir && !faceLockedForMgmt && (["director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role) || adminInSchool);
   const canUseLab = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
   const canSeeLoginIds = !isMudir && ["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
   const canManageLibrary = !isMudir && ["admin","kutubxonachi"].includes(user.role);

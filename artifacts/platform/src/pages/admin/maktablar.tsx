@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Building2, Plus, Pencil, Trash2, Loader2, Check, X, Save, Users, GraduationCap, School,
-  UserPlus, KeyRound, Copy, CreditCard,
+  UserPlus, KeyRound, Copy, CreditCard, ScanFace,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -128,6 +128,20 @@ export default function MaktablarPage() {
       await refresh();
     } catch { /* jim */ }
     setBusy(null);
+  }
+
+  // Maktab ichiga kirish: shu maktabni "ko'rilayotgan maktab" qilib tanlaydi (view-school),
+  // keyin tegishli sahifaga (Sinflar / Xodimlar / Face ID) o'tadi.
+  async function enterSchool(schoolId: number, path: string) {
+    setBusy(schoolId);
+    try {
+      const r = await fetch(`${API_BASE}/auth/view-school`, {
+        method: "POST", headers: headers(true), body: JSON.stringify({ maktab_id: schoolId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if ((d as { token?: string })?.token) localStorage.setItem("talim_auth_token", (d as { token: string }).token);
+      window.location.href = import.meta.env.BASE_URL.replace(/\/$/, "") + path;
+    } catch { setBusy(null); }
   }
 
   // #5: Obuna uzaytirish / qulflash / cheksiz
@@ -266,7 +280,7 @@ export default function MaktablarPage() {
                     <span className="font-black text-primary">{s.id}</span>
                   </div>
                   <div className="min-w-0">
-                    <p className="font-black text-sm truncate">{s.nom}{s.id === 3 ? " (asosiy)" : ""}</p>
+                    <p className="font-black text-sm truncate">{s.nom}</p>
                     <p className="text-[11px] text-muted-foreground truncate">{s.tuman} tumani{s.direktor ? ` · ${s.direktor}` : ""}</p>
                     <div className="flex items-center gap-3 mt-1 text-[11px] font-bold text-muted-foreground">
                       <span className="flex items-center gap-1"><GraduationCap className="w-3 h-3" /> {s.counts.oquvchi}</span>
@@ -298,6 +312,18 @@ export default function MaktablarPage() {
                     <button onClick={() => remove(s)} disabled={busy === s.id} className="p-2 rounded-lg bg-rose-500/15 text-rose-500 cursor-pointer" title="O'chirish"><Trash2 className="w-3.5 h-3.5" /></button>
                   )}
                 </div>
+              </div>
+              {/* Maktab ichiga kirish — shu maktabning sinflari / xodimlari / Face ID */}
+              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border/50">
+                <button onClick={() => void enterSchool(s.id, "/classes")} disabled={busy === s.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 cursor-pointer">
+                  <School className="w-3.5 h-3.5" /> Sinflar
+                </button>
+                <button onClick={() => void enterSchool(s.id, "/staff")} disabled={busy === s.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 cursor-pointer">
+                  <Users className="w-3.5 h-3.5" /> Xodimlar
+                </button>
+                <button onClick={() => void enterSchool(s.id, "/faceid")} disabled={busy === s.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 cursor-pointer">
+                  <ScanFace className="w-3.5 h-3.5" /> Face ID
+                </button>
               </div>
             </div>
           ))}
