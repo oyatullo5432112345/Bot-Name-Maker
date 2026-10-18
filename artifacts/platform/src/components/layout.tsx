@@ -218,10 +218,7 @@ function NavSection({ label, children }: { label?: string; children: React.React
 // Ta'lim Platform logotipi (matnli, sodda)
 // ===================================================
 function TalimTvLogo({ size = "default" }: { size?: "default" | "small" }) {
-  const { user } = useAuth();
   const isSmall = size === "small";
-  const proActive = user?.pro_expires_at && new Date(user.pro_expires_at).getTime() > Date.now();
-  const proDays = proActive ? Math.max(0, Math.ceil((new Date(user!.pro_expires_at!).getTime() - Date.now()) / 86400000)) : 0;
 
   return (
     <div className="flex items-center gap-2 select-none">
@@ -230,14 +227,6 @@ function TalimTvLogo({ size = "default" }: { size?: "default" | "small" }) {
       >
         Ta'lim <span className="text-blue-500">Platform</span>
       </span>
-      {proActive && (
-        <span
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0"
-          style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)", color: "white" }}
-        >
-          ⭐ Pro • {proDays}kun
-        </span>
-      )}
     </div>
   );
 }
@@ -573,7 +562,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <NavLink href="/baholash" icon={ClipboardList} label="Baholash" active={isActive("/baholash")} />
             {canUseFaceId && <NavLink href={(user.role === "sinf_rahbari" || user.role === "boshlangich_oqituvchi") ? "/faceid/enroll" : "/faceid"} icon={ScanFace} label="Face ID" active={isActive("/faceid")} />}
             {canSeeLoginIds && <NavLink href="/admin/login-ids" icon={KeyRound} label="Kirish IDlari" active={isActive("/admin/login-ids")} />}
-            <NavLink href="/dars-jadvali" icon={CalendarDays} label="Dars jadvali" active={isActive("/dars-jadvali")} />
+            {(!isAdminRole || adminInSchool) && <NavLink href="/dars-jadvali" icon={CalendarDays} label="Dars jadvali" active={isActive("/dars-jadvali")} />}
             <NavLink href="/olimpiada" icon={Trophy} label="Olimpiada.Uz" active={isActive("/olimpiada")} />
           </NavSection>
         )}

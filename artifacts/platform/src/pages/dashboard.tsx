@@ -312,13 +312,6 @@ export default function Dashboard() {
           <p className="text-xs text-muted-foreground/70 mt-0.5 italic">{motivation}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setShowTour(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary text-xs font-bold cursor-pointer active:scale-95 transition-all"
-            title="Ilovadan foydalanish yo'riqnomasi"
-          >
-            <BookOpen className="w-4 h-4" /> <span className="hidden sm:inline">Yo'riqnoma</span>
-          </button>
           {isStudent && <TangaHeaderWidget />}
         </div>
       </div>

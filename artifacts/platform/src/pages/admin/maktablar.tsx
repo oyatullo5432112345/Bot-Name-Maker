@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Building2, Plus, Pencil, Trash2, Loader2, Check, X, Save, Users, GraduationCap, School,
-  UserPlus, KeyRound, Copy, CreditCard, ScanFace,
+  UserPlus, KeyRound, Copy, CreditCard, ScanFace, CalendarDays,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -323,6 +323,9 @@ export default function MaktablarPage() {
                 </button>
                 <button onClick={() => void enterSchool(s.id, "/faceid")} disabled={busy === s.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 cursor-pointer">
                   <ScanFace className="w-3.5 h-3.5" /> Face ID
+                </button>
+                <button onClick={() => void enterSchool(s.id, "/dars-jadvali")} disabled={busy === s.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 cursor-pointer">
+                  <CalendarDays className="w-3.5 h-3.5" /> Dars jadvali
                 </button>
               </div>
             </div>
