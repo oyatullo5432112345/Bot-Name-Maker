@@ -33,8 +33,12 @@ import labRouter from "./lab.js";
 import authLoginRouter from "./auth-login.js";
 import sayohatRouter from "./sayohat.js";
 import maktablarRouter from "./maktablar.js";
+import analyticsRouter, { activityMiddleware } from "./analytics.js";
 
 const router: IRouter = Router();
+
+// Faollik kuzatuvi — barcha route'lardan oldin (autentifikatsiyalangan so'rovlarni yozadi)
+router.use(activityMiddleware);
 
 router.use(healthRouter);
 router.use(authRouter);
@@ -70,5 +74,6 @@ router.use(faceidRouter);
 router.use(labRouter);
 router.use(sayohatRouter);
 router.use(maktablarRouter);
+router.use(analyticsRouter);
 
 export default router;

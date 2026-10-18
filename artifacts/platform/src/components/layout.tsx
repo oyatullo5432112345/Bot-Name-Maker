@@ -10,6 +10,7 @@ import {
   MessageSquare, Library, Award,
   KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
   Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace, Monitor, Compass, Building2, Lock,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -499,6 +500,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isAdminRole = user.role === "admin";
   const adminInSchool = isAdminRole && currentViewMaktab() !== "";
   const mgmtSchoolRoles = ["director","zam_direktor","zavuch"];
+  const canSeeAnalytics = mgmtSchoolRoles.includes(user.role) || isAdminRole;
   const canViewStaff = !isMudir && (mgmtSchoolRoles.includes(user.role) || adminInSchool);
   const canViewClasses = !isMudir && (mgmtSchoolRoles.includes(user.role) || adminInSchool);
   const canViewStudents = !isMudir && ["sinf_rahbari","boshlangich_oqituvchi"].includes(user.role);
@@ -549,6 +551,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <NavSection>
           {!isMudir && <NavLink href="/dashboard" icon={LayoutDashboard} label="Bosh sahifa" active={isActive("/dashboard")} />}
           <NavLink href="/monitoring" icon={ClipboardCheck} label="Monitoring" active={isActive("/monitoring")} />
+          {canSeeAnalytics && <NavLink href="/analytics" icon={Activity} label="Faollik" active={isActive("/analytics")} />}
           {/* O'quvchilar ro'yxati — faqat sinf rahbari/boshlang'ich o'qituvchiga. Rahbariyat Sinflar → sinf ichidan topadi. */}
           {["sinf_rahbari","boshlangich_oqituvchi"].includes(user.role) && <NavLink href="/students" icon={GraduationCap} label="O'quvchilar" active={isActive("/students")} />}
           {canViewClasses && <NavLink href="/classes" icon={School} label="Sinflar" active={isActive("/classes")} />}

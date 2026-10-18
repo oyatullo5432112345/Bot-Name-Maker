@@ -19,7 +19,7 @@ import {
   findRoleByCode,
   type RoleRegCodes,
 } from "./settings.js";
-import { createMagicToken, verifyPassword } from "../routes/auth.js";
+import { createMagicToken, createTgBindToken, verifyPassword } from "../routes/auth.js";
 import { registerTelegramFeatures, sendMainMenu } from "./features.js";
 import { generateCertificatePNG, todayUzDate } from "../lib/certificate-generator.js";
 import { claimJob, uzDateStr, isRealTelegramId, sleep } from "../lib/tg-shared.js";
@@ -517,21 +517,18 @@ export function createBot(): Bot {
 
   const bot = new Bot(token);
 
-  // Yangi Telegram funksiyalari: rol menyulari, davomat, sinf guruhlari,
-  // maktab kanali, avtomatik postlar. ENG BOSHIDA ro'yxatdan o'tadi —
-  // guruh xabarlari quyidagi eski handlerlarga tushmasligi uchun.
-  registerTelegramFeatures(bot, { websiteUrl: WEBSITE_URL, adminId: ADMIN_ID });
-
-  // ─── MAJBURIY KANAL: har qanday amaldan oldin a'zolikni tekshiramiz ──────────
-  // Avval faqat /start da tekshirilardi — foydalanuvchi boshqa yo'l bilan (tugma,
-  // xabar) botdan foydalanib ketishi mumkin edi. Endi barcha shaxsiy amallar
-  // a'zolikdan o'tadi. (Bot kanalda ADMIN bo'lishi shart — aks holda tekshirib bo'lmaydi.)
+  // ─── MAJBURIY KANAL: ENG BIRINCHI middleware ─────────────────────────────────
+  // Foydalanuvchi botga QANDAY xabar yoki tugma yuborishidan qat'i nazar — a'zo
+  // bo'lmagan bo'lsa hech qanday handler (onboarding, o'yin, menyu, boshqa tugmalar)
+  // ishlamaydi; faqat "kanalga a'zo bo'ling" chiqadi. Shu sabab bu BOShqa hamma
+  // narsadan OLDIN turadi (registerTelegramFeatures dan ham oldin).
+  // Istisno: /start va "A'zo bo'ldim ✅" — ular a'zolikni o'zi tekshiradi.
+  // (Bot kanalda ADMIN bo'lishi shart — /majburiy bilan tekshiring.)
   bot.use(async (ctx, next) => {
     if (ctx.chat?.type !== "private") return next(); // guruh/kanalga tegmaymiz
     const uid = ctx.from?.id;
     if (!uid || isAdmin(uid)) return next();
 
-    // /start va "A'zo bo'ldim ✅" o'zi tekshiradi — o'tkazamiz
     const text = ctx.message?.text ?? "";
     if (text.startsWith("/start")) return next();
     if (ctx.callbackQuery?.data === "check_membership") return next();
@@ -545,11 +542,15 @@ export function createBot(): Bot {
     const names = settings.channels.filter((c) => missing.includes(c.id)).map((c) => `• ${c.name}`).join("\n");
     try {
       await ctx.reply(
-        "📢 Botdan foydalanish uchun avval quyidagi kanal(lar)ga a'zo bo'ling:\n\n" + names,
+        "📢 Botdan foydalanish uchun avval quyidagi kanal(lar)ga a'zo bo'ling 👇\n\n" + names,
         { reply_markup: buildSubscribeKeyboard(missing) }
       );
     } catch { /* yuborilmasa jim o'tamiz */ }
   });
+
+  // Yangi Telegram funksiyalari: rol menyulari, davomat, sinf guruhlari,
+  // maktab kanali, avtomatik postlar.
+  registerTelegramFeatures(bot, { websiteUrl: WEBSITE_URL, adminId: ADMIN_ID });
 
   // ─── /start ────────────────────────────────────────────────────────────────
   bot.command("start", async (ctx) => {
@@ -656,12 +657,18 @@ export function createBot(): Bot {
       return;
     }
 
-    // Bog'lanmagan → rol tanlash (o'quvchi / o'qituvchi)
-    await ctx.reply(
-      "🎓 *Toshloq tuman platformasi*\n\n" +
-      "Platformaga kirish uchun avval o'zingizni tanlang — siz kimsiz? 👇",
-      { parse_mode: "Markdown", reply_markup: buildOnboardRoleKb() }
-    );
+    // Bog'lanmagan → to'g'ridan-to'g'ri platformaga kirish havolasi.
+    // Maktab/sinf/ism tanlash va maxfiy kod (PIN/chizma) o'rnatish — endi PLATFORMADA.
+    {
+      const loginUrl = `${WEBSITE_URL}/login?tg=${createTgBindToken(userId)}`;
+      const kb = new InlineKeyboard().url("🚀 Platformaga kirish", loginUrl);
+      await ctx.reply(
+        "✅ *Tayyor!*\n\n" +
+        "🎓 *Toshloq tuman platformasi*\n\n" +
+        "Quyidagi tugmani bosib platformaga kiring. Maktab, sinf va ismingizni *platformada* tanlaysiz va maxfiy kod (yoki chizma) o'rnatasiz. 👇",
+        { parse_mode: "Markdown", reply_markup: kb }
+      );
+    }
 
     // Admin bildirishnomasi
     const adminTgId = Number(process.env["ADMIN_ID"] ?? "0");
@@ -1079,12 +1086,14 @@ export function createBot(): Bot {
         reply_markup: buildWelcomeKeyboard(),
       });
     } else {
-      // Bog'lanmagan → rol tanlash (o'quvchi / o'qituvchi)
+      // Bog'lanmagan → to'g'ridan-to'g'ri platformaga kirish havolasi (maktab/sinf/ism — platformada).
+      const loginUrl = `${WEBSITE_URL}/login?tg=${createTgBindToken(userId)}`;
+      const kb = new InlineKeyboard().url("🚀 Platformaga kirish", loginUrl);
       await ctx.reply(
-        "✅ A'zo bo'ldingiz!\n\n" +
+        "✅ *A'zo bo'ldingiz!*\n\n" +
         "🎓 *Toshloq tuman platformasi*\n\n" +
-        "Endi o'zingizni tanlang — siz kimsiz? 👇",
-        { parse_mode: "Markdown", reply_markup: buildOnboardRoleKb() }
+        "Quyidagi tugmani bosib platformaga kiring. Maktab, sinf va ismingizni platformada tanlab, maxfiy kod (yoki chizma) o'rnatasiz. 👇",
+        { parse_mode: "Markdown", reply_markup: kb }
       );
     }
   });

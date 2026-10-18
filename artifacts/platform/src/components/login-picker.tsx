@@ -22,10 +22,11 @@ const clsGrade = (c: string): number => { const m = c.match(/^\s*(\d{1,2})/); re
 const clsCmp = (a: string, b: string): number => { const ga = clsGrade(a), gb = clsGrade(b); return ga !== gb ? ga - gb : a.localeCompare(b, "uz"); };
 
 export function StudentPickerDialog({
-  onSuccess, onClose,
+  onSuccess, onClose, tgToken,
 }: {
   onSuccess: (r: Record<string, unknown>) => void;
   onClose: () => void;
+  tgToken?: string;
 }) {
   const [step, setStep] = useState<Step>("school");
   const [schools, setSchools] = useState<SchoolRow[]>([]);
@@ -108,8 +109,11 @@ export function StudentPickerDialog({
 
   const buildSecret = (): string | null => {
     if (method === "pin") {
-      if (!/^\d{4,6}$/.test(pin)) { setErr("Kod 4-6 raqamdan iborat bo'lsin"); return null; }
-      if (student && !student.pin_set) {
+      const settingNew = !!student && !student.pin_set;
+      // Yangi PIN — aniq 4 xonali. Kirishda eski (4-6 xonali) kodlar ham qabul qilinadi.
+      const re = settingNew ? /^\d{4}$/ : /^\d{4,6}$/;
+      if (!re.test(pin)) { setErr("Kod 4 raqamdan iborat bo'lsin"); return null; }
+      if (settingNew) {
         if (pin !== pinConfirm) { setErr("Kodlar mos kelmadi"); return null; }
       }
       return pin;
@@ -126,8 +130,8 @@ export function StudentPickerDialog({
     if (!student) return;
     // yangi parol: avval "enter", keyin "confirm" bosqichi
     if (!student.pin_set && phase === "enter") {
-      if (method === "pin" ? /^\d{4,6}$/.test(pin) : pattern.length >= 4) { setPhase("confirm"); setErr(""); return; }
-      setErr(method === "pin" ? "Kod 4-6 raqamdan iborat bo'lsin" : "Kamida 4 nuqtani bog'lang");
+      if (method === "pin" ? /^\d{4}$/.test(pin) : pattern.length >= 4) { setPhase("confirm"); setErr(""); return; }
+      setErr(method === "pin" ? "Kod 4 raqamdan iborat bo'lsin" : "Kamida 4 nuqtani bog'lang");
       return;
     }
     const secret = buildSecret();
@@ -136,7 +140,7 @@ export function StudentPickerDialog({
     try {
       const r = await fetch(`${API_BASE}/auth/pin-login`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ login: student.login, pin: secret }),
+        body: JSON.stringify({ login: student.login, pin: secret, ...(tgToken ? { tg: tgToken } : {}) }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error((data as { error?: string })?.error || "Kirish amalga oshmadi");
@@ -238,6 +242,7 @@ export function StudentPickerDialog({
                   <PinPad
                     value={phase === "confirm" ? pinConfirm : pin}
                     onChange={(v) => (phase === "confirm" ? setPinConfirm(v) : setPin(v))}
+                    maxLen={student && !student.pin_set ? 4 : 6}
                   />
                 ) : (
                   <PatternGrid
@@ -264,13 +269,13 @@ export function StudentPickerDialog({
   );
 }
 
-function PinPad({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const press = (d: string) => { if (value.length < 6) onChange(value + d); };
+function PinPad({ value, onChange, maxLen = 6 }: { value: string; onChange: (v: string) => void; maxLen?: number }) {
+  const press = (d: string) => { if (value.length < maxLen) onChange(value + d); };
   const del = () => onChange(value.slice(0, -1));
   return (
     <div className="space-y-3">
       <div className="flex justify-center gap-2">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
+        {Array.from({ length: maxLen }, (_, i) => (
           <span key={i} className={`w-3.5 h-3.5 rounded-full ${i < value.length ? "bg-primary" : "bg-muted"}`} />
         ))}
       </div>

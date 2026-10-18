@@ -38,6 +38,7 @@ const SayohatAdminQuestions = lazy(() => import("@/pages/sayohat/admin-questions
 const ProPage = lazy(() => import("@/pages/pro"));
 const BaholashPage = lazy(() => import("@/pages/baholash/index"));
 const DarsJadvaliPage = lazy(() => import("@/pages/dars-jadvali/index"));
+const AnalyticsPage = lazy(() => import("@/pages/analytics/index"));
 
 const AdminResetPage = lazy(() => import("@/pages/admin/reset"));
 const MaktablarPage = lazy(() => import("@/pages/admin/maktablar"));
@@ -147,6 +148,7 @@ function Router() {
 
       <Route path="/baholash"><ProtectedRoute component={BaholashPage} /></Route>
       <Route path="/dars-jadvali"><ProtectedRoute component={DarsJadvaliPage} /></Route>
+      <Route path="/analytics"><ProtectedRoute component={AnalyticsPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/olimpiada"><ProtectedRoute component={OlimpiyadaPage} /></Route>
 
       {/* Mahfiy kodlar bekor qilindi — Kirish IDlari sahifasiga yo'naltiramiz */}

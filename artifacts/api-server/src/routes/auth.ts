@@ -116,6 +116,18 @@ function parseMagicToken(token: string): MagicTokenData | null {
   return data;
 }
 
+// Bot /start dan kelgan Telegram foydalanuvchisini platformadagi akkauntga bog'lash uchun
+// qisqa muddatli imzolangan token. pin-login o'quvchini "o'zim" deb tanlab PIN qo'yganda
+// telegram_id ni shu token orqali bog'laydi (bildirishnomalar ishlashi uchun).
+export function createTgBindToken(tg: number): string {
+  return createSignedToken({ tg, exp: Date.now() + 7 * 24 * 60 * 60 * 1000 });
+}
+export function parseTgBindToken(token: string): number | null {
+  const d = parseSignedToken<{ tg?: number; exp?: number }>(token);
+  if (!d || typeof d.tg !== "number" || typeof d.exp !== "number" || Date.now() > d.exp) return null;
+  return d.tg;
+}
+
 const router: IRouter = Router();
 
 // #12/#13: bosqichma-bosqich o'quvchi kirishi uchun ustunlar.
@@ -339,7 +351,7 @@ router.get("/auth/pick/students", async (req, res): Promise<void> => {
 
 // 4) PIN bilan kirish. pin_set=false bo'lsa — birinchi marta o'rnatiladi; aks holda tekshiriladi.
 //    pin — 4 xonali kod YOKI chizma (pattern, masalan "0-1-2-5-8") — ikkisi ham matn sifatida keladi.
-const PinLoginBody = z.object({ login: z.string().min(1), pin: z.string().min(4).max(64) });
+const PinLoginBody = z.object({ login: z.string().min(1), pin: z.string().min(4).max(64), tg: z.string().max(400).optional() });
 router.post("/auth/pin-login", async (req, res): Promise<void> => {
   const parsed = PinLoginBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Noto'g'ri so'rov" }); return; }
@@ -360,6 +372,18 @@ router.post("/auth/pin-login", async (req, res): Promise<void> => {
     const hash = await hashPassword(pin);
     await query("UPDATE users SET password = $1, pin_set = TRUE WHERE id = $2", [hash, student.id]);
   }
+  // Bot /start dan kelgan bo'lsa (tg token) va o'quvchiga hali Telegram bog'lanmagan bo'lsa —
+  // telegram_id ni bog'laymiz (davomat bildirishnomalari ishlashi uchun). Best-effort.
+  let boundTg = student.telegram_id;
+  if (parsed.data.tg && (!student.telegram_id || Number(student.telegram_id) === 0)) {
+    const tg = parseTgBindToken(parsed.data.tg);
+    if (tg) {
+      try {
+        await query("UPDATE users SET telegram_id = $1 WHERE id = $2 AND (telegram_id IS NULL OR telegram_id = 0)", [tg, student.id]);
+        boundTg = tg;
+      } catch { /* telegram_id band bo'lishi mumkin — bildirishnomasiz davom etadi */ }
+    }
+  }
   const cls = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1 AND maktab_id = $2", [student.class_name, student.maktab_id ?? 3]);
   const payload = {
     id: student.id ?? String(student.telegram_id),
@@ -368,7 +392,7 @@ router.post("/auth/pin-login", async (req, res): Promise<void> => {
     login: student.login,
     class_name: student.class_name,
     class_id: cls?.id ?? null,
-    telegram_id: student.telegram_id,
+    telegram_id: boundTg,
     pro_expires_at: (student as Record<string, unknown>)["pro_expires_at"] as string | null ?? null,
     maktab_id: student.maktab_id ?? 3,
   };

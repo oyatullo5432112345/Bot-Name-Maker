@@ -249,6 +249,12 @@ export default function Login() {
       .finally(() => setBotLoginLoading(false));
   }, []); // eslint-disable-line
 
+  /* Bot /start dan "tg" bilan kelsa — maktab/sinf/ism tanlash oynasini avtomatik ochamiz */
+  const [tgToken] = useState<string | null>(() => new URLSearchParams(window.location.search).get("tg"));
+  useEffect(() => {
+    if (tgToken) setPickOpen(true);
+  }, [tgToken]);
+
   const handleSupportSubmit = async () => {
     if (supportMsg.trim().length < 5) return;
     setSupportLoading(true);
@@ -460,6 +466,7 @@ export default function Login() {
           <StudentPickerDialog
             onSuccess={handleAuthResult}
             onClose={() => setPickOpen(false)}
+            tgToken={tgToken ?? undefined}
           />
         )}
 
