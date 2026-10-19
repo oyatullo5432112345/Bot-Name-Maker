@@ -23,8 +23,10 @@ void query(`
     user_login TEXT PRIMARY KEY,
     avatar     TEXT NOT NULL DEFAULT 'bek',
     maktab_id  INT,
+    last_claim TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+  ALTER TABLE game_player ADD COLUMN IF NOT EXISTS last_claim TIMESTAMPTZ;
 `).catch(() => { /* migratsiya keyin yaratadi */ });
 
 // ============================================================
@@ -414,6 +416,17 @@ const MAX_LEVEL = 10;
 function upgradeCost(base: number, level: number): number {
   return Math.round(base * Math.pow(1.7, level)); // 0->base, keyin har daraja qimmatroq
 }
+// Idle (offline) daromad: har bino darajasi soatiga 1 tanga ishlab chiqaradi.
+// Jamg'arish eng ko'pi IDLE_CAP_HOURS soatlik (shundan keyin to'xtaydi — har kuni qaytishni rag'batlantiradi).
+const IDLE_CAP_HOURS = 8;
+function perHourFrom(levelMap: Record<string, number>): number {
+  return BUILDINGS.reduce((s, b) => s + (levelMap[b.key] ?? 0), 0);
+}
+function accruedFrom(perHour: number, lastClaim: string | null): number {
+  if (perHour <= 0 || !lastClaim) return 0;
+  const hours = (Date.now() - new Date(lastClaim).getTime()) / 3_600_000;
+  return Math.floor(Math.min(hours, IDLE_CAP_HOURS) * perHour);
+}
 const BUILDINGS = [
   { key: "maktab",       name: "Maktab",               emoji: "🏫", base: 50 },
   { key: "kutubxona",    name: "Kutubxona",            emoji: "📚", base: 40 },
@@ -451,11 +464,21 @@ router.get("/tanga/game", async (req, res): Promise<void> => {
     for (const r of rows) levelMap[r.bkey] = r.level;
     const buildings = BUILDINGS.map(b => {
       const lvl = levelMap[b.key] ?? 0;
-      return { key: b.key, name: b.name, emoji: b.emoji, level: lvl, max: MAX_LEVEL, next_cost: lvl >= MAX_LEVEL ? null : upgradeCost(b.base, lvl) };
+      return { key: b.key, name: b.name, emoji: b.emoji, level: lvl, max: MAX_LEVEL, income: lvl, next_cost: lvl >= MAX_LEVEL ? null : upgradeCost(b.base, lvl) };
     });
-    const pr = await query<{ avatar: string }>("SELECT avatar FROM game_player WHERE user_login = $1", [login]);
+    const pr = await query<{ avatar: string; last_claim: string | null }>("SELECT avatar, last_claim::text AS last_claim FROM game_player WHERE user_login = $1", [login]);
+    const perHour = perHourFrom(levelMap);
+    // Idle soatini ishga tushiramiz (birinchi marta yoki binolar bo'lsa-yu vaqt yo'q bo'lsa)
+    let lastClaim = pr[0]?.last_claim ?? null;
+    if (perHour > 0 && !lastClaim) {
+      const mid = schoolOf(user);
+      await query(`INSERT INTO game_player (user_login, last_claim, maktab_id) VALUES ($1, NOW(), $2)
+                   ON CONFLICT (user_login) DO UPDATE SET last_claim = NOW()`, [login, mid ?? 3]).catch(() => {});
+      lastClaim = new Date().toISOString();
+    }
+    const accrued = accruedFrom(perHour, lastClaim);
     // "Tanga Tizimi" ma'lumotini shu yerга birlashtiramiz: unvon ham qaytadi.
-    res.json({ total, buildings, avatar: pr[0]?.avatar ?? "bek", avatars: AVATARS, unvon: getUnvon(total) });
+    res.json({ total, buildings, avatar: pr[0]?.avatar ?? "bek", avatars: AVATARS, unvon: getUnvon(total), income_per_hour: perHour, accrued, cap_hours: IDLE_CAP_HOURS });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 });
 
@@ -501,6 +524,165 @@ router.post("/tanga/game/avatar", async (req, res): Promise<void> => {
   await query(`INSERT INTO game_player (user_login, avatar, maktab_id) VALUES ($1, $2, $3)
                ON CONFLICT (user_login) DO UPDATE SET avatar = $2, updated_at = NOW()`, [login, parsed.data.avatar, mid ?? 3]);
   res.json({ ok: true, avatar: parsed.data.avatar });
+});
+
+// POST /api/tanga/game/claim — idle (jamg'arilgan) tangani yig'ish
+router.post("/tanga/game/claim", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const login = user["login"] as string;
+  const mid = schoolOf(user);
+  try {
+    const rows = await query<{ bkey: string; level: number }>("SELECT bkey, level FROM game_buildings WHERE user_login = $1", [login]);
+    const levelMap: Record<string, number> = {};
+    for (const r of rows) levelMap[r.bkey] = r.level;
+    const perHour = perHourFrom(levelMap);
+    const pr = await query<{ last_claim: string | null }>("SELECT last_claim::text AS last_claim FROM game_player WHERE user_login = $1", [login]);
+    const accrued = accruedFrom(perHour, pr[0]?.last_claim ?? null);
+    // Soatni har holda yangilaymiz (jamg'arish qaytadan boshlanadi)
+    await query(`INSERT INTO game_player (user_login, last_claim, maktab_id) VALUES ($1, NOW(), $2)
+                 ON CONFLICT (user_login) DO UPDATE SET last_claim = NOW()`, [login, mid ?? 3]);
+    if (accrued <= 0) { const total = await calcBalance(login); res.json({ ok: true, claimed: 0, total, income_per_hour: perHour, accrued: 0 }); return; }
+    await query("INSERT INTO tanga_logs (user_login, amount, reason, source, maktab_id) VALUES ($1, $2, $3, 'game_idle', $4)",
+      [login, accrued, "Maktab Olami — shaharcha daromadi", mid ?? 3]);
+    const total = await calcBalance(login);
+    res.json({ ok: true, claimed: accrued, total, income_per_hour: perHour, accrued: 0 });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
+// ============================================================
+// MILLIY MERGE — o'zbek hunarmandchiligini merge qilib tiklash.
+//   Tanga bilan asosiy buyum SOTIB OLINADI (bepul paydo bo'lmaydi), merge bepul,
+//   zanjirni oxirigacha yetkazish bir martalik kolleksiya mukofoti beradi.
+//   Tanga server tomonda hisoblanadi (buy → shop_purchases, mukofot → tanga_logs).
+// ============================================================
+void query(`
+  CREATE TABLE IF NOT EXISTS merge_state (
+    user_login TEXT PRIMARY KEY,
+    board      JSONB NOT NULL DEFAULT '[]'::jsonb,
+    claimed    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    maktab_id  INT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+`).catch(() => { /* migratsiya keyin yaratadi */ });
+
+const MERGE_BOARD_SIZE = 36; // 6 x 6
+const MERGE_CHAINS: Record<string, { name: string; base_cost: number; reward: number; tiers: string[] }> = {
+  atlas: { name: "Atlas yo'li", base_cost: 12, reward: 60, tiers: ["Ip", "Pilla", "Atlas", "Ko'ylak", "Chapan", "Usta"] },
+  doppi: { name: "Do'ppi", base_cost: 15, reward: 40, tiers: ["Mato", "Tikilgan do'ppi", "Zarduzi", "Usta do'ppisi"] },
+  dasturxan: { name: "Dasturxan", base_cost: 14, reward: 45, tiers: ["Non", "Patir", "Osh", "To'y dasturxani"] },
+  cholgu: { name: "Cholg'u", base_cost: 16, reward: 50, tiers: ["Nay", "Dutor", "Rubob", "Ansambl"] },
+};
+type MergeCell = { chain: string; tier: number } | null;
+
+function validBoard(raw: unknown): MergeCell[] | null {
+  if (!Array.isArray(raw) || raw.length > MERGE_BOARD_SIZE) return null;
+  const out: MergeCell[] = [];
+  for (const c of raw) {
+    if (c == null) { out.push(null); continue; }
+    if (typeof c !== "object") return null;
+    const chain = (c as Record<string, unknown>)["chain"];
+    const tier = (c as Record<string, unknown>)["tier"];
+    if (typeof chain !== "string" || !MERGE_CHAINS[chain]) return null;
+    if (typeof tier !== "number" || tier < 0 || tier >= MERGE_CHAINS[chain]!.tiers.length) return null;
+    out.push({ chain, tier: Math.floor(tier) });
+  }
+  while (out.length < MERGE_BOARD_SIZE) out.push(null);
+  return out;
+}
+
+async function loadMerge(login: string): Promise<{ board: MergeCell[]; claimed: Record<string, boolean> }> {
+  const rows = await query<{ board: unknown; claimed: unknown }>("SELECT board, claimed FROM merge_state WHERE user_login = $1", [login]);
+  const board = validBoard(rows[0]?.board) ?? Array.from({ length: MERGE_BOARD_SIZE }, () => null);
+  const claimed = (rows[0]?.claimed && typeof rows[0].claimed === "object") ? rows[0].claimed as Record<string, boolean> : {};
+  return { board, claimed };
+}
+
+async function saveMerge(login: string, mid: number | null, board: MergeCell[], claimed: Record<string, boolean>): Promise<void> {
+  await query(
+    `INSERT INTO merge_state (user_login, board, claimed, maktab_id) VALUES ($1, $2::jsonb, $3::jsonb, $4)
+     ON CONFLICT (user_login) DO UPDATE SET board = $2::jsonb, claimed = $3::jsonb, updated_at = NOW()`,
+    [login, JSON.stringify(board), JSON.stringify(claimed), mid ?? 3]
+  );
+}
+
+// GET /api/tanga/merge — holat: balans, taxta, kolleksiya, zanjirlar
+router.get("/tanga/merge", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const login = user["login"] as string;
+  try {
+    const [total, { board, claimed }] = await Promise.all([calcBalance(login), loadMerge(login)]);
+    res.json({ total, board, claimed, chains: MERGE_CHAINS, size: MERGE_BOARD_SIZE, unvon: getUnvon(total) });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
+// POST /api/tanga/merge/buy { chain } — tanga bilan asosiy buyum sotib olish (bo'sh katakka qo'yiladi)
+const MergeBuyBody = z.object({ chain: z.string() });
+router.post("/tanga/merge/buy", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const login = user["login"] as string;
+  const mid = schoolOf(user);
+  const parsed = MergeBuyBody.safeParse(req.body);
+  if (!parsed.success || !MERGE_CHAINS[parsed.data.chain]) { res.status(400).json({ error: "Noto'g'ri zanjir" }); return; }
+  const chain = parsed.data.chain;
+  const cost = MERGE_CHAINS[chain]!.base_cost;
+  try {
+    const total = await calcBalance(login);
+    if (total < cost) { res.status(400).json({ error: `Yetarli tanga yo'q. Kerak: ${cost} 🪙, sizda: ${total} 🪙` }); return; }
+    const { board, claimed } = await loadMerge(login);
+    const empty = board.findIndex((c) => c == null);
+    if (empty === -1) { res.status(400).json({ error: "Taxta to'la — avval buyumlarni birlashtiring" }); return; }
+    board[empty] = { chain, tier: 0 };
+    await query("INSERT INTO shop_purchases (user_login, item_id, item_name, cost, maktab_id) VALUES ($1, $2, $3, $4, $5)",
+      [login, `merge_${chain}`, `Merge: ${MERGE_CHAINS[chain]!.tiers[0]}`, cost, mid ?? 3]);
+    await saveMerge(login, mid, board, claimed);
+    res.json({ ok: true, board, total: total - cost });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
+// POST /api/tanga/merge/save { board } — merge natijasini saqlash (tangaga ta'sir qilmaydi)
+const MergeSaveBody = z.object({ board: z.array(z.any()) });
+router.post("/tanga/merge/save", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const login = user["login"] as string;
+  const mid = schoolOf(user);
+  const parsed = MergeSaveBody.safeParse(req.body);
+  const board = parsed.success ? validBoard(parsed.data.board) : null;
+  if (!board) { res.status(400).json({ error: "Noto'g'ri taxta" }); return; }
+  try {
+    const { claimed } = await loadMerge(login);
+    await saveMerge(login, mid, board, claimed);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
+// POST /api/tanga/merge/claim { chain } — zanjirni oxirigacha yetkazish mukofoti (bir martalik)
+const MergeClaimBody = z.object({ chain: z.string() });
+router.post("/tanga/merge/claim", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const login = user["login"] as string;
+  const mid = schoolOf(user);
+  const parsed = MergeClaimBody.safeParse(req.body);
+  if (!parsed.success || !MERGE_CHAINS[parsed.data.chain]) { res.status(400).json({ error: "Noto'g'ri zanjir" }); return; }
+  const chain = parsed.data.chain;
+  const topTier = MERGE_CHAINS[chain]!.tiers.length - 1;
+  try {
+    const { board, claimed } = await loadMerge(login);
+    if (claimed[chain]) { res.status(400).json({ error: "Bu zanjir mukofoti allaqachon olingan" }); return; }
+    const reached = board.some((c) => c && c.chain === chain && c.tier >= topTier);
+    if (!reached) { res.status(400).json({ error: "Zanjir hali oxiriga yetmagan" }); return; }
+    const reward = MERGE_CHAINS[chain]!.reward;
+    await query("INSERT INTO tanga_logs (user_login, amount, reason, source, maktab_id) VALUES ($1, $2, $3, 'merge', $4)",
+      [login, reward, `Merge: ${MERGE_CHAINS[chain]!.name} to'liq yig'ildi`, mid ?? 3]);
+    claimed[chain] = true;
+    await saveMerge(login, mid, board, claimed);
+    const total = await calcBalance(login);
+    res.json({ ok: true, reward, total, claimed });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 });
 
 export default router;
