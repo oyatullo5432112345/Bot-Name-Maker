@@ -4,7 +4,7 @@
 //   Kutubxonachi/rahbariyat: kitob qo'shadi (muqova/PDF/audio havolasi + parcha + 10 savol), xabarlarni ko'radi.
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, Loader2, BookOpen, Headphones, Trophy, Plus, X, Trash2, Send, MessageSquare, Lock, CheckCircle2, Clock } from "lucide-react";
+import { ArrowLeft, Loader2, BookOpen, Headphones, Trophy, Plus, X, Trash2, Send, MessageSquare, Lock, CheckCircle2, Clock, BookMarked, History } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/face";
 
@@ -33,6 +33,8 @@ export default function Kutubxona() {
   const [addOpen, setAddOpen] = useState(false);
   const [msgOpen, setMsgOpen] = useState(false);     // o'quvchi xabar yozadi
   const [inboxOpen, setInboxOpen] = useState(false); // kutubxonachi xabarlarni ko'radi
+  const [myHistOpen, setMyHistOpen] = useState(false);   // o'quvchining o'qiganlari
+  const [mgHistOpen, setMgHistOpen] = useState(false);   // rahbariyat: barcha tarix
 
   const load = async () => { try { setData(await api<BooksResp>("/elib/books")); } catch (e) { toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message }); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, []); // eslint-disable-line
@@ -64,10 +66,12 @@ export default function Kutubxona() {
         {/* Yuqori panel */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <Link href="/oyin" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "rgba(243,238,226,0.7)", fontSize: 14 }}><ArrowLeft size={18} /> Shaharcha</Link>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             <button onClick={() => setLbOpen(true)} style={btn(PANEL, CREAM)}><Trophy size={14} color={GOLD} style={{ verticalAlign: "-2px" }} /> Reyting</button>
+            <button onClick={() => setMyHistOpen(true)} style={btn(PANEL, CREAM)}><BookMarked size={14} style={{ verticalAlign: "-2px" }} /> O'qiganlarim</button>
             {data?.can_manage
-              ? <><button onClick={() => setInboxOpen(true)} style={btn(PANEL, CREAM)}><MessageSquare size={14} style={{ verticalAlign: "-2px" }} /></button>
+              ? <><button onClick={() => setMgHistOpen(true)} style={btn(PANEL, CREAM)}><History size={14} style={{ verticalAlign: "-2px" }} /> Tarix</button>
+                  <button onClick={() => setInboxOpen(true)} style={btn(PANEL, CREAM)}><MessageSquare size={14} style={{ verticalAlign: "-2px" }} /></button>
                   <button onClick={() => setAddOpen(true)} style={btn(`linear-gradient(135deg, ${TEAL}, ${GOLD})`)}><Plus size={14} style={{ verticalAlign: "-2px" }} /> Kitob</button></>
               : <button onClick={() => setMsgOpen(true)} style={btn(PANEL, CREAM)}><Send size={14} style={{ verticalAlign: "-2px" }} /> Xabar</button>}
           </div>
@@ -75,7 +79,7 @@ export default function Kutubxona() {
 
         <div style={{ textAlign: "center", marginBottom: 8 }}>
           <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0 }}>Maktab Kutubxonasi</h1>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "rgba(243,238,226,0.6)" }}>Kitobni 10 kunga ol · o'qi yoki tingla · testdan o't · keyingisini och</p>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "rgba(243,238,226,0.6)" }}>Kitob o'qish mutlaqo bepul · 10 kunga ol · o'qi yoki tingla · testdan o't · keyingisini och</p>
         </div>
 
         {data?.locked && (
@@ -117,7 +121,7 @@ export default function Kutubxona() {
                     <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
                       {!mb ? (
                         <button onClick={() => void borrow(b)} disabled={!!busy || data.locked} style={{ ...btn(data.locked ? "rgba(255,255,255,0.07)" : `linear-gradient(135deg, ${TEAL}, ${GOLD})`, data.locked ? "rgba(243,238,226,0.5)" : INK), cursor: data.locked ? "not-allowed" : "pointer" }}>
-                          {busy === b.id ? "…" : data.locked ? "Qulf" : `Olish · ${data.borrow_days} kun`}
+                          {busy === b.id ? "…" : data.locked ? "Qulf" : `Bepul olish · ${data.borrow_days} kun`}
                         </button>
                       ) : (
                         <>
@@ -145,7 +149,83 @@ export default function Kutubxona() {
       {addOpen && <AddBookModal onClose={() => setAddOpen(false)} onDone={() => { setAddOpen(false); void load(); }} />}
       {msgOpen && <MessageModal onClose={() => setMsgOpen(false)} />}
       {inboxOpen && <InboxModal onClose={() => setInboxOpen(false)} />}
+      {myHistOpen && <MyHistoryModal onClose={() => setMyHistOpen(false)} />}
+      {mgHistOpen && <ManageHistoryModal onClose={() => setMgHistOpen(false)} />}
     </div>
+  );
+}
+
+// ─── Statusni rangli yorliqqa aylantirish ───────────────────────────────────────
+function statusChip(h: { quiz_passed: boolean; quiz_score: number; returned_at: string | null }): { text: string; color: string } {
+  if (h.quiz_passed) return { text: `✓ Test o'tdi${h.quiz_score >= 0 ? ` (${h.quiz_score}/10)` : ""}`, color: TEAL };
+  if (h.returned_at) return { text: "Topshirilgan", color: "rgba(243,238,226,0.55)" };
+  return { text: "O'qilmoqda", color: GOLD };
+}
+
+// ─── O'quvchining o'zi o'qigan kitoblari ─────────────────────────────────────────
+interface HistRow { id: string; title: string; author: string; cover_url: string; borrowed_at: string; returned_at: string | null; quiz_passed: boolean; quiz_score: number }
+function MyHistoryModal({ onClose }: { onClose: () => void }) {
+  const [rows, setRows] = useState<HistRow[] | null>(null);
+  useEffect(() => { void (async () => { try { setRows(await api<HistRow[]>("/elib/my-history")); } catch { setRows([]); } })(); }, []);
+  return (
+    <Shell title="O'qigan kitoblarim" onClose={onClose}>
+      {!rows ? <div style={{ display: "grid", placeItems: "center", padding: 30 }}><Loader2 className="animate-spin" color={GOLD} /></div>
+        : rows.length === 0 ? <p style={{ textAlign: "center", color: "rgba(243,238,226,0.6)" }}>Hali kitob olmagansiz.</p>
+        : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {rows.map((h) => { const s = statusChip(h); return (
+              <div key={h.id} style={{ display: "flex", gap: 10, padding: 8, borderRadius: 12, background: "rgba(0,0,0,0.22)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ width: 40, height: 54, borderRadius: 6, overflow: "hidden", flexShrink: 0, background: INK, display: "grid", placeItems: "center" }}>
+                  {h.cover_url ? <img src={h.cover_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /> : <BookOpen size={16} color={GOLD} style={{ opacity: 0.6 }} />}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700 }}>{h.title}</div>
+                  {h.author && <div style={{ fontSize: 11.5, color: "rgba(243,238,226,0.55)" }}>{h.author}</div>}
+                  <div style={{ fontSize: 11.5, marginTop: 3 }}><span style={{ color: s.color, fontWeight: 600 }}>{s.text}</span> <span style={{ color: "rgba(243,238,226,0.4)" }}>· {String(h.borrowed_at).slice(0, 10)}</span></div>
+                </div>
+              </div>
+            ); })}
+          </div>}
+    </Shell>
+  );
+}
+
+// ─── Rahbariyat: barcha o'quvchilar o'qigan kitoblari (o'quvchi bo'yicha guruhlab) ──
+interface MgRow { student_login: string; student_name: string; class_name: string; title: string; author: string; borrowed_at: string; returned_at: string | null; quiz_passed: boolean; quiz_score: number }
+function ManageHistoryModal({ onClose }: { onClose: () => void }) {
+  const [rows, setRows] = useState<MgRow[] | null>(null);
+  useEffect(() => { void (async () => { try { setRows(await api<MgRow[]>("/elib/history")); } catch { setRows([]); } })(); }, []);
+  const groups = (() => {
+    if (!rows) return null;
+    const m = new Map<string, { name: string; cls: string; items: MgRow[] }>();
+    for (const r of rows) {
+      const g = m.get(r.student_login) ?? { name: r.student_name || "O'quvchi", cls: r.class_name, items: [] };
+      g.items.push(r); m.set(r.student_login, g);
+    }
+    return Array.from(m.values()).sort((a, b) => b.items.length - a.items.length);
+  })();
+  return (
+    <Shell title="O'quvchilar o'qigan kitoblar" onClose={onClose} wide>
+      {!groups ? <div style={{ display: "grid", placeItems: "center", padding: 30 }}><Loader2 className="animate-spin" color={GOLD} /></div>
+        : groups.length === 0 ? <p style={{ textAlign: "center", color: "rgba(243,238,226,0.6)" }}>Hali hech kim kitob olmagan.</p>
+        : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {groups.map((g, gi) => (
+              <div key={gi}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{g.name} <span style={{ fontWeight: 400, fontSize: 12, color: "rgba(243,238,226,0.5)" }}>· {g.cls}</span></div>
+                  <span style={{ fontSize: 11.5, color: GOLD }}>{g.items.filter((x) => x.quiz_passed).length} ta o'qigan</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {g.items.map((r, ri) => { const s = statusChip(r); return (
+                    <div key={ri} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                      <span style={{ fontSize: 12.5, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</span>
+                      <span style={{ fontSize: 11, color: s.color, fontWeight: 600, flexShrink: 0 }}>{s.text}</span>
+                    </div>
+                  ); })}
+                </div>
+              </div>
+            ))}
+          </div>}
+    </Shell>
   );
 }
 

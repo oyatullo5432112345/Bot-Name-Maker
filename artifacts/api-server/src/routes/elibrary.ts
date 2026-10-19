@@ -273,6 +273,43 @@ router.get("/elib/leaderboard", async (req, res): Promise<void> => {
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 });
 
+// ─── O'quvchining o'zi o'qigan kitoblari (tarix) ──────────────────────────────
+router.get("/elib/my-history", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  try {
+    const rows = await query<Record<string, unknown>>(
+      `SELECT br.id, br.borrowed_at::text AS borrowed_at, br.due_at::text AS due_at, br.returned_at::text AS returned_at,
+              br.quiz_passed, br.quiz_score, b.title, b.author, b.cover_url
+       FROM elib_borrows br JOIN elib_books b ON b.id = br.book_id
+       WHERE br.student_login = $1 ORDER BY br.borrowed_at DESC`,
+      [String(user["login"])]
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
+// ─── Rahbariyat/kutubxonachi: barcha o'quvchilar o'qigan kitoblari ─────────────
+router.get("/elib/history", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !LIB_MANAGE.includes(String(user["role"]))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(user);
+  try {
+    const rows = mid !== null
+      ? await query<Record<string, unknown>>(
+          `SELECT br.student_login, br.student_name, br.class_name, br.borrowed_at::text AS borrowed_at,
+                  br.returned_at::text AS returned_at, br.quiz_passed, br.quiz_score, b.title, b.author
+           FROM elib_borrows br JOIN elib_books b ON b.id = br.book_id
+           WHERE br.maktab_id = $1 ORDER BY br.borrowed_at DESC LIMIT 300`, [mid])
+      : await query<Record<string, unknown>>(
+          `SELECT br.student_login, br.student_name, br.class_name, br.borrowed_at::text AS borrowed_at,
+                  br.returned_at::text AS returned_at, br.quiz_passed, br.quiz_score, b.title, b.author
+           FROM elib_borrows br JOIN elib_books b ON b.id = br.book_id
+           ORDER BY br.borrowed_at DESC LIMIT 300`);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
 // ─── O'quvchi xabar yuboradi (kutubxonachiga) ─────────────────────────────────
 router.post("/elib/message", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
