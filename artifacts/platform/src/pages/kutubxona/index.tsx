@@ -4,7 +4,7 @@
 //   Kutubxonachi/rahbariyat: kitob qo'shadi (muqova/PDF/audio havolasi + parcha + 10 savol), xabarlarni ko'radi.
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, Loader2, BookOpen, Headphones, Trophy, Plus, X, Trash2, Send, MessageSquare, Lock, CheckCircle2, Clock, BookMarked, History } from "lucide-react";
+import { ArrowLeft, Loader2, BookOpen, Headphones, Trophy, Plus, X, Trash2, Send, MessageSquare, Lock, CheckCircle2, Clock, BookMarked, History, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/face";
 
@@ -35,6 +35,7 @@ export default function Kutubxona() {
   const [inboxOpen, setInboxOpen] = useState(false); // kutubxonachi xabarlarni ko'radi
   const [myHistOpen, setMyHistOpen] = useState(false);   // o'quvchining o'qiganlari
   const [mgHistOpen, setMgHistOpen] = useState(false);   // rahbariyat: barcha tarix
+  const [ovOpen, setOvOpen] = useState(false);           // umumiy ko'rinish (maktablar)
 
   const load = async () => { try { setData(await api<BooksResp>("/elib/books")); } catch (e) { toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message }); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, []); // eslint-disable-line
@@ -70,7 +71,8 @@ export default function Kutubxona() {
             <button onClick={() => setLbOpen(true)} style={btn(PANEL, CREAM)}><Trophy size={14} color={GOLD} style={{ verticalAlign: "-2px" }} /> Reyting</button>
             <button onClick={() => setMyHistOpen(true)} style={btn(PANEL, CREAM)}><BookMarked size={14} style={{ verticalAlign: "-2px" }} /> O'qiganlarim</button>
             {data?.can_manage
-              ? <><button onClick={() => setMgHistOpen(true)} style={btn(PANEL, CREAM)}><History size={14} style={{ verticalAlign: "-2px" }} /> Tarix</button>
+              ? <><button onClick={() => setOvOpen(true)} style={btn(PANEL, CREAM)}><Building2 size={14} style={{ verticalAlign: "-2px" }} /> Umumiy</button>
+                  <button onClick={() => setMgHistOpen(true)} style={btn(PANEL, CREAM)}><History size={14} style={{ verticalAlign: "-2px" }} /> Tarix</button>
                   <button onClick={() => setInboxOpen(true)} style={btn(PANEL, CREAM)}><MessageSquare size={14} style={{ verticalAlign: "-2px" }} /></button>
                   <button onClick={() => setAddOpen(true)} style={btn(`linear-gradient(135deg, ${TEAL}, ${GOLD})`)}><Plus size={14} style={{ verticalAlign: "-2px" }} /> Kitob</button></>
               : <button onClick={() => setMsgOpen(true)} style={btn(PANEL, CREAM)}><Send size={14} style={{ verticalAlign: "-2px" }} /> Xabar</button>}
@@ -151,6 +153,7 @@ export default function Kutubxona() {
       {inboxOpen && <InboxModal onClose={() => setInboxOpen(false)} />}
       {myHistOpen && <MyHistoryModal onClose={() => setMyHistOpen(false)} />}
       {mgHistOpen && <ManageHistoryModal onClose={() => setMgHistOpen(false)} />}
+      {ovOpen && <OverviewModal onClose={() => setOvOpen(false)} />}
     </div>
   );
 }
@@ -184,6 +187,39 @@ function MyHistoryModal({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
             ); })}
+          </div>}
+    </Shell>
+  );
+}
+
+// ─── Umumiy ko'rinish: har maktabdan kitoblar + sinflar qancha o'qigani (super-admin) ──
+interface OvSchool { maktab_id: number; maktab_nom: string; book_count: number; borrow_count: number; passed_count: number; classes: { class_name: string; total: number; passed: number }[] }
+function OverviewModal({ onClose }: { onClose: () => void }) {
+  const [data, setData] = useState<{ schools: OvSchool[]; is_admin: boolean } | null>(null);
+  useEffect(() => { void (async () => { try { setData(await api<{ schools: OvSchool[]; is_admin: boolean }>("/elib/overview")); } catch { setData({ schools: [], is_admin: false }); } })(); }, []);
+  return (
+    <Shell title="Umumiy ko'rinish" onClose={onClose} wide>
+      {!data ? <div style={{ display: "grid", placeItems: "center", padding: 30 }}><Loader2 className="animate-spin" color={GOLD} /></div>
+        : data.schools.length === 0 ? <p style={{ textAlign: "center", color: "rgba(243,238,226,0.6)" }}>Hali kitob yoki o'qish yo'q.</p>
+        : <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {data.schools.map((s) => (
+              <div key={s.maktab_id} style={{ borderRadius: 14, padding: 12, background: "rgba(0,0,0,0.22)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800 }}>🏫 {s.maktab_nom}</div>
+                  <div style={{ fontSize: 12, color: "rgba(243,238,226,0.6)" }}>📚 {s.book_count} kitob · ✓ {s.passed_count} o'qilgan</div>
+                </div>
+                {s.classes.length === 0 ? <div style={{ fontSize: 12, color: "rgba(243,238,226,0.45)" }}>Hali hech kim o'qimagan</div>
+                  : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 6 }}>
+                      {s.classes.map((c, ci) => (
+                        <div key={ci} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 600 }}>{c.class_name}</span>
+                          <span style={{ fontSize: 12, color: GOLD, fontWeight: 700 }}>{c.passed}<span style={{ color: "rgba(243,238,226,0.4)", fontWeight: 400 }}>/{c.total}</span></span>
+                        </div>
+                      ))}
+                    </div>}
+              </div>
+            ))}
+            <p style={{ fontSize: 11.5, color: "rgba(243,238,226,0.45)", margin: 0 }}>Har sinfda: testdan o'tgan (o'qilgan) / jami olingan kitoblar.</p>
           </div>}
     </Shell>
   );

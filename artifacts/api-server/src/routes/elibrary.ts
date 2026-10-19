@@ -310,6 +310,44 @@ router.get("/elib/history", async (req, res): Promise<void> => {
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 });
 
+// ─── Umumiy ko'rinish: har maktabdan nechta kitob, qaysi sinf qancha o'qigan ───
+//   Super-admin (tuman) → barcha maktablar; maktab rahbariyati → faqat o'z maktabi.
+router.get("/elib/overview", async (req, res): Promise<void> => {
+  const user = getAuthUser(req.headers.authorization);
+  if (!user || !LIB_MANAGE.includes(String(user["role"]))) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const mid = schoolOf(user);
+  try {
+    const bookRows = mid !== null
+      ? await query<{ maktab_id: number; cnt: number }>("SELECT maktab_id, COUNT(*)::int AS cnt FROM elib_books WHERE maktab_id = $1 GROUP BY maktab_id", [mid])
+      : await query<{ maktab_id: number; cnt: number }>("SELECT maktab_id, COUNT(*)::int AS cnt FROM elib_books GROUP BY maktab_id");
+    const classRows = mid !== null
+      ? await query<{ maktab_id: number; class_name: string; total: number; passed: number }>(
+          `SELECT maktab_id, COALESCE(NULLIF(class_name,''),'—') AS class_name, COUNT(*)::int AS total, COUNT(*) FILTER (WHERE quiz_passed)::int AS passed
+           FROM elib_borrows WHERE maktab_id = $1 GROUP BY maktab_id, class_name`, [mid])
+      : await query<{ maktab_id: number; class_name: string; total: number; passed: number }>(
+          `SELECT maktab_id, COALESCE(NULLIF(class_name,''),'—') AS class_name, COUNT(*)::int AS total, COUNT(*) FILTER (WHERE quiz_passed)::int AS passed
+           FROM elib_borrows GROUP BY maktab_id, class_name`);
+    const schoolRows = await query<{ id: number; nom: string }>("SELECT id, nom FROM maktablar");
+    const nomById = new Map(schoolRows.map((s) => [s.id, s.nom]));
+    type School = { maktab_id: number; maktab_nom: string; book_count: number; borrow_count: number; passed_count: number; classes: { class_name: string; total: number; passed: number }[] };
+    const map = new Map<number, School>();
+    const ensure = (id: number): School => {
+      let s = map.get(id);
+      if (!s) { s = { maktab_id: id, maktab_nom: nomById.get(id) ?? `${id}-maktab`, book_count: 0, borrow_count: 0, passed_count: 0, classes: [] }; map.set(id, s); }
+      return s;
+    };
+    for (const b of bookRows) ensure(b.maktab_id).book_count = b.cnt;
+    for (const c of classRows) {
+      const s = ensure(c.maktab_id);
+      s.borrow_count += c.total; s.passed_count += c.passed;
+      s.classes.push({ class_name: c.class_name, total: c.total, passed: c.passed });
+    }
+    const out = Array.from(map.values()).sort((a, b) => a.maktab_nom.localeCompare(b.maktab_nom, "uz"));
+    for (const s of out) s.classes.sort((a, b) => b.passed - a.passed || a.class_name.localeCompare(b.class_name, "uz"));
+    res.json({ schools: out, is_admin: mid === null });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
 // ─── O'quvchi xabar yuboradi (kutubxonachiga) ─────────────────────────────────
 router.post("/elib/message", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);

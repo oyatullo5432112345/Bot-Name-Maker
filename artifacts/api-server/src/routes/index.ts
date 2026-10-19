@@ -35,7 +35,6 @@ import sayohatRouter from "./sayohat.js";
 import maktablarRouter from "./maktablar.js";
 import analyticsRouter, { activityMiddleware } from "./analytics.js";
 import elibraryRouter from "./elibrary.js";
-import kutubxonaRouter from "./kutubxona.js";
 
 const router: IRouter = Router();
 
@@ -78,6 +77,5 @@ router.use(sayohatRouter);
 router.use(maktablarRouter);
 router.use(analyticsRouter);
 router.use(elibraryRouter);
-router.use(kutubxonaRouter);
 
 export default router;
