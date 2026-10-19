@@ -137,6 +137,7 @@ export default function MaktabOlami() {
             <ArrowLeft size={18} /> Orqaga
           </Link>
           <div style={{ display: "flex", gap: 8 }}>
+            <Link href="/reyting" style={{ display: "inline-flex", alignItems: "center", gap: 5, background: PANEL, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 999, padding: "5px 12px", color: CREAM, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>🏆 Reyting</Link>
             <button onClick={() => setPicker(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: PANEL, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 999, padding: "5px 10px", color: CREAM, cursor: "pointer" }}>
               <span style={{ width: 22, height: 22, borderRadius: 999, background: `${GOLD}22`, border: `1px solid ${GOLD}`, display: "grid", placeItems: "center", fontSize: 13 }}>{curAvatar?.emoji ?? "👤"}</span>
               <span style={{ fontSize: 13 }}>{curAvatar?.name ?? "Qahramon"}</span>
@@ -208,6 +209,9 @@ export default function MaktabOlami() {
                             border: "1px solid rgba(255,255,255,0.1)" }}>
                           {busy === b.key ? "…" : maxed ? "Eng yuqori ✓" : `Kuchaytirish · 🪙 ${b.next_cost}`}
                         </button>
+                        {b.key === "kutubxona" && (
+                          <Link href="/kutubxona" style={{ display: "block", textAlign: "center", marginTop: 6, fontSize: 12.5, color: TEAL, textDecoration: "none", fontWeight: 700 }}>📖 Kutubxonani ochish →</Link>
+                        )}
                       </div>
                     </div>
                   );

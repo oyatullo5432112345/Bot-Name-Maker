@@ -143,8 +143,11 @@ export default function MergeGame() {
           <Link href="/intellektual" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "rgba(243,238,226,0.7)", fontSize: 14 }}>
             <ArrowLeft size={18} /> Orqaga
           </Link>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, background: PANEL, border: `1px solid ${GOLD}55`, borderRadius: 999, padding: "6px 14px", fontWeight: 700 }}>
-            <span style={{ color: GOLD }}>🪙 {st?.total ?? "…"}</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Link href="/reyting" style={{ display: "inline-flex", alignItems: "center", gap: 5, background: PANEL, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 999, padding: "6px 12px", color: CREAM, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>🏆 Reyting</Link>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: PANEL, border: `1px solid ${GOLD}55`, borderRadius: 999, padding: "6px 14px", fontWeight: 700 }}>
+              <span style={{ color: GOLD }}>🪙 {st?.total ?? "…"}</span>
+            </div>
           </div>
         </div>
 

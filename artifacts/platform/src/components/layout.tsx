@@ -558,6 +558,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {canViewStaff && <NavLink href="/staff" icon={Users} label="Xodimlar" active={isActive("/staff")} />}
           <NavLink href="/games" icon={Gamepad2} label="O'yinlar" active={isActive("/games")} />
           <NavLink href="/intellektual" icon={Compass} label="Intelektual o'yinlar" active={isActive("/intellektual")} />
+          <NavLink href="/kutubxona" icon={BookOpen} label="Kutubxona" active={isActive("/kutubxona")} />
         </NavSection>
 
         {!isMudir && (
