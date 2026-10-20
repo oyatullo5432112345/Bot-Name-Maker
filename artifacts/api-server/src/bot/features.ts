@@ -154,8 +154,14 @@ function sortClasses<T extends { name: string }>(list: T[]): T[] {
   return [...list].sort((a, b) => a.name.localeCompare(b.name, "uz", { numeric: true }));
 }
 
-async function getAllClasses(): Promise<{ id: string; name: string }[]> {
-  return sortClasses(await query<{ id: string; name: string }>("SELECT id, name FROM classes"));
+async function getAllClasses(): Promise<{ id: string; name: string; maktab_id: number | null; school: string }[]> {
+  return sortClasses(await query<{ id: string; name: string; maktab_id: number | null; school: string }>(
+    "SELECT c.id, c.name, c.maktab_id, COALESCE(m.nom, '') AS school FROM classes c LEFT JOIN maktablar m ON m.id = c.maktab_id"));
+}
+
+// Bitta maktabning sinflari (ikki bosqichli tanlovda ishlatiladi)
+async function classesOfSchool(maktabId: number): Promise<{ id: string; name: string }[]> {
+  return sortClasses(await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE maktab_id = $1", [maktabId]));
 }
 
 /** O'qituvchi ishlaydigan sinflar (rahbar bo'lsa — hammasi) */
@@ -1302,10 +1308,8 @@ export async function groupAuth(ctx: Context): Promise<GroupAuth> {
   };
 }
 
-/** Guruhni ulash uchun sinf tanlash tugmalari */
-async function classPicker(auth: GroupAuth): Promise<InlineKeyboard | null> {
-  const list = auth.groupAdmin || isManagement(auth.who) || !auth.who ? await getAllClasses() : await classesFor(auth.who);
-  if (list.length === 0) return null;
+/** Sinf tugmalari ro'yxatidan klaviatura (g:bind) */
+function classKbFrom(list: { id: string; name: string }[]): InlineKeyboard {
   const kb = new InlineKeyboard();
   list.slice(0, 60).forEach((c, i) => {
     kb.text(c.name, `g:bind:${c.id}`);
@@ -1313,6 +1317,31 @@ async function classPicker(auth: GroupAuth): Promise<InlineKeyboard | null> {
   });
   return kb;
 }
+
+/** Guruhni ulash uchun tanlov klaviaturasi.
+ *  Bir nechta maktab bo'lsa — AVVAL maktab tanlanadi (g:sch), keyin shu maktab sinflari.
+ *  Shunda turli maktablarning bir xil nomli sinflari (8-A) chalkashmaydi. */
+async function classPicker(auth: GroupAuth): Promise<InlineKeyboard | null> {
+  // O'qituvchi (rahbariyat emas) — faqat o'z sinflari (bitta maktab), to'g'ridan-to'g'ri
+  if (!(auth.groupAdmin || isManagement(auth.who) || !auth.who)) {
+    const mine = await classesFor(auth.who);
+    return mine.length ? classKbFrom(mine) : null;
+  }
+  // Maktablar sonini MAKTABLAR jadvalidan olamiz (sinflarning maktab_id si bo'yicha emas).
+  // Shunda 2+ maktab bo'lsa — sinflar qanday taqsimlangandan qat'i nazar, avval maktab so'raladi.
+  const schoolRows = await query<{ id: number; nom: string }>(
+    "SELECT id, nom FROM maktablar WHERE deleted_at IS NULL ORDER BY nom"
+  ).catch(() => [] as { id: number; nom: string }[]);
+  if (schoolRows.length >= 2) {
+    const kb = new InlineKeyboard();
+    schoolRows.forEach((s, i) => { kb.text(`🏫 ${s.nom || `${s.id}-maktab`}`, `g:sch:${s.id}`); if (i % 2 === 1) kb.row(); });
+    return kb;
+  }
+  // Bitta (yoki nol) maktab — to'g'ridan-to'g'ri sinflar
+  const all = await getAllClasses();
+  return all.length ? classKbFrom(all) : null;
+}
+
 
 const NO_CLASSES_TEXT =
   "Saytda hali birorta sinf yaratilmagan. Admin saytga kirib, <b>Sinflar</b> bo'limida sinf qo'shsin, keyin /boglash yozing.";
@@ -1376,7 +1405,7 @@ function registerGroup(group: Composer<Context>): void {
     await ctx.reply(
       `👋 Assalomu alaykum! Men maktab platformasi botiman.\n\n` +
         (kb
-          ? `<b>Bu guruh qaysi sinfniki?</b> Guruh admini yoki o'qituvchi pastdagi tugmani bossin 👇`
+          ? `<b>Bu guruh qaysi sinfniki?</b> Guruh admini yoki o'qituvchi tanlasin — avval maktab, so'ng sinf 👇`
           : NO_CLASSES_TEXT) +
         `\n\nUlangandan keyin: har kuni ertalab dars jadvali 📅, tug'ilgan kun tabriklari 🎂, haftalik reyting 🏆, o'qituvchi xabarlari ✉️ va 🎮 "Bilimlar jangi" o'yini.`,
       { parse_mode: "HTML", reply_markup: kb ?? undefined }
@@ -1480,7 +1509,7 @@ function registerGroup(group: Composer<Context>): void {
     if (!classId) {
       const kb = await classPicker(auth);
       if (!kb) { await ctx.reply(NO_CLASSES_TEXT, { parse_mode: "HTML" }); return; }
-      await ctx.reply("<b>Bu guruh qaysi sinfniki?</b> Tanlang 👇", { parse_mode: "HTML", reply_markup: kb });
+      await ctx.reply("<b>Bu guruh qaysi sinfniki?</b> Tanlang (avval maktab, so'ng sinf) 👇", { parse_mode: "HTML", reply_markup: kb });
       return;
     }
     if (!(await mayBindClass(auth, classId))) { await ctx.reply("⛔ Bu sinf sizga biriktirilmagan."); return; }
@@ -1498,6 +1527,33 @@ function registerGroup(group: Composer<Context>): void {
     await ctx.deleteMessage().catch(() => {});
     const title = ctx.chat && "title" in ctx.chat && ctx.chat.title ? ctx.chat.title : "";
     await bindClass(ctx, classId, title, auth);
+  });
+
+  // Maktab tanlandi → shu maktab sinflari ko'rsatiladi
+  group.callbackQuery(/^g:sch:(\d+)$/, async (ctx) => {
+    const mid = Number(ctx.match[1]);
+    await ctx.answerCallbackQuery().catch(() => {});
+    const classes = await classesOfSchool(mid);
+    if (classes.length === 0) {
+      await ctx.editMessageText(
+        "Bu maktabda hali sinf yo'q (yoki sinflar boshqa maktabga biriktirilgan). Saytda <b>Sinflar</b> bo'limida shu maktabga sinf qo'shing.",
+        { parse_mode: "HTML", reply_markup: new InlineKeyboard().text("⬅️ Boshqa maktab", "g:schback") }
+      ).catch(() => {});
+      return;
+    }
+    const kb = classKbFrom(classes);
+    kb.row().text("⬅️ Boshqa maktab", "g:schback");
+    await ctx.editMessageText("<b>Qaysi sinf?</b> Tanlang 👇", { parse_mode: "HTML", reply_markup: kb })
+      .catch(async () => { await ctx.editMessageReplyMarkup({ reply_markup: kb }).catch(() => {}); });
+  });
+
+  // "Boshqa maktab" → maktab tanlashga qaytish
+  group.callbackQuery("g:schback", async (ctx) => {
+    const kb = await classPicker({ ok: true, who: null, staff: false, groupAdmin: true, anonymous: false, name: "" });
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!kb) { await ctx.editMessageText(NO_CLASSES_TEXT, { parse_mode: "HTML" }).catch(() => {}); return; }
+    await ctx.editMessageText("<b>Bu guruh qaysi maktabniki?</b> Tanlang 👇", { parse_mode: "HTML", reply_markup: kb })
+      .catch(async () => { await ctx.editMessageReplyMarkup({ reply_markup: kb }).catch(() => {}); });
   });
 
   group.command("uzish", async (ctx) => {
