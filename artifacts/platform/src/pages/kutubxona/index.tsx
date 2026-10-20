@@ -4,15 +4,27 @@
 //   Kutubxonachi/rahbariyat: kitob qo'shadi (muqova/PDF/audio havolasi + parcha + 10 savol), xabarlarni ko'radi.
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, Loader2, BookOpen, Headphones, Trophy, Plus, X, Trash2, Send, MessageSquare, Lock, CheckCircle2, Clock, BookMarked, History, Building2 } from "lucide-react";
+import { ArrowLeft, Loader2, BookOpen, Headphones, Trophy, Plus, X, Trash2, Send, MessageSquare, Lock, CheckCircle2, Clock, BookMarked, History, Building2, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/face";
+import { api, API_BASE } from "@/lib/face";
+
+// Havolasiz yuklangan PDF/audio — token bilan (brauzer yangi tabda ochganda header bo'lmaydi)
+const fileUrl = (id: string, kind: "pdf" | "audio") => `${API_BASE}/elib/file/${id}/${kind}?t=${encodeURIComponent(localStorage.getItem("talim_auth_token") ?? "")}`;
+const readDataUrl = (file: File) => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error("o'qilmadi")); r.readAsDataURL(file); });
+async function fileToParts(file: File): Promise<{ mime: string; b64: string }> {
+  const d = await readDataUrl(file); const c = d.indexOf(",");
+  const meta = d.slice(0, c); const b64 = d.slice(c + 1);
+  const mime = meta.slice(5, meta.indexOf(";")) || file.type;
+  return { mime: mime || file.type, b64 };
+}
+const MAX_MB = 20;
 
 const INK = "#0E1230", INK2 = "#161B3C", PANEL = "#1B2150", GOLD = "#E8B04B", CREAM = "#F3EEE2", TEAL = "#1EA896";
 
 interface Borrow { id: string; borrowed_at: string; due_at: string; returned_at: string | null; quiz_passed: boolean; quiz_score: number }
 interface Book {
   id: string; title: string; author: string; cover_url: string; pdf_url: string; audio_url: string;
+  pdf_uploaded: boolean; audio_uploaded: boolean;
   excerpt: string; description: string; question_count: number; my_borrow: Borrow | null;
 }
 interface BooksResp { books: Book[]; locked: boolean; borrow_days: number; quiz_total: number; quiz_pass: number; can_manage: boolean }
@@ -104,6 +116,8 @@ export default function Kutubxona() {
               const active = mb && !mb.quiz_passed;
               const passed = mb?.quiz_passed;
               const dl = mb ? daysLeft(mb.due_at) : 0;
+              const pdfHref = b.pdf_url || (b.pdf_uploaded ? fileUrl(b.id, "pdf") : "");
+              const audioSrc = b.audio_url || (b.audio_uploaded ? fileUrl(b.id, "audio") : "");
               return (
                 <div key={b.id} style={{ borderRadius: 16, overflow: "hidden", background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column" }}>
                   {/* Muqova */}
@@ -128,10 +142,10 @@ export default function Kutubxona() {
                       ) : (
                         <>
                           <div style={{ display: "flex", gap: 6 }}>
-                            {b.pdf_url && <a href={b.pdf_url} target="_blank" rel="noreferrer" style={{ ...btn("rgba(255,255,255,0.08)", CREAM), flex: 1, textAlign: "center", textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }}><BookOpen size={13} /> O'qish</a>}
-                            {b.audio_url && <button onClick={() => setAudioFor(audioFor === b.id ? "" : b.id)} style={{ ...btn("rgba(255,255,255,0.08)", CREAM), flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }}><Headphones size={13} /> Audio</button>}
+                            {pdfHref && <a href={pdfHref} target="_blank" rel="noreferrer" style={{ ...btn("rgba(255,255,255,0.08)", CREAM), flex: 1, textAlign: "center", textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }}><BookOpen size={13} /> O'qish</a>}
+                            {audioSrc && <button onClick={() => setAudioFor(audioFor === b.id ? "" : b.id)} style={{ ...btn("rgba(255,255,255,0.08)", CREAM), flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }}><Headphones size={13} /> Audio</button>}
                           </div>
-                          {audioFor === b.id && b.audio_url && <audio controls autoPlay src={b.audio_url} style={{ width: "100%", height: 34 }} />}
+                          {audioFor === b.id && audioSrc && <audio controls autoPlay src={audioSrc} style={{ width: "100%", height: 34 }} />}
                           {!passed && b.question_count > 0 && <button onClick={() => setQuizBook(b)} style={btn(`linear-gradient(135deg, ${GOLD}, #D97706)`)}>Test ({b.question_count} savol)</button>}
                           {!mb.returned_at && <button onClick={() => void giveBack(b)} disabled={!!busy} style={btn("rgba(255,255,255,0.06)", "rgba(243,238,226,0.8)")}>{busy === b.id ? "…" : "Topshirish"}</button>}
                           {passed && <span style={{ fontSize: 12, color: TEAL, fontWeight: 600, textAlign: "center" }}><CheckCircle2 size={13} style={{ verticalAlign: "-2px" }} /> Testdan o'tdingiz</span>}
@@ -400,31 +414,74 @@ interface QDraft { q: string; options: string[]; correct: number }
 function AddBookModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { toast } = useToast();
   const [f, setF] = useState({ title: "", author: "", cover_url: "", pdf_url: "", audio_url: "", excerpt: "", description: "" });
+  const [coverData, setCoverData] = useState("");            // yuklangan muqova (data-URL)
+  const [coverName, setCoverName] = useState("");
+  const [pdfFile, setPdfFile] = useState<{ mime: string; b64: string } | null>(null);
+  const [pdfName, setPdfName] = useState("");
+  const [audioFile, setAudioFile] = useState<{ mime: string; b64: string } | null>(null);
+  const [audioName, setAudioName] = useState("");
   const [qs, setQs] = useState<QDraft[]>(Array.from({ length: 10 }, () => ({ q: "", options: ["", "", "", ""], correct: 0 })));
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
   const setQ = (i: number, patch: Partial<QDraft>) => setQs((p) => p.map((q, n) => n === i ? { ...q, ...patch } : q));
   const setOpt = (i: number, oi: number, v: string) => setQs((p) => p.map((q, n) => n === i ? { ...q, options: q.options.map((o, k) => k === oi ? v : o) } : q));
 
+  const pick = async (file: File | null, kind: "cover" | "pdf" | "audio") => {
+    if (!file) return;
+    if (file.size > MAX_MB * 1024 * 1024) { toast({ variant: "destructive", title: "Fayl juda katta", description: `Eng ko'pi ${MAX_MB} MB` }); return; }
+    try {
+      if (kind === "cover") { setCoverData(await readDataUrl(file)); setCoverName(file.name); }
+      else { const parts = await fileToParts(file); if (kind === "pdf") { setPdfFile(parts); setPdfName(file.name); } else { setAudioFile(parts); setAudioName(file.name); } }
+    } catch { toast({ variant: "destructive", title: "Faylni o'qib bo'lmadi" }); }
+  };
+
   const save = async () => {
     if (!f.title.trim()) { toast({ variant: "destructive", title: "Sarlavha kerak" }); return; }
     const questions = qs.filter((q) => q.q.trim() && q.options.every((o) => o.trim()));
     setBusy(true);
-    try { await api("/elib/books", { method: "POST", body: JSON.stringify({ ...f, questions }) }); toast({ title: "Kitob qo'shildi", description: `${questions.length} ta savol bilan` }); onDone(); }
+    try {
+      await api("/elib/books", { method: "POST", body: JSON.stringify({
+        ...f, cover_url: coverData || f.cover_url,
+        pdf_data: pdfFile ?? undefined, audio_data: audioFile ?? undefined, questions,
+      }) });
+      toast({ title: "Kitob qo'shildi", description: `${questions.length} ta savol bilan` }); onDone();
+    }
     catch (e) { toast({ variant: "destructive", title: "Bo'lmadi", description: (e as Error).message }); }
     finally { setBusy(false); }
   };
 
   const inp: CSSProperties = { width: "100%", borderRadius: 9, padding: "8px 10px", background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.12)", color: CREAM, fontSize: 13, marginBottom: 8 };
+  const fileBtn: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 9, padding: "8px 12px", background: "rgba(30,168,150,0.15)", border: `1px dashed ${TEAL}88`, color: CREAM, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" };
   return (
     <Shell title="Yangi kitob" onClose={onClose} wide>
       <input style={inp} placeholder="Kitob nomi *" value={f.title} onChange={(e) => set("title", e.target.value)} />
       <input style={inp} placeholder="Muallif" value={f.author} onChange={(e) => set("author", e.target.value)} />
-      <input style={inp} placeholder="Muqova rasmi havolasi (https://...)" value={f.cover_url} onChange={(e) => set("cover_url", e.target.value)} />
-      <input style={inp} placeholder="PDF havolasi (https://...)" value={f.pdf_url} onChange={(e) => set("pdf_url", e.target.value)} />
-      <input style={inp} placeholder="Audio havolasi (https://...)" value={f.audio_url} onChange={(e) => set("audio_url", e.target.value)} />
+
+      {/* Muqova rasmi — fayldan yuklash (havolasiz) yoki havola */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        {coverData && <img src={coverData} alt="" style={{ width: 40, height: 54, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />}
+        <label style={fileBtn}><Upload size={14} /> {coverName || "Muqova rasmini yuklash"}
+          <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => void pick(e.target.files?.[0] ?? null, "cover")} /></label>
+      </div>
+
+      {/* PDF — fayl yoki havola (ixtiyoriy) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <label style={fileBtn}><Upload size={14} /> {pdfName || "PDF yuklash"}
+          <input type="file" accept="application/pdf,.pdf" style={{ display: "none" }} onChange={(e) => void pick(e.target.files?.[0] ?? null, "pdf")} /></label>
+        <span style={{ fontSize: 11, color: "rgba(243,238,226,0.4)" }}>yoki</span>
+        <input style={{ ...inp, marginBottom: 0, flex: 1, minWidth: 140 }} placeholder="PDF havolasi (ixtiyoriy)" value={f.pdf_url} onChange={(e) => set("pdf_url", e.target.value)} />
+      </div>
+
+      {/* Audio — fayl yoki havola (ixtiyoriy) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <label style={fileBtn}><Upload size={14} /> {audioName || "Audio yuklash"}
+          <input type="file" accept="audio/*" style={{ display: "none" }} onChange={(e) => void pick(e.target.files?.[0] ?? null, "audio")} /></label>
+        <span style={{ fontSize: 11, color: "rgba(243,238,226,0.4)" }}>yoki</span>
+        <input style={{ ...inp, marginBottom: 0, flex: 1, minWidth: 140 }} placeholder="Audio havolasi (ixtiyoriy)" value={f.audio_url} onChange={(e) => set("audio_url", e.target.value)} />
+      </div>
+
       <textarea style={{ ...inp, resize: "vertical" }} rows={2} placeholder="Parcha (kitobdan qisqa ko'chirma)" value={f.excerpt} onChange={(e) => set("excerpt", e.target.value)} />
-      <p style={{ fontSize: 11.5, color: "rgba(243,238,226,0.5)", margin: "2px 0 8px" }}>PDF/audio uchun ochiq havola qo'ying (masalan Google Drive). To'g'ri javobni belgilang.</p>
+      <p style={{ fontSize: 11.5, color: "rgba(243,238,226,0.5)", margin: "2px 0 8px" }}>PDF va audio <b>ixtiyoriy</b> — bo'lmasa, qo'shmang. Fayl eng ko'pi {MAX_MB} MB. Test savollarida to'g'ri javobni yashil doira bilan belgilang.</p>
 
       <div style={{ fontSize: 13, fontWeight: 700, margin: "6px 0 8px", color: GOLD }}>Test savollari (10 tagacha) — kerakligicha to'ldiring</div>
       {qs.map((q, i) => (

@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS elib_messages (
   maktab_id  INT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- To'g'ridan-to'g'ri yuklangan fayllar (havolasiz): PDF va audio base64 ko'rinishda saqlanadi.
+-- Ro'yxatda YUBORILMAYDI — faqat /elib/file/:bookId/:kind orqali oqib olinadi.
+CREATE TABLE IF NOT EXISTS elib_files (
+  book_id UUID NOT NULL,
+  kind    TEXT NOT NULL,
+  mime    TEXT NOT NULL DEFAULT '',
+  data    TEXT NOT NULL DEFAULT '',
+  size    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (book_id, kind)
+);
 `;
 void query(SCHEMA).catch(() => { /* migratsiya keyin yaratadi */ });
 
@@ -80,13 +90,16 @@ function cleanQuestions(raw: unknown): QItem[] {
   return out;
 }
 
-const urlOrEmpty = z.string().max(2000).optional().default("");
+const FILE_MAX = 27_000_000;        // ~20 MB fayl (base64). Body limiti 30mb (app.ts).
+const fileData = z.object({ mime: z.string().max(120), b64: z.string().min(1).max(FILE_MAX) }).optional();
 const CreateBookBody = z.object({
   title: z.string().min(1).max(300),
-  author: urlOrEmpty,
-  cover_url: urlOrEmpty,
-  pdf_url: urlOrEmpty,
-  audio_url: urlOrEmpty,
+  author: z.string().max(2000).optional().default(""),
+  cover_url: z.string().max(3_000_000).optional().default(""), // havola YOKI yuklangan rasm (data-URL)
+  pdf_url: z.string().max(2000).optional().default(""),
+  audio_url: z.string().max(2000).optional().default(""),
+  pdf_data: fileData,    // havolasiz yuklangan PDF: { mime, b64 }
+  audio_data: fileData,  // havolasiz yuklangan audio: { mime, b64 }
   excerpt: z.string().max(8000).optional().default(""),
   description: z.string().max(4000).optional().default(""),
   questions: z.array(z.any()).optional().default([]),
@@ -114,12 +127,16 @@ router.get("/elib/books", async (req, res): Promise<void> => {
     }
     // "Qulf": o'quvchida testdan o'tilmagan ochiq kitob bo'lsa — yangisini ololmaydi
     const locked = borrows.some((b) => b["quiz_passed"] === false);
+    // Havolasiz yuklangan fayllar (data YUBORILMAYDI — faqat bor-yo'qligi)
+    const fileRows = await query<{ book_id: string; kind: string }>("SELECT book_id, kind FROM elib_files");
+    const hasFile = new Set(fileRows.map((r) => `${r.book_id}:${r.kind}`));
     const list = books.map((bk) => {
       const qs = cleanQuestions(bk["questions"]);
       const mine = byBook.get(String(bk["id"])) ?? null;
       return {
         id: bk["id"], title: bk["title"], author: bk["author"],
         cover_url: bk["cover_url"], pdf_url: bk["pdf_url"], audio_url: bk["audio_url"],
+        pdf_uploaded: hasFile.has(`${bk["id"]}:pdf`), audio_uploaded: hasFile.has(`${bk["id"]}:audio`),
         excerpt: bk["excerpt"], description: bk["description"],
         question_count: qs.length,
         my_borrow: mine && {
@@ -143,12 +160,24 @@ router.post("/elib/books", async (req, res): Promise<void> => {
   const questions = cleanQuestions(d.questions);
   const mid = schoolOf(user);
   try {
-    const book = await queryOne<Record<string, unknown>>(
+    const book = await queryOne<{ id: string }>(
       `INSERT INTO elib_books (title, author, cover_url, pdf_url, audio_url, excerpt, description, questions, added_by, maktab_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10) RETURNING id`,
       [d.title, d.author, d.cover_url, d.pdf_url, d.audio_url, d.excerpt, d.description, JSON.stringify(questions), String(user["login"]), mid ?? 3]
     );
-    res.status(201).json(book);
+    const bookId = book?.id;
+    // Havolasiz yuklangan fayllar (PDF/audio) alohida jadvalga
+    if (bookId) {
+      if (d.pdf_data?.b64) await query(
+        `INSERT INTO elib_files (book_id, kind, mime, data, size) VALUES ($1,'pdf',$2,$3,$4)
+         ON CONFLICT (book_id, kind) DO UPDATE SET mime=$2, data=$3, size=$4`,
+        [bookId, d.pdf_data.mime || "application/pdf", d.pdf_data.b64, d.pdf_data.b64.length]).catch(() => {});
+      if (d.audio_data?.b64) await query(
+        `INSERT INTO elib_files (book_id, kind, mime, data, size) VALUES ($1,'audio',$2,$3,$4)
+         ON CONFLICT (book_id, kind) DO UPDATE SET mime=$2, data=$3, size=$4`,
+        [bookId, d.audio_data.mime || "audio/mpeg", d.audio_data.b64, d.audio_data.b64.length]).catch(() => {});
+    }
+    res.status(201).json({ id: bookId });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 });
 
@@ -159,9 +188,30 @@ router.delete("/elib/books/:id", async (req, res): Promise<void> => {
   const { id } = req.params as { id: string };
   try {
     await query("DELETE FROM elib_borrows WHERE book_id = $1", [id]);
+    await query("DELETE FROM elib_files WHERE book_id = $1", [id]);
     await query("DELETE FROM elib_books WHERE id = $1", [id]);
     res.sendStatus(204);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
+// ─── Yuklangan faylni (PDF/audio) o'qib berish — havolasiz yuklangan fayllar uchun ──
+//   Brauzer yangi tabda ochganda Authorization header bo'lmaydi — token ?t= orqali ham qabul qilinadi.
+router.get("/elib/file/:bookId/:kind", async (req, res): Promise<void> => {
+  const hdr = req.headers.authorization;
+  const q = typeof req.query["t"] === "string" ? String(req.query["t"]) : "";
+  const user = hdr ? getAuthUser(hdr) : (q ? getAuthUser(`Bearer ${q}`) : null);
+  if (!user) { res.status(401).send("Avtorizatsiya talab etiladi"); return; }
+  const { bookId, kind } = req.params as { bookId: string; kind: string };
+  if (kind !== "pdf" && kind !== "audio") { res.status(400).send("Noto'g'ri tur"); return; }
+  try {
+    const row = await queryOne<{ mime: string; data: string }>("SELECT mime, data FROM elib_files WHERE book_id = $1 AND kind = $2", [bookId, kind]);
+    if (!row) { res.status(404).send("Fayl topilmadi"); return; }
+    const buf = Buffer.from(row.data, "base64");
+    res.setHeader("Content-Type", row.mime || (kind === "pdf" ? "application/pdf" : "audio/mpeg"));
+    res.setHeader("Content-Disposition", "inline");
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.send(buf);
+  } catch (err) { res.status(500).send((err as Error).message); }
 });
 
 // ─── Kitob olish (10 kunga) — oldingi kitob testidan o'tilган bo'lishi shart ──
