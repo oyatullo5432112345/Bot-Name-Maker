@@ -5,9 +5,9 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { KeyRound, Printer, RefreshCw, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
+import { ClassChips } from "@/components/class-chips";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 function authHeaders(): HeadersInit {
@@ -59,18 +59,15 @@ export default function LoginIdsPage() {
           <h1 className="text-xl font-bold">Kirish IDlari</h1>
         </div>
         <div className="flex-1" />
-        {!scoped && (
-          <Select value={cls} onValueChange={setCls}>
-            <SelectTrigger className="w-44"><SelectValue placeholder="Sinf" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Hamma sinflar</SelectItem>
-              {(classes.data ?? []).map((c) => <SelectItem key={c.class_name} value={c.class_name}>{c.class_name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        )}
         <Button variant="outline" size="sm" onClick={() => void list.refetch()}><RefreshCw className="w-4 h-4 sm:mr-1.5" /><span className="hidden sm:inline">Yangilash</span></Button>
         <Button size="sm" onClick={print}><Printer className="w-4 h-4 sm:mr-1.5" /><span className="hidden sm:inline">Chop etish</span></Button>
       </div>
+
+      {!scoped && (
+        <div className="no-print">
+          <ClassChips classes={classes.data ?? []} value={cls} onChange={setCls} allOption={{ value: ALL, label: "Hamma sinflar" }} />
+        </div>
+      )}
 
       {myId && (
         <div className="no-print rounded-2xl border bg-primary/5 px-5 py-4 flex items-center gap-4">

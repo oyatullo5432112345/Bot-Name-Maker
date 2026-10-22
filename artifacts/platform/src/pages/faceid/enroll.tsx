@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ClassChips } from "@/components/class-chips";
 import { ArrowLeft, Camera, CheckCircle2, Image as ImageIcon, Loader2, ScanFace, ShieldCheck, SwitchCamera, Trash2, X } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
@@ -406,19 +406,8 @@ export default function FaceEnrollPage() {
 
       <Card>
         <CardContent className="pt-5 space-y-3">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Select value={cls} onValueChange={setCls}>
-              <SelectTrigger className="sm:w-48"><SelectValue placeholder="Sinf" /></SelectTrigger>
-              <SelectContent>
-                {(classes.data ?? []).map((c) => (
-                  <SelectItem key={c.class_name} value={c.class_name}>
-                    {c.class_name} · {c.enrolled}/{c.total}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input placeholder="Ism bo'yicha qidirish…" value={search} onChange={(e) => setSearch(e.target.value)} />
-          </div>
+          <ClassChips classes={classes.data ?? []} value={cls} onChange={setCls} />
+          <Input placeholder="Ism bo'yicha qidirish…" value={search} onChange={(e) => setSearch(e.target.value)} />
           {total > 0 && (
             <div>
               <div className="flex justify-between text-sm mb-1">
