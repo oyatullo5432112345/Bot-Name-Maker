@@ -526,26 +526,35 @@ router.get("/faceid/students", async (req, res): Promise<void> => {
   res.json(rows);
 });
 
-// GET /api/faceid/classes — ro'yxatga olish uchun sinflar (sinf rahbari — faqat o'ziniki)
+// GET /api/faceid/classes — ro'yxatga olish va qo'lda tuzatish uchun sinflar.
+// Manba: classes jadvali (o'quvchisi yo'q sinf ham chiqadi), har maktab doirasida.
+// Bir xil nomli sinflar (turli maktablarda) bitta chipga birlashtiriladi, sonlari qo'shiladi.
 router.get("/faceid/classes", async (req, res): Promise<void> => {
   const u = authAs(req, ENROLL);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const mid = schoolOf(u);
-  const rows = mid !== null
-    ? await query<{ class_name: string; total: number; enrolled: number }>(
-        `SELECT u.class_name, COUNT(*)::int AS total, COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled
-           FROM users u LEFT JOIN face_profiles fp ON fp.student_login = u.login
-          WHERE u.class_name <> '' AND u.maktab_id = $1 GROUP BY u.class_name`,
-        [mid]
-      )
-    : await query<{ class_name: string; total: number; enrolled: number }>(
-        `SELECT u.class_name, COUNT(*)::int AS total, COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled
-           FROM users u LEFT JOIN face_profiles fp ON fp.student_login = u.login
-          WHERE u.class_name <> '' GROUP BY u.class_name`
-      );
-  const list = rows
-    .filter((r) => canTouchClass(u, r.class_name))
-    .sort((a, b) => a.class_name.localeCompare(b.class_name, "uz", { numeric: true }));
+  const rows = await query<{ class_name: string; total: number; enrolled: number }>(
+    `SELECT c.name AS class_name,
+            COUNT(u.login)::int AS total,
+            COUNT(fp.student_login) FILTER (WHERE fp.consent)::int AS enrolled
+       FROM classes c
+       LEFT JOIN users u ON u.class_name = c.name AND u.maktab_id = c.maktab_id
+       LEFT JOIN face_profiles fp ON fp.student_login = u.login
+      WHERE c.name <> ''${mid !== null ? " AND c.maktab_id = $1" : ""}
+      GROUP BY c.id, c.name`,
+    mid !== null ? [mid] : []
+  );
+
+  // Bir xil nom (turli maktab) — bitta chip, sonlari qo'shiladi
+  const byName = new Map<string, { class_name: string; total: number; enrolled: number }>();
+  for (const r of rows) {
+    if (!canTouchClass(u, r.class_name)) continue;
+    const prev = byName.get(r.class_name);
+    if (prev) { prev.total += r.total; prev.enrolled += r.enrolled; }
+    else byName.set(r.class_name, { class_name: r.class_name, total: r.total, enrolled: r.enrolled });
+  }
+  const list = [...byName.values()].sort((a, b) => a.class_name.localeCompare(b.class_name, "uz", { numeric: true }));
+
   // Xodimlar (o'qituvchilar) guruhini oxiriga qo'shamiz — faqat rahbariyat uchun
   if (MANAGE.includes(u.role)) {
     const s = mid !== null
@@ -1921,37 +1930,4 @@ export async function checkHourLimits(mid: number): Promise<{ newly: number }> {
   const fname = `${limit}-soat-chegara-${today}.doc`;
   const caption = `🚨 <b>${esc(sName)} — ${limit} soat chegarasidan o'tganlar</b> (chorak: ${qStr} dan)\nYangi: ${fresh.length} ta o'quvchi`;
   for (const id of await mgmtRecipients(mid)) { await sendDocumentToChat(id, buf, fname, caption); await sleep(120); }
-  for (const ch of await dailyAttendanceChats(mid)) { await sendDocumentToChat(ch.chat_id, buf, fname, caption); await sleep(120); }
-
-  return { newly: fresh.length };
-}
-
-function renderHourLimitDoc(rows: HourOffender[], sName: string, quarterStart: string, limit: number): string {
-  const qStr = quarterStart.split("-").reverse().join(".");
-  const row = (cells: string[]) => `<tr>${cells.map((c) => `<td>${c}</td>`).join("")}</tr>`;
-  const head = (cells: string[]) => `<tr>${cells.map((c) => `<th>${c}</th>`).join("")}</tr>`;
-  const table =
-    `<table class="list">${head(["#", "Maktab", "Sinf", "Familya, ism", "Qoldirilgan soat"])}` +
-    rows.map((r, i) => row([String(i + 1), esc(sName), esc(r.class_name), esc(r.full_name), String(r.hours)])).join("") +
-    `</table>`;
-  return `<!doctype html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>${limit} soat chegara</title>
-<style>
-  body { font-family: "Times New Roman", serif; font-size: 12pt; color: #111; }
-  h1 { font-size: 16pt; text-align: center; margin: 0 0 2pt; }
-  .sub { text-align: center; color: #555; margin: 0 0 12pt; }
-  table { border-collapse: collapse; width: 100%; margin: 6pt 0; }
-  table.list th, table.list td { border: 1px solid #bbb; padding: 4pt 6pt; font-size: 11pt; }
-  table.list th { background: #eee; }
-  table.list td:first-child { text-align: center; width: 28pt; }
-  table.list td:last-child { text-align: center; font-weight: bold; }
-</style></head>
-<body>
-  <h1>${limit} soat chegarasidan o'tgan o'quvchilar</h1>
-  <div class="sub">${esc(sName)} · chorak: ${qStr} dan</div>
-  ${table}
-</body></html>`;
-}
-
-export default router;
+  for (const ch of await dailyAtt
