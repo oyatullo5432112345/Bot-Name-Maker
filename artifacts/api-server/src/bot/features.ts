@@ -24,6 +24,7 @@ import { createSessionStore } from "./session-store.js";
 import { addChannel, removeChannel, loadSettings } from "./settings.js";
 import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify, faceidArrivedCount, faceidArchiveToTelegram, faceidChronicNotify, checkHourLimits } from "../routes/faceid.js";
 import { purgeExpiredSchools } from "../routes/maktablar.js";
+import { showChatsGrouped } from "./chats-list.js";
 
 // Kanal "maktab kanali" sifatida ulanganda — uni MAJBURIY a'zolik ro'yxatiga ham
 // qo'shadi (o'quvchilar a'zo bo'lishi shart bo'ladi). Qo'shilish havolasini ham
@@ -1235,25 +1236,9 @@ async function runClassAction(ctx: Context, who: Who, action: "att" | "msg" | "c
   await ctx.reply(chunk, { parse_mode: "HTML", reply_markup: kb });
 }
 
+// Ro'yxat endi chats-list.ts da: maktablar bo'yicha, faqat shaxsiy chatda
 async function showChats(ctx: Context): Promise<void> {
-  const rows = await query<{ chat_id: number; title: string; purpose: string; class_name: string | null }>(
-    `SELECT t.chat_id, t.title, t.purpose, c.name AS class_name
-       FROM tg_chats t LEFT JOIN classes c ON c.id = t.class_id
-      ORDER BY t.purpose, c.name NULLS LAST, t.title`
-  );
-  const icon: Record<string, string> = { school: "🏫", teachers: "👨‍🏫", class: "👥", tuman: "🏙" };
-  let text = `🔗 <b>Ulangan guruh va kanallar</b> (${rows.length})\n\n`;
-  text += rows.length
-    ? rows.map((r) => `${icon[r.purpose] ?? "•"} ${esc(r.title)}${r.class_name ? ` → <b>${esc(r.class_name)}</b>` : ""}`).join("\n")
-    : "Hozircha hech narsa ulanmagan.";
-  text +=
-    `\n\n<b>Qanday ulanadi?</b>\n` +
-    `🏫 Kanal: botni kanalga admin qiling (bot sizga tugma yuboradi) yoki <code>/kanal @nomi</code>\n` +
-    `👥 Sinf guruhi: botni guruhga qo'shing → guruhda <code>/boglash 7-A</code>\n` +
-    `👨‍🏫 Ustozlar guruhi: guruhda <code>/boglash ustozlar</code>`;
-  const kb = new InlineKeyboard();
-  rows.slice(0, 30).forEach((r) => kb.text(`✖️ ${r.class_name ?? r.title}`.slice(0, 40), `f:unl:${r.chat_id}`).row());
-  await ctx.reply(text, { parse_mode: "HTML", reply_markup: rows.length ? kb : undefined });
+  await showChatsGrouped(ctx);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
