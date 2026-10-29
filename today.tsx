@@ -1,0 +1,214 @@
+// Face ID — bugungi keldi/ketdini qo'lda to'g'rilash (rahbariyat / sinf rahbari).
+// Ruxsat bilan erta ketgan, yoki Face ID ishlamagan holatlar uchun.
+
+import { useEffect, useState } from "react";
+import { Link } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ClassChips } from "@/components/class-chips";
+import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX, Download, Repeat, Palette } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/use-auth";
+import { api, API_BASE, authHeaders } from "@/lib/face";
+
+interface ClassRow { class_name: string; total?: number; enrolled?: number }
+interface TodayRow {
+  login: string; full_name: string;
+  arrived: string | null; status: string | null;
+  left: string | null; early: boolean; excused: boolean;
+  chronic: boolean;
+}
+
+export default function FaceTodayPage() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  const scoped = !!user && ["sinf_rahbari", "boshlangich_oqituvchi"].includes(user.role);
+  const isManager = !!user && ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
+  const [cls, setCls] = useState<string>(scoped ? (user?.class_name ?? "") : "");
+  const [time, setTime] = useState("");
+  const [busy, setBusy] = useState("");
+  const [search, setSearch] = useState("");
+  const [dl, setDl] = useState(false);
+
+  const classes = useQuery<ClassRow[]>({
+    queryKey: ["faceid-classes-today"],
+    queryFn: () => api<ClassRow[]>("/faceid/classes"),
+    enabled: !scoped,
+  });
+  useEffect(() => {
+    if (!scoped && !cls && classes.data?.length) setCls(classes.data[0]!.class_name);
+  }, [scoped, cls, classes.data]);
+
+  const list = useQuery<TodayRow[]>({
+    queryKey: ["faceid-today", cls],
+    queryFn: () => api<TodayRow[]>(`/faceid/today?class_name=${encodeURIComponent(cls)}`),
+    enabled: !!cls,
+    refetchInterval: 30_000,
+  });
+
+  // MUHIM: bu funksiya bosilganda ishlashi uchun FUNKSIYA qaytaradi (darhol ishga tushmaydi)
+  const act = (login: string, action: "in" | "out" | "out_excused" | "clear" | "absent_excused" | "club", name: string) => async () => {
+    // "Sababli (kelmadi)" — sababini so'raymiz; u sinf guruhiga va o'quvchiga xabar bilan boradi
+    let reason: string | undefined;
+    if (action === "absent_excused") {
+      const r = window.prompt(`${name} — bugun sababli (kela olmaydi).\nSababini yozing (guruhga shu matn chiqadi):`, "");
+      if (r === null) return; // bekor qilindi
+      reason = r.trim() || undefined;
+    }
+    setBusy(`${login}:${action}`);
+    try {
+      await api("/faceid/manual", { method: "POST", body: JSON.stringify({ student_login: login, action, time: time || undefined, reason }) });
+      const msg = action === "in" ? "keldi" : action === "out" ? "ketdi" : action === "out_excused" ? "ruxsat bilan ketdi" : action === "absent_excused" ? "sababli (kelmadi)" : action === "club" ? "to'garakda qoldi" : "tozalandi";
+      toast({ title: `${name}: ${msg}` });
+      void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
+    } finally { setBusy(""); }
+  };
+
+  // "Muntazam kelmaydigan" belgisi (yil oxirigacha) — har kuni 10:00 da sinf guruhiga eslatiladi
+  const toggleChronic = (login: string, name: string, on: boolean) => async () => {
+    let note: string | undefined;
+    if (on) {
+      const r = window.prompt(`${name} — "Muntazam kelmaydigan" deb belgilansinmi?\nIzoh (ixtiyoriy):`, "");
+      if (r === null) return;
+      note = r.trim() || undefined;
+    }
+    setBusy(`${login}:chronic`);
+    try {
+      await api("/faceid/chronic", { method: "POST", body: JSON.stringify({ student_login: login, on, note }) });
+      toast({ title: `${name}: ${on ? "muntazam deb belgilandi" : "muntazamdan chiqarildi"}` });
+      void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
+    } finally { setBusy(""); }
+  };
+
+  // Kunlik davomat hisoboti (Word .doc) — faqat rahbariyat yuklab oladi
+  const downloadArchive = async () => {
+    setDl(true);
+    try {
+      const d = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+      const res = await fetch(`${API_BASE}/faceid/archive?date=${d}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`Xatolik (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `davomat-${d}.doc`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
+    } finally { setDl(false); }
+  };
+
+  const rows = (list.data ?? []).filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <div className="flex items-center gap-3">
+        {isManager && <Link href="/faceid"><Button variant="ghost" size="icon"><ArrowLeft className="w-5 h-5" /></Button></Link>}
+        <div className="flex-1">
+          <h1 className="text-xl font-bold flex items-center gap-2"><Clock className="w-5 h-5 text-primary" /> Bugungi davomat — qo'lda</h1>
+          <p className="text-sm text-muted-foreground">Ruxsat bilan erta ketgan yoki Face ID ishlamagan holatlarni to'g'rilash</p>
+        </div>
+        {isManager && (
+          <Button variant="outline" size="sm" onClick={() => void downloadArchive()} disabled={dl} className="shrink-0">
+            {dl ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Download className="w-4 h-4 mr-1" />}
+            Kunlik hisobot (Word)
+          </Button>
+        )}
+      </div>
+
+      <Card>
+        <CardContent className="pt-4 space-y-3">
+          {!scoped && (
+            <div className="space-y-1.5">
+              <div className="text-sm font-medium">Sinfni tanlang</div>
+              <ClassChips classes={classes.data ?? []} value={cls} onChange={setCls} />
+            </div>
+          )}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input placeholder="Ism bo'yicha qidirish…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Vaqt:</span>
+              <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-28" />
+              {time && <button onClick={() => setTime("")} className="text-muted-foreground hover:text-foreground" title="Tozalash"><X className="w-4 h-4" /></button>}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">Vaqt bo'sh bo'lsa — hozirgi vaqt ishlatiladi. To'ldirsangiz — o'sha vaqt yoziladi.</p>
+        </CardContent>
+      </Card>
+
+      {list.isLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>}
+      {list.isError && <div className="text-destructive text-sm">{(list.error as Error).message}</div>}
+
+      <div className="space-y-2">
+        {rows.map((r) => {
+          const b = busy.startsWith(`${r.login}:`);
+          return (
+            <div key={r.login} className="rounded-xl border bg-card px-4 py-3">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate flex items-center gap-2">
+                    {r.full_name}
+                    {r.chronic && <span className="text-[10px] font-bold uppercase tracking-wide text-rose-600 bg-rose-500/10 border border-rose-500/30 rounded px-1.5 py-0.5">Muntazam</span>}
+                  </div>
+                  <div className="text-xs mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                    {r.arrived ? (
+                      <span className={r.status === "late" ? "text-amber-500" : "text-emerald-600 dark:text-emerald-400"}>
+                        {r.status === "late" ? "Kech keldi" : "Keldi"}: {r.arrived}
+                      </span>
+                    ) : r.excused && !r.left ? (
+                      <span className="text-indigo-500">Sababli (kelmadi)</span>
+                    ) : <span className="text-muted-foreground">Kelmagan</span>}
+                    {r.left && (
+                      <span className={r.excused ? "text-violet-500" : r.early ? "text-amber-500" : "text-sky-500"}>
+                        {r.excused ? "Ruxsat bilan ketdi" : r.early ? "Erta ketdi" : "Ketdi"}: {r.left}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                {/* Keldi/Ketdi/Ruxsat — faqat maktab rahbariyati (sinf rahbari emas) */}
+                {isManager && (
+                  <>
+                    <Button size="sm" variant="outline" className="text-emerald-600" disabled={b} onClick={act(r.login, "in", r.full_name)}>
+                      <LogIn className="w-3.5 h-3.5 mr-1" /> Keldi
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-sky-600" disabled={b} onClick={act(r.login, "out", r.full_name)}>
+                      <DoorOpen className="w-3.5 h-3.5 mr-1" /> Ketdi
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-violet-600" disabled={b} onClick={act(r.login, "out_excused", r.full_name)}>
+                      <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Ruxsat bilan ketdi
+                    </Button>
+                  </>
+                )}
+                {/* Sababli — sinf rahbari ham qila oladi */}
+                <Button size="sm" variant="outline" className="text-indigo-600" disabled={b} onClick={act(r.login, "absent_excused", r.full_name)}>
+                  <UserX className="w-3.5 h-3.5 mr-1" /> Sababli (kelmadi)
+                </Button>
+                {/* To'garak qoldi — sinf rahbari ham qila oladi (#10) */}
+                <Button size="sm" variant="outline" className="text-fuchsia-600" disabled={b} onClick={act(r.login, "club", r.full_name)}>
+                  <Palette className="w-3.5 h-3.5 mr-1" /> To'garak qoldi
+                </Button>
+                <Button size="sm" variant="outline" className={r.chronic ? "text-rose-600" : "text-muted-foreground"} disabled={b} onClick={toggleChronic(r.login, r.full_name, !r.chronic)}>
+                  <Repeat className="w-3.5 h-3.5 mr-1" /> {r.chronic ? "Muntazamdan chiqarish" : "Muntazam"}
+                </Button>
+                {isManager && (r.arrived || r.left) && (
+                  <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={b} onClick={act(r.login, "clear", r.full_name)}>
+                    <X className="w-3.5 h-3.5 mr-1" /> Tozalash
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {!list.isLoading && cls && rows.length === 0 && <div className="text-center text-sm text-muted-foreground py-8">Topilmadi</div>}
+      </div>
+    </div>
+  );
+}

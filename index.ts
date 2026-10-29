@@ -1,128 +1,83 @@
-import app from "./app.js";
-import { logger } from "./lib/logger.js";
-import { createServer } from "http";
-import { initSettings } from "./bot/settings.js";
-import { startMonitoringScheduler } from "./routes/monitoring.js";
-import { ensureTelegramSchema } from "./lib/tg-shared.js";
+import { Router, type IRouter } from "express";
+import healthRouter from "./health.js";
+import authRouter from "./auth.js";
+import studentsRouter from "./students.js";
+import classesRouter from "./classes.js";
+import staffRouter from "./staff.js";
+import dashboardRouter from "./dashboard.js";
+import teacherSubjectsRouter from "./teacher-subjects.js";
+import gamesRouter from "./games.js";
+import lessonsRouter from "./lessons.js";
+import gradesRouter from "./grades.js";
+import timetableRouter from "./timetable.js";
+import timetableImportRouter from "./timetable-import.js";
+import supportRouter from "./support.js";
+import libraryRouter from "./library.js";
+import certificateRouter from "./certificate.js";
+import settingsRouter from "./settings.js";
+import codesRouter from "./codes.js";
+import olimpiadaRouter from "./olimpiada.js";
+import announcementsRouter from "./announcements.js";
+import attendanceRouter from "./attendance.js";
+import reytingRouter from "./reyting.js";
+import tangaRouter from "./tanga.js";
+import olimpiadaAnnounceRouter from "./olimpiada-announce.js";
+import monitoringRouter from "./monitoring.js";
+import boardGamesRouter from "./board-games.js";
+import wheelGamesRouter from "./wheel-games.js";
+import adminResetRouter from "./admin-reset.js";
+import riddlesRouter from "./riddles.js";
+import telegramWebappRouter from "./telegram-webapp.js";
+import faceidRouter from "./faceid.js";
+import labRouter from "./lab.js";
+import authLoginRouter from "./auth-login.js";
+import sayohatRouter from "./sayohat.js";
+import maktablarRouter from "./maktablar.js";
+import analyticsRouter, { activityMiddleware } from "./analytics.js";
+import confirmRouter from "./confirm.js";
+import elibraryRouter from "./elibrary.js";
 
-// Bot sozlamalarini bazadan yuklaymiz — bot yoqilmagan bo'lsa ham,
-// admin panel /api/settings orqali ularni o'qiy/yoza olishi kerak.
-void initSettings();
+const router: IRouter = Router();
 
-// Telegram guruh/kanal jadvallari (idempotent)
-void ensureTelegramSchema();
+// Faollik kuzatuvi — barcha route'lardan oldin (autentifikatsiyalangan so'rovlarni yozadi)
+router.use(activityMiddleware);
 
-// Monitoring testlarini rejalashtirilgan vaqtida avtomatik ochish
-startMonitoringScheduler();
+router.use(healthRouter);
+router.use(authRouter);
+router.use(authLoginRouter);
+router.use(telegramWebappRouter);
+router.use(supportRouter);
+router.use(libraryRouter);
+router.use(certificateRouter);
+router.use(settingsRouter);
+router.use(codesRouter);
+router.use(studentsRouter);
+router.use(classesRouter);
+router.use(staffRouter);
+router.use(dashboardRouter);
+router.use(teacherSubjectsRouter);
+router.use(gamesRouter);
+router.use(lessonsRouter);
+router.use(gradesRouter);
+router.use(timetableRouter);
+router.use(timetableImportRouter);
+router.use(olimpiadaRouter);
+router.use(announcementsRouter);
+router.use(attendanceRouter);
+router.use(reytingRouter);
+router.use(tangaRouter);
+router.use(olimpiadaAnnounceRouter);
+router.use(monitoringRouter);
+router.use(boardGamesRouter);
+router.use(wheelGamesRouter);
+router.use(adminResetRouter);
+router.use(riddlesRouter);
+router.use(faceidRouter);
+router.use(labRouter);
+router.use(sayohatRouter);
+router.use(maktablarRouter);
+router.use(analyticsRouter);
+router.use(confirmRouter);
+router.use(elibraryRouter);
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error("PORT environment variable is required but was not provided.");
-}
-
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-const isProduction = process.env["NODE_ENV"] === "production";
-
-function buildWebsiteUrl(): string {
-  const rawDomain = process.env["REPLIT_DOMAINS"]?.split(",")[0]?.trim() ?? "";
-  const envUrl = process.env["WEBSITE_URL"] ?? "";
-  if (isProduction) {
-    if (rawDomain) return `https://${rawDomain}`;
-    return envUrl;
-  }
-  return envUrl || (rawDomain ? `https://${rawDomain}` : "");
-}
-
-const WEBSITE_URL = buildWebsiteUrl();
-
-let isShuttingDown = false;
-
-async function gracefulShutdown(signal: string, stopBot?: () => Promise<void>) {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-  logger.info({ signal }, "Graceful shutdown boshlandi...");
-  try {
-    if (stopBot) await stopBot();
-  } catch (err) {
-    logger.error({ err }, "Bot to'xtatishda xatolik");
-  }
-  process.exit(0);
-}
-
-const server = createServer(app);
-
-server.listen(port, () => {
-  logger.info({ port }, "Server listening ✅");
-});
-
-server.on("error", (err: NodeJS.ErrnoException) => {
-  logger.error({ err }, "Server xatoligi");
-  process.exit(1);
-});
-
-// Telegram bot — ixtiyoriy (token bo'lmasa ishlamasada server ishlayveradi)
-const BOT_TOKEN = process.env["TELEGRAM_BOT_TOKEN"];
-if (!BOT_TOKEN) {
-  logger.warn("TELEGRAM_BOT_TOKEN yo'q — bot o'chirilgan holda ishlaydi");
-} else {
-  void (async () => {
-    try {
-      const { createBot } = await import("./bot/bot.js");
-      const { webhookCallback } = await import("grammy");
-      const bot = createBot();
-
-      if (isProduction && WEBSITE_URL) {
-        const webhookPath = "/api/telegram/webhook";
-        const webhookUrl = `${WEBSITE_URL}${webhookPath}`;
-
-        app.use(webhookPath, webhookCallback(bot, "express"));
-
-        try {
-          await bot.api.setWebhook(webhookUrl);
-          logger.info({ webhookUrl }, "Telegram bot webhook o'rnatildi ✅");
-        } catch (err) {
-          logger.error({ err }, "Webhook o'rnatishda xatolik");
-        }
-
-        const stopProd = async () => {
-          try { await bot.api.deleteWebhook(); } catch { /* ignore */ }
-        };
-        process.once("SIGINT", () => gracefulShutdown("SIGINT", stopProd));
-        process.once("SIGTERM", () => gracefulShutdown("SIGTERM", stopProd));
-      } else {
-        // Dev: polling mode
-        try {
-          const info = await bot.api.getWebhookInfo();
-          if (info.url && info.url.length > 0) {
-            logger.warn(`Dev: eski webhook topildi (${info.url}) — o'chirilmoqda...`);
-            await bot.api.deleteWebhook({ drop_pending_updates: true });
-            logger.info("Eski webhook o'chirildi ✅");
-          }
-        } catch (err) {
-          logger.warn({ err }, "Webhook info tekshirishda xatolik — polling boshlanmoqda...");
-        }
-
-        const stopDev = async () => {
-          try { await bot.stop(); } catch { /* ignore */ }
-        };
-        process.once("SIGINT", () => gracefulShutdown("SIGINT", stopDev));
-        process.once("SIGTERM", () => gracefulShutdown("SIGTERM", stopDev));
-
-        await bot.start({
-          onStart: () => logger.info("Telegram bot ishga tushdi (polling) ✅"),
-        });
-      }
-    } catch (err) {
-      logger.error({ err }, "Bot xatoligi — server davom etmoqda");
-    }
-  })();
-}
-
-process.once("SIGINT", () => gracefulShutdown("SIGINT"));
-process.once("SIGTERM", () => gracefulShutdown("SIGTERM"));
+export default router;

@@ -21,6 +21,30 @@ import {
   type ChatPurpose, type LinkedChat,
 } from "../lib/tg-shared.js";
 import { createSessionStore } from "./session-store.js";
+import { addChannel, removeChannel, loadSettings } from "./settings.js";
+import { faceidGroupSummary, faceidDepartureSummary, faceidUnexcusedNotify, faceidArrivedCount, faceidArchiveToTelegram, faceidChronicNotify, checkHourLimits } from "../routes/faceid.js";
+import { purgeExpiredSchools } from "../routes/maktablar.js";
+import { showChatsGrouped } from "./chats-list.js";
+
+// Kanal "maktab kanali" sifatida ulanganda — uni MAJBURIY a'zolik ro'yxatiga ham
+// qo'shadi (o'quvchilar a'zo bo'lishi shart bo'ladi). Qo'shilish havolasini ham
+// hisoblaydi: ochiq kanal → t.me/username; yopiq → invite link (bot admin bo'lgani uchun oladi).
+async function makeChannelMandatory(api: any, chatId: number, title: string): Promise<void> {
+  let link: string | undefined;
+  try {
+    const chat = await api.getChat(chatId);
+    if (chat?.username) link = `https://t.me/${chat.username}`;
+  } catch { /* jim */ }
+  if (!link) {
+    try {
+      const inv = await api.exportChatInviteLink(chatId); // bot admin bo'lsa oladi
+      if (inv) link = inv;
+    } catch { /* havolasiz davom etamiz */ }
+  }
+  // id = raqamli chat id (getChatMember ham, uzish ham shu bilan ishlaydi)
+  addChannel({ id: String(chatId), name: title, link });
+}
+import { registerGames, resetGameSetup } from "./games.js";
 
 // ─── Sozlamalar ──────────────────────────────────────────────────────────────
 
@@ -45,6 +69,8 @@ const B = {
   mToday: "📊 Maktab bugun",
   mPost: "📣 Kanalga e'lon",
   mChats: "🔗 Guruh va kanallar",
+  game: "🎮 Sinf o'yini",
+  gameProfile: "🎮 O'yin profilim",
 } as const;
 const ALL_BUTTONS = new Set<string>(Object.values(B));
 
@@ -129,8 +155,14 @@ function sortClasses<T extends { name: string }>(list: T[]): T[] {
   return [...list].sort((a, b) => a.name.localeCompare(b.name, "uz", { numeric: true }));
 }
 
-async function getAllClasses(): Promise<{ id: string; name: string }[]> {
-  return sortClasses(await query<{ id: string; name: string }>("SELECT id, name FROM classes"));
+async function getAllClasses(): Promise<{ id: string; name: string; maktab_id: number | null; school: string }[]> {
+  return sortClasses(await query<{ id: string; name: string; maktab_id: number | null; school: string }>(
+    "SELECT c.id, c.name, c.maktab_id, COALESCE(m.nom, '') AS school FROM classes c LEFT JOIN maktablar m ON m.id = c.maktab_id"));
+}
+
+// Bitta maktabning sinflari (ikki bosqichli tanlovda ishlatiladi)
+async function classesOfSchool(maktabId: number): Promise<{ id: string; name: string }[]> {
+  return sortClasses(await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE maktab_id = $1", [maktabId]));
 }
 
 /** O'qituvchi ishlaydigan sinflar (rahbar bo'lsa — hammasi) */
@@ -253,16 +285,19 @@ function menuFor(who: Who): Keyboard {
   if (who.kind === "student") {
     kb.text(B.lessons).text(B.grades).row()
       .text(B.att).text(B.rating).row()
-      .text(B.news).text(B.help).row();
+      .text(B.news).text(B.gameProfile).row()
+      .text(B.help);
   } else if (isManagement(who)) {
     kb.text(B.mToday).text(B.tAttendance).row()
       .text(B.mPost).text(B.tMessage).row()
-      .text(B.mChats).text(B.tSchedule).row()
-      .text(B.news).text(B.help).row();
+      .text(B.game).text(B.mChats).row()
+      .text(B.tSchedule).text(B.news).row()
+      .text(B.help);
   } else {
     kb.text(B.tSchedule).text(B.tAttendance).row()
       .text(B.tMessage).text(B.tClass).row()
-      .text(B.news).text(B.help).row();
+      .text(B.game).text(B.news).row()
+      .text(B.help);
   }
   return appButton(kb).resized().persistent();
 }
@@ -298,6 +333,8 @@ function helpText(who: Who | null): string {
       `${B.rating} — sinfdagi haftalik o'rningiz\n` +
       `${B.news} — maktab e'lonlari\n` +
       `${B.app} — to'liq platforma (Telegram ichida ochiladi)\n\n` +
+      `🎮 "Bilimlar jangi" — sinf guruhidagi jonli bellashuv. Tez va to'g'ri javob bering: reyting to'playsiz, ligangiz ko'tariladi (Bronza → Afsona), g'oliblar tanga oladi.\n` +
+      `${B.gameProfile} — ligangiz, reytingingiz va statistikangiz (/profil), sinf ligasi — /liga\n` +
       `🔔 Baho qo'yilsa yoki darsga kelmagan deb belgilansangiz, bot darhol xabar beradi.` +
       common
     );
@@ -307,12 +344,13 @@ function helpText(who: Who | null): string {
     `${B.tAttendance} — sinf davomatini 1 daqiqada belgilash (o'quvchilarga avtomatik xabar boradi)\n` +
     `${B.tMessage} — uy vazifasi, rasm, fayl yoki ovozli xabarni sinf guruhiga va har bir o'quvchiga yuborish\n` +
     `${B.tClass} — o'quvchilar ro'yxati, o'rtacha baho, qoldirilgan darslar\n` +
-    `${B.tSchedule} — bugungi/ertangi darslaringiz (har kuni 7:00 da o'zi keladi)\n\n` +
+    `${B.tSchedule} — bugungi/ertangi darslaringiz (har kuni 7:00 da o'zi keladi)\n` +
+    `${B.game} — "Bilimlar jangi": sinf guruhida jonli bellashuv. Savollarni bot o'zi tuzadi (Tez hisob) yoki o'zingiz yozasiz. G'oliblarga tanga 🪙\n\n` +
     `<b>Sinf guruhini ulash</b>\n` +
     `1. Botni sinf guruhiga qo'shing\n` +
-    `2. Guruhda <code>/boglash</code> yozing (yoki <code>/boglash 7-A</code>)\n` +
+    `2. Bot o'zi "qaysi sinf?" deb so'raydi — sinfni bosing (yoki <code>/boglash 7-A</code> yozing)\n` +
     `Shundan keyin guruhga har kuni ertalab dars jadvali, tug'ilgan kun tabriklari va haftalik reyting chiqadi.\n` +
-    `Guruhdagi buyruqlar: /jadval, /reyting, /sozlamalar, /uzish` +
+    `Guruhdagi buyruqlar: /jadval, /reyting, /oyin, /natija, /sozlamalar, /uzish` +
     (isManagement(who)
       ? `\n\n<b>Maktab kanali</b>\nBotni kanalga admin qiling — bot sizga "ulash" tugmasini yuboradi. Yoki: <code>/kanal @kanal_nomi</code>`
       : "") +
@@ -377,6 +415,15 @@ export function registerTelegramFeatures(bot: Bot, opts: { websiteUrl: string; a
   bot.use(priv);
   registerPrivate(priv);
   registerGroup(group);
+  registerGames(priv, group, {
+    whoIs: (id) => whoIs(id),
+    groupAuth: (ctx) => groupAuth(ctx),
+    canUseClass: (w, classId) => canUseClass(w as Who, classId),
+    isManagement: (w) => isManagement(w as Who | null),
+    menuButtons: ALL_BUTTONS,
+    gameButton: B.game,
+    profileButton: B.gameProfile,
+  });
   startScheduler();
 
   // Buyruqlar ro'yxati va Mini App tugmasi (xato bo'lsa — jim)
@@ -390,6 +437,9 @@ export function registerTelegramFeatures(bot: Bot, opts: { websiteUrl: string; a
           { command: "baholar", description: "Baholarim" },
           { command: "davomat", description: "Davomat" },
           { command: "reyting", description: "Haftalik reyting" },
+          { command: "oyin", description: "Bilimlar jangi — sinf o'yini (o'qituvchi)" },
+          { command: "profil", description: "O'yin profilim: liga va reyting" },
+          { command: "liga", description: "Sinf o'yin ligasi" },
           { command: "sertifikat", description: "Sertifikat olish" },
           { command: "yordam", description: "Adminga savol yozish" },
         ],
@@ -399,6 +449,10 @@ export function registerTelegramFeatures(bot: Bot, opts: { websiteUrl: string; a
         [
           { command: "jadval", description: "Sinfning bugungi dars jadvali" },
           { command: "reyting", description: "Haftalik reyting" },
+          { command: "oyin", description: "🎮 Bilimlar jangi (o'qituvchi boshlaydi)" },
+          { command: "natija", description: "O'yindagi joriy hisob" },
+          { command: "profil", description: "Mening ligam va reytingim" },
+          { command: "liga", description: "Sinf o'yin ligasi" },
           { command: "boglash", description: "Guruhni sinfga ulash (o'qituvchi)" },
           { command: "sozlamalar", description: "Avto-xabarlar sozlamasi (o'qituvchi)" },
           { command: "uzish", description: "Guruhni uzish (o'qituvchi)" },
@@ -424,10 +478,23 @@ function registerPrivate(priv: Composer<Context>): void {
   // Istalgan buyruq yuborilsa — kutish holatini bekor qilamiz.
   priv.on("message", async (ctx, next) => {
     const text = ctx.message.text ?? "";
-    if ((text.startsWith("/") || ALL_BUTTONS.has(text)) && getF(ctx.from.id).type !== "idle") {
-      setF(ctx.from.id, { type: "idle" });
+    if (text.startsWith("/") || ALL_BUTTONS.has(text)) {
+      if (getF(ctx.from.id).type !== "idle") setF(ctx.from.id, { type: "idle" });
+      if (text !== B.game && !text.startsWith("/oyin")) resetGameSetup(ctx.from.id);
     }
     await next();
+  });
+
+  // /id — Telegram ID va bot sizni kim deb taniydi (ADMIN_ID sozlash uchun qulay)
+  priv.command("id", async (ctx) => {
+    if (!ctx.from) return;
+    const who = await whoIs(ctx.from.id);
+    const as =
+      !who ? "❌ tizimda topilmadi (akkaunt ulanmagan)"
+      : who.kind === "admin" ? "👑 Administrator (ADMIN_ID)"
+      : who.kind === "staff" ? `👨‍🏫 ${esc(who.full_name)} — ${esc(who.role)}`
+      : `👨‍🎓 ${esc(who.full_name)} — ${esc(who.class_name)} sinf`;
+    await ctx.reply(`🆔 Sizning Telegram ID: <code>${ctx.from.id}</code>\n👤 Bot sizni taniydi: ${as}`, { parse_mode: "HTML" });
   });
 
   priv.command("menu", async (ctx) => {
@@ -873,11 +940,20 @@ function registerPrivate(priv: Composer<Context>): void {
 
   priv.callbackQuery(/^f:unl:(-?\d+)$/, async (ctx) => {
     const who = await whoIs(ctx.from.id);
-    if (!isManagement(who)) { await ctx.answerCallbackQuery("⛔"); return; }
-    await unlinkChat(Number(ctx.match[1]));
+    const chatId = Number(ctx.match[1]);
+    const linked = await getLinkedChat(chatId);
+    const allowed = isManagement(who) || (!!who && !!linked?.class_id && (await canUseClass(who, linked.class_id)));
+    if (!allowed) { await ctx.answerCallbackQuery("⛔"); return; }
+    await unlinkChat(chatId);
+    removeChannel(String(chatId)); // majburiy a'zolik ro'yxatidan ham olib tashlaymiz
     await ctx.answerCallbackQuery("Uzildi");
-    await ctx.deleteMessage().catch(() => {});
-    await showChats(ctx);
+    if (linked) await sendToChat(chatId, "ℹ️ Bu guruh maktab platformasidan uzildi.");
+    if (isManagement(who)) {
+      await ctx.deleteMessage().catch(() => {});
+      await showChats(ctx);
+    } else {
+      await ctx.editMessageText(`✖️ «${esc(linked?.title ?? "")}» guruhi uzildi.`, { parse_mode: "HTML" }).catch(() => {});
+    }
   });
 
   // Bot kanalga qo'shilganda yuborilgan "ulash" tugmasi
@@ -890,8 +966,21 @@ function registerPrivate(priv: Composer<Context>): void {
       const chat = await ctx.api.getChat(chatId);
       const title = "title" in chat && chat.title ? chat.title : String(chatId);
       await linkChat({ chatId, chatType: chat.type, title, purpose, linkedBy: ctx.from.id });
+      let extra = "";
+      if (purpose === "school") {
+        await makeChannelMandatory(ctx.api, chatId, title);
+        // Majburiy a'zolik ishlashi uchun bot a'zolikni tekshira olishi SHART (kanalда admin bo'lishi).
+        let can = false;
+        try {
+          const me = await ctx.api.getChatMember(chatId, ctx.me.id);
+          can = me.status === "administrator" || me.status === "creator" || me.status === "member";
+        } catch { can = false; }
+        extra = can
+          ? "\n\n📢 Bu kanal endi <b>majburiy</b> — o'quvchilar botdan foydalanish uchun unga a'zo bo'lishi shart."
+          : "\n\n⚠️ <b>Diqqat:</b> bot bu kanalda a'zolikni tekshira olmayapti (admin emas). Majburiy a'zolik ishlashi uchun botni kanalga <b>ADMIN</b> qiling, so'ng <code>/majburiy</code> bilan tekshiring.";
+      }
       await ctx.answerCallbackQuery("✅ Ulandi");
-      await ctx.editMessageText(`✅ <b>${esc(title)}</b> ${purpose === "school" ? "maktab kanali" : "ustozlar guruhi"} sifatida ulandi.`, { parse_mode: "HTML" });
+      await ctx.editMessageText(`✅ <b>${esc(title)}</b> ${purpose === "school" ? "maktab kanali" : "ustozlar guruhi"} sifatida ulandi.${extra}`, { parse_mode: "HTML" });
     } catch {
       await ctx.answerCallbackQuery("❌ Chat topilmadi");
     }
@@ -909,19 +998,87 @@ function registerPrivate(priv: Composer<Context>): void {
       return;
     }
     const id = arg.startsWith("@") || arg.startsWith("-") ? arg : `@${arg}`;
+    let chat;
     try {
-      const chat = await ctx.api.getChat(id);
+      chat = await ctx.api.getChat(id);
+    } catch {
+      await ctx.reply(
+        "❌ Kanal/guruh topilmadi.\n\n" +
+        "• Username to'g'rimi? Masalan: <code>/kanal @maktab3</code>\n" +
+        "• Yopiq kanal bo'lsa, username o'rniga uning <b>-100...</b> ID sini yuboring\n" +
+        "• Botni avval kanalga <b>admin</b> qilib qo'shing",
+        { parse_mode: "HTML" }
+      );
+      return;
+    }
+    try {
       const me = await ctx.api.getChatMember(chat.id, ctx.me.id);
-      if (me.status !== "administrator") {
-        await ctx.reply("❌ Bot bu kanalda admin emas. Avval botni kanalga admin qilib qo'shing.");
+      if (me.status !== "administrator" && me.status !== "creator") {
+        await ctx.reply(
+          `❌ Bot bu kanalda <b>admin emas</b> (holati: <code>${me.status}</code>).\n\n` +
+          "Kanal sozlamalari → Administratorlar → botni qo'shing, so'ng qayta <code>/kanal</code> yuboring.",
+          { parse_mode: "HTML" }
+        );
         return;
       }
-      const title = "title" in chat && chat.title ? chat.title : id;
-      await linkChat({ chatId: chat.id, chatType: chat.type, title, purpose: "school", linkedBy: ctx.from!.id });
-      await ctx.reply(`✅ <b>${esc(title)}</b> maktab kanali sifatida ulandi.\nEndi saytdagi e'lonlar ham shu yerga avtomatik chiqadi.`, { parse_mode: "HTML" });
     } catch {
-      await ctx.reply("❌ Kanal topilmadi. Username to'g'riligini va bot admin ekanini tekshiring.");
+      await ctx.reply("❌ Bot a'zolikni tekshira olmadi — botni kanalga <b>admin</b> qilib qo'shganingizni tekshiring.", { parse_mode: "HTML" });
+      return;
     }
+    const title = "title" in chat && chat.title ? chat.title : id;
+    await linkChat({ chatId: chat.id, chatType: chat.type, title, purpose: "school", linkedBy: ctx.from!.id });
+    await makeChannelMandatory(ctx.api, chat.id, title);
+    await ctx.reply(
+      `✅ <b>${esc(title)}</b> maktab kanali sifatida <b>ulandi</b> va <b>MAJBURIY a'zolik</b> yoqildi.\n\n` +
+      "O'quvchilar endi unga a'zo bo'lishi shart. Tekshirish uchun: /majburiy",
+      { parse_mode: "HTML" }
+    );
+  });
+
+  // /majburiy — majburiy a'zolik holatini ko'rsatadi va nega ishlamayotganini aytadi (diagnostika)
+  priv.command("majburiy", async (ctx) => {
+    const who = await whoIs(ctx.from!.id);
+    if (!isManagement(who)) { await ctx.reply("⛔ Faqat maktab rahbariyati uchun."); return; }
+    const chans = loadSettings().channels;
+    if (chans.length === 0) {
+      await ctx.reply(
+        "❌ <b>Hozircha majburiy kanal/guruh YO'Q.</b>\n\n" +
+        "Ro'yxat bo'sh — shuning uchun o'quvchilardan a'zolik <b>so'ralmaydi</b>.\n\n" +
+        "<b>Qanday qo'shiladi:</b>\n" +
+        "1️⃣ Botni kanal/guruhga <b>ADMIN</b> qilib qo'shing\n" +
+        "2️⃣ Shu yerda: <code>/kanal @kanal_nomi</code> (yoki <code>/kanal -100...</code>)\n\n" +
+        "⚠️ Faqat <b>«maktab kanali»</b> qilib ulangan kanal majburiy bo'ladi. Oddiy «sinf guruhi» majburiy emas.",
+        { parse_mode: "HTML" }
+      );
+      return;
+    }
+    const lines: string[] = [];
+    let okCount = 0;
+    for (const ch of chans) {
+      try {
+        const me = await ctx.api.getChatMember(ch.id, ctx.me.id);
+        if (me.status === "administrator" || me.status === "creator") {
+          lines.push(`✅ <b>${esc(ch.name)}</b> — bot admin, ishlaydi`);
+          okCount++;
+        } else if (me.status === "member") {
+          lines.push(`⚠️ <b>${esc(ch.name)}</b> — bot a'zo, lekin admin emas (kanal bo'lsa admin shart)`);
+          okCount++;
+        } else {
+          lines.push(`❌ <b>${esc(ch.name)}</b> — bot holati: <code>${me.status}</code> → ISHLAMAYDI`);
+        }
+      } catch {
+        lines.push(`❌ <b>${esc(ch.name)}</b> (<code>${ch.id}</code>) — bot tekshira olmayapti (admin emas/chatdan chiqarilgan) → bu kanal uchun majburiy a'zolik ISHLAMAYDI`);
+      }
+    }
+    await ctx.reply(
+      `📋 <b>Majburiy a'zolik holati</b> (${chans.length} ta)\n\n` +
+      lines.join("\n") +
+      `\n\n━━━━━━━━━━\n` +
+      (okCount > 0
+        ? "ℹ️ <b>Muhim:</b> majburiy a'zolik faqat oddiy <b>o'quvchilarga</b> ta'sir qiladi. <b>Admin akkaunt doim o'tkaziladi</b> — shuning uchun o'zingiz bilan sinasangiz a'zolik so'ralmaydi. Sinash uchun <b>oddiy o'quvchi akkaunti</b> bilan botga <code>/start</code> bosing."
+        : "❗️ Hech bir kanal to'g'ri sozlanmagan — ❌ larni to'g'rilang (botni ADMIN qiling), keyin qayta <code>/kanal</code> qiling."),
+      { parse_mode: "HTML" }
+    );
   });
 
   // ── Kutish holatidagi xabarlar (sinfga xabar / kanalga e'lon) ──────────────
@@ -1079,25 +1236,9 @@ async function runClassAction(ctx: Context, who: Who, action: "att" | "msg" | "c
   await ctx.reply(chunk, { parse_mode: "HTML", reply_markup: kb });
 }
 
+// Ro'yxat endi chats-list.ts da: maktablar bo'yicha, faqat shaxsiy chatda
 async function showChats(ctx: Context): Promise<void> {
-  const rows = await query<{ chat_id: number; title: string; purpose: string; class_name: string | null }>(
-    `SELECT t.chat_id, t.title, t.purpose, c.name AS class_name
-       FROM tg_chats t LEFT JOIN classes c ON c.id = t.class_id
-      ORDER BY t.purpose, c.name NULLS LAST, t.title`
-  );
-  const icon: Record<string, string> = { school: "🏫", teachers: "👨‍🏫", class: "👥" };
-  let text = `🔗 <b>Ulangan guruh va kanallar</b> (${rows.length})\n\n`;
-  text += rows.length
-    ? rows.map((r) => `${icon[r.purpose] ?? "•"} ${esc(r.title)}${r.class_name ? ` → <b>${esc(r.class_name)}</b>` : ""}`).join("\n")
-    : "Hozircha hech narsa ulanmagan.";
-  text +=
-    `\n\n<b>Qanday ulanadi?</b>\n` +
-    `🏫 Kanal: botni kanalga admin qiling (bot sizga tugma yuboradi) yoki <code>/kanal @nomi</code>\n` +
-    `👥 Sinf guruhi: botni guruhga qo'shing → guruhda <code>/boglash 7-A</code>\n` +
-    `👨‍🏫 Ustozlar guruhi: guruhda <code>/boglash ustozlar</code>`;
-  const kb = new InlineKeyboard();
-  rows.slice(0, 30).forEach((r) => kb.text(`✖️ ${r.class_name ?? r.title}`.slice(0, 40), `f:unl:${r.chat_id}`).row());
-  await ctx.reply(text, { parse_mode: "HTML", reply_markup: rows.length ? kb : undefined });
+  await showChatsGrouped(ctx);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1107,6 +1248,88 @@ async function showChats(ctx: Context): Promise<void> {
 function normClass(s: string): string {
   return s.toLowerCase().replace(/[\s\-–_"'«».]/g, "").replace(/sinf$/, "");
 }
+
+// Guruhda "anonim admin" bo'lib yozilsa, Telegram botga haqiqiy odamni emas,
+// @GroupAnonymousBot ni ko'rsatadi. Bunday xabar faqat guruh adminidan keladi.
+const ANON_ADMIN_BOT_ID = 1087968824;
+
+function isAnonymousAdmin(ctx: Context): boolean {
+  return ctx.from?.id === ANON_ADMIN_BOT_ID || (!!ctx.senderChat && ctx.senderChat.id === ctx.chat?.id);
+}
+
+export interface GroupAuth {
+  ok: boolean;           // guruhni boshqarishga ruxsat bormi
+  who: Who | null;       // platformadagi akkaunt (bo'lsa)
+  staff: boolean;        // platforma o'qituvchisi / rahbari
+  groupAdmin: boolean;   // Telegram guruhining admini yoki egasi
+  anonymous: boolean;
+  name: string;
+}
+
+/** Guruhda kim yozyapti: platforma o'qituvchisi yoki guruh admini/egasi (anonim ham) */
+export async function groupAuth(ctx: Context): Promise<GroupAuth> {
+  const none: GroupAuth = { ok: false, who: null, staff: false, groupAdmin: false, anonymous: false, name: "" };
+  const chat = ctx.chat;
+  if (!chat || chat.type === "private") return none;
+  if (isAnonymousAdmin(ctx)) {
+    return { ok: true, who: null, staff: false, groupAdmin: true, anonymous: true, name: "Guruh admini" };
+  }
+  if (!ctx.from) return none;
+  const who = await whoIs(ctx.from.id);
+  let groupAdmin = false;
+  try {
+    const m = await ctx.api.getChatMember(chat.id, ctx.from.id);
+    groupAdmin = m.status === "creator" || m.status === "administrator";
+  } catch { /* bot a'zolarni ko'ra olmasa — faqat platforma roli hisoblanadi */ }
+  const staff = isStaffLike(who);
+  const tgName = [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ");
+  return {
+    ok: staff || groupAdmin,
+    who,
+    staff,
+    groupAdmin,
+    anonymous: false,
+    name: staff && who ? staffName(who) : tgName,
+  };
+}
+
+/** Sinf tugmalari ro'yxatidan klaviatura (g:bind) */
+function classKbFrom(list: { id: string; name: string }[]): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  list.slice(0, 60).forEach((c, i) => {
+    kb.text(c.name, `g:bind:${c.id}`);
+    if (i % 4 === 3) kb.row();
+  });
+  return kb;
+}
+
+/** Guruhni ulash uchun tanlov klaviaturasi.
+ *  Bir nechta maktab bo'lsa — AVVAL maktab tanlanadi (g:sch), keyin shu maktab sinflari.
+ *  Shunda turli maktablarning bir xil nomli sinflari (8-A) chalkashmaydi. */
+async function classPicker(auth: GroupAuth): Promise<InlineKeyboard | null> {
+  // O'qituvchi (rahbariyat emas) — faqat o'z sinflari (bitta maktab), to'g'ridan-to'g'ri
+  if (!(auth.groupAdmin || isManagement(auth.who) || !auth.who)) {
+    const mine = await classesFor(auth.who);
+    return mine.length ? classKbFrom(mine) : null;
+  }
+  // Maktablar sonini MAKTABLAR jadvalidan olamiz (sinflarning maktab_id si bo'yicha emas).
+  // Shunda 2+ maktab bo'lsa — sinflar qanday taqsimlangandan qat'i nazar, avval maktab so'raladi.
+  const schoolRows = await query<{ id: number; nom: string }>(
+    "SELECT id, nom FROM maktablar WHERE deleted_at IS NULL ORDER BY nom"
+  ).catch(() => [] as { id: number; nom: string }[]);
+  if (schoolRows.length >= 2) {
+    const kb = new InlineKeyboard();
+    schoolRows.forEach((s, i) => { kb.text(`🏫 ${s.nom || `${s.id}-maktab`}`, `g:sch:${s.id}`); if (i % 2 === 1) kb.row(); });
+    return kb;
+  }
+  // Bitta (yoki nol) maktab — to'g'ridan-to'g'ri sinflar
+  const all = await getAllClasses();
+  return all.length ? classKbFrom(all) : null;
+}
+
+
+const NO_CLASSES_TEXT =
+  "Saytda hali birorta sinf yaratilmagan. Admin saytga kirib, <b>Sinflar</b> bo'limida sinf qo'shsin, keyin /boglash yozing.";
 
 function registerGroup(group: Composer<Context>): void {
   // Bot guruh/kanalga qo'shildi yoki chiqarildi
@@ -1125,32 +1348,53 @@ function registerGroup(group: Composer<Context>): void {
 
     if (chat.type === "channel") {
       if (newStatus !== "administrator") return;
-      const adder = upd.from.id;
-      const who = await whoIs(adder);
-      const target = isManagement(who) ? adder : ADMIN_ID;
-      if (!target) return;
-      await ctx.api
-        .sendMessage(
-          target,
-          `📢 Bot <b>${esc(title)}</b> kanaliga admin qilindi.\n\nUni maktab kanali sifatida ulaymi? Ulansa, saytdagi e'lonlar, haftalik reyting va "📣 Kanalga e'lon" shu kanalga chiqadi.`,
-          {
-            parse_mode: "HTML",
-            reply_markup: new InlineKeyboard().text("🏫 Ha, maktab kanali", `f:lnk:school:${chat.id}`).row().text("❌ Yo'q", "f:noop"),
-          }
-        )
-        .catch(() => {});
+      const adder = upd.from?.id ?? 0;
+      const who = adder ? await whoIs(adder) : null;
+      // Rahbariyat yoki admin qo'shgan bo'lsa — DARHOL maktab kanali qilib ulaymiz
+      // va majburiy a'zolik qilamiz (tugma yo'qolib qolmasin — ko'p odam shunda uzilib qolardi).
+      if (isManagement(who)) {
+        await linkChat({ chatId: chat.id, chatType: chat.type, title, purpose: "school", linkedBy: adder }).catch(() => {});
+        await makeChannelMandatory(ctx.api, chat.id, title).catch(() => {});
+        if (adder) {
+          await ctx.api
+            .sendMessage(
+              adder,
+              `✅ <b>${esc(title)}</b> maktab kanali sifatida <b>ulandi</b> va <b>MAJBURIY a'zolik</b> qilib belgilandi.\n\nTekshirish: /majburiy`,
+              { parse_mode: "HTML" }
+            )
+            .catch(() => {});
+        }
+        return;
+      }
+      // Qo'shgan odam tanilmadi — super-adminga tasdiqlash tugmasini yuboramiz
+      if (ADMIN_ID) {
+        await ctx.api
+          .sendMessage(
+            ADMIN_ID,
+            `📢 Bot <b>${esc(title)}</b> kanaliga admin qilindi.\n\nUni maktab kanali sifatida ulaymi? Ulansa, saytdagi e'lonlar shu kanalga chiqadi va u majburiy a'zolik bo'ladi.`,
+            {
+              parse_mode: "HTML",
+              reply_markup: new InlineKeyboard().text("🏫 Ha, maktab kanali", `f:lnk:school:${chat.id}`).row().text("❌ Yo'q", "f:noop"),
+            }
+          )
+          .catch(() => {});
+      }
       return;
     }
 
-    if (wasOut) {
-      await ctx.reply(
-        `👋 Assalomu alaykum! Men maktab platformasi botiman.\n\n` +
-          `Sinf rahbari yoki o'qituvchi guruhni ulash uchun yozsin:\n` +
-          `<code>/boglash</code> — o'z sinfingizga\n<code>/boglash 7-A</code> — aniq sinfga\n<code>/boglash ustozlar</code> — o'qituvchilar guruhi\n\n` +
-          `Ulangandan keyin: har kuni ertalab dars jadvali 📅, tug'ilgan kun tabriklari 🎂, haftalik reyting 🏆 va o'qituvchi xabarlari shu yerga keladi.`,
-        { parse_mode: "HTML" }
-      ).catch(() => {});
-    }
+    // Guruhga qo'shildi yoki admin qilindi — ulanmagan bo'lsa, darhol sinf so'raymiz
+    const promoted = newStatus === "administrator" && oldStatus !== "administrator";
+    if (!wasOut && !promoted) return;
+    if (await getLinkedChat(chat.id)) return;
+    const kb = await classPicker({ ok: true, who: null, staff: false, groupAdmin: true, anonymous: false, name: "" });
+    await ctx.reply(
+      `👋 Assalomu alaykum! Men maktab platformasi botiman.\n\n` +
+        (kb
+          ? `<b>Bu guruh qaysi sinfniki?</b> Guruh admini yoki o'qituvchi tanlasin — avval maktab, so'ng sinf 👇`
+          : NO_CLASSES_TEXT) +
+        `\n\nUlangandan keyin: har kuni ertalab dars jadvali 📅, tug'ilgan kun tabriklari 🎂, haftalik reyting 🏆, o'qituvchi xabarlari ✉️ va 🎮 "Bilimlar jangi" o'yini.`,
+      { parse_mode: "HTML", reply_markup: kb ?? undefined }
+    ).catch(() => {});
   });
 
   // Supergroup'ga aylanganda chat ID o'zgaradi
@@ -1178,10 +1422,10 @@ function registerGroup(group: Composer<Context>): void {
   group.command(["start", "yordam", "help"], async (ctx) => {
     const linked = await getLinkedChat(ctx.chat.id);
     const status = linked
-      ? `✅ Bu guruh ulangan: <b>${linked.purpose === "class" ? "sinf guruhi" : linked.purpose === "school" ? "maktab guruhi" : "ustozlar guruhi"}</b>`
-      : "⚪ Bu guruh hali ulanmagan. O'qituvchi /boglash yozsin.";
+      ? `✅ Bu guruh ulangan: <b>${linked.purpose === "class" ? "sinf guruhi" : linked.purpose === "school" ? "maktab guruhi" : linked.purpose === "tuman" ? "tuman davomat guruhi" : "ustozlar guruhi"}</b>`
+      : "⚪ Bu guruh hali ulanmagan. Guruh admini yoki o'qituvchi /boglash yozsin.";
     await ctx.reply(
-      `${status}\n\n/jadval — bugungi darslar\n/reyting — haftalik reyting\n/boglash, /uzish, /sozlamalar — o'qituvchilar uchun`,
+      `${status}\n\n/jadval — bugungi darslar\n/reyting — haftalik reyting\n/natija — o'yindagi hisob\n/oyin, /boglash, /uzish, /sozlamalar — guruh adminlari va o'qituvchilar uchun`,
       {
         parse_mode: "HTML",
         reply_markup: new InlineKeyboard().url("🤖 Shaxsiy botga o'tish", `https://t.me/${ctx.me.username}?start=grp`),
@@ -1190,76 +1434,118 @@ function registerGroup(group: Composer<Context>): void {
   });
 
   group.command("boglash", async (ctx) => {
-    if (!ctx.from) return;
-    const who = await whoIs(ctx.from.id);
-    if (!isStaffLike(who)) {
-      await ctx.reply("⛔ Guruhni faqat botga ulangan o'qituvchi yoki rahbar ulay oladi. Avval botga shaxsiy /start yozing.", {
-        reply_markup: new InlineKeyboard().url("🤖 Botga o'tish", `https://t.me/${ctx.me.username}?start=grp`),
-      });
+    const auth = await groupAuth(ctx);
+    if (!auth.ok) {
+      await ctx.reply("⛔ Guruhni faqat shu guruhning admini (yoki egasi) yoki maktab o'qituvchisi ulay oladi.");
       return;
     }
     const title = "title" in ctx.chat && ctx.chat.title ? ctx.chat.title : String(ctx.chat.id);
     const arg = (typeof ctx.match === "string" ? ctx.match : "").trim();
     const a = normClass(arg);
+    const by = ctx.from && !auth.anonymous ? ctx.from.id : null;
 
-    if (a === "maktab") {
-      if (!isManagement(who)) { await ctx.reply("⛔ Maktab guruhini faqat rahbariyat ulay oladi."); return; }
-      await linkChat({ chatId: ctx.chat.id, chatType: ctx.chat.type, title, purpose: "school", linkedBy: ctx.from.id });
-      await ctx.reply("✅ Guruh <b>maktab umumiy guruhi</b> sifatida ulandi.", { parse_mode: "HTML" });
+    // #7: butun tuman uchun yagona "kunlik davomat" guruhi — barcha maktablarning
+    //     kunlik Face ID davomati (08:00 / 10:00 / 14:30 va hisobot fayli) shu guruhga tushadi.
+    const argLow = arg.toLowerCase().replace(/\s+/g, "");
+    if (argLow === "tuman" || argLow === "davomat" || argLow === "tumandavomat") {
+      if (!(auth.groupAdmin || isManagement(auth.who))) {
+        await ctx.reply("⛔ Tuman davomat guruhini faqat guruh admini yoki maktab rahbariyati ulay oladi.");
+        return;
+      }
+      await linkChat({ chatId: ctx.chat.id, chatType: ctx.chat.type, title, purpose: "tuman", linkedBy: by });
+      await ctx.reply(
+        "✅ Guruh <b>tuman kunlik davomat guruhi</b> sifatida ulandi.\n\n" +
+        "Barcha maktablarning kunlik Face ID davomati (08:00 / 10:00 / 14:30 xulosalari va hisobot fayli) shu guruhga avtomatik, maktab nomi bilan tushadi.",
+        { parse_mode: "HTML" }
+      );
+      await notifyLinked(ctx, title, "tuman davomat guruhi", null, auth);
       return;
     }
-    if (a === "ustozlar" || a === "oqituvchilar" || a === "o'qituvchilar") {
-      await linkChat({ chatId: ctx.chat.id, chatType: ctx.chat.type, title, purpose: "teachers", linkedBy: ctx.from.id });
-      await ctx.reply("✅ Guruh <b>ustozlar guruhi</b> sifatida ulandi. Rahbariyat e'lonlari shu yerga keladi.", { parse_mode: "HTML" });
+
+    // Maktab / ustozlar guruhi — ichki e'lonlar keladi, shuning uchun faqat maktab xodimi
+    if (a === "maktab" || a === "ustozlar" || a === "oqituvchilar" || a === "o'qituvchilar") {
+      const purpose: ChatPurpose = a === "maktab" ? "school" : "teachers";
+      const allowed = purpose === "school" ? isManagement(auth.who) : auth.staff;
+      if (!allowed) {
+        await ctx.reply("⛔ Maktab/ustozlar guruhini faqat botga ulangan maktab xodimi ulay oladi (ichki e'lonlar keladi).");
+        return;
+      }
+      await linkChat({ chatId: ctx.chat.id, chatType: ctx.chat.type, title, purpose, linkedBy: by });
+      await ctx.reply(`✅ Guruh <b>${purpose === "school" ? "maktab umumiy guruhi" : "ustozlar guruhi"}</b> sifatida ulandi.`, { parse_mode: "HTML" });
+      await notifyLinked(ctx, title, purpose === "school" ? "maktab guruhi" : "ustozlar guruhi", null, auth);
       return;
     }
 
     let classId: string | null = null;
     if (a) {
       const all = await getAllClasses();
+      if (all.length === 0) { await ctx.reply(NO_CLASSES_TEXT, { parse_mode: "HTML" }); return; }
       const found = all.find((c) => normClass(c.name) === a);
       if (!found) {
-        await ctx.reply(`❌ "${esc(arg)}" sinfi topilmadi. Mavjud sinflar: ${all.map((c) => esc(c.name)).join(", ")}`, { parse_mode: "HTML" });
+        const kb = await classPicker(auth);
+        await ctx.reply(`❌ "${esc(arg)}" sinfi topilmadi. Ro'yxatdan tanlang 👇`, { parse_mode: "HTML", reply_markup: kb ?? undefined });
         return;
       }
       classId = found.id;
-    } else if (who.kind === "staff" && who.class_id) {
-      classId = who.class_id;
+    } else if (!auth.groupAdmin && auth.who?.kind === "staff" && auth.who.class_id) {
+      classId = auth.who.class_id;
     }
 
     if (!classId) {
-      const classes = await classesFor(who);
-      if (classes.length === 0) { await ctx.reply("Sizga sinf biriktirilmagan. Masalan: /boglash 7-A"); return; }
-      const kb = new InlineKeyboard();
-      classes.forEach((c, i) => {
-        kb.text(c.name, `g:bind:${c.id}`);
-        if (i % 3 === 2) kb.row();
-      });
-      await ctx.reply("Bu guruh qaysi sinfniki?", { reply_markup: kb });
+      const kb = await classPicker(auth);
+      if (!kb) { await ctx.reply(NO_CLASSES_TEXT, { parse_mode: "HTML" }); return; }
+      await ctx.reply("<b>Bu guruh qaysi sinfniki?</b> Tanlang (avval maktab, so'ng sinf) 👇", { parse_mode: "HTML", reply_markup: kb });
       return;
     }
-    if (!(await canUseClass(who, classId))) { await ctx.reply("⛔ Bu sinf sizga biriktirilmagan."); return; }
-    await bindClass(ctx, classId, title);
+    if (!(await mayBindClass(auth, classId))) { await ctx.reply("⛔ Bu sinf sizga biriktirilmagan."); return; }
+    await bindClass(ctx, classId, title, auth);
   });
 
   group.callbackQuery(/^g:bind:(.+)$/, async (ctx) => {
-    const who = await whoIs(ctx.from.id);
+    const auth = await groupAuth(ctx);
     const classId = ctx.match[1]!;
-    if (!isStaffLike(who) || !(await canUseClass(who, classId))) {
-      await ctx.answerCallbackQuery({ text: "⛔ Faqat shu sinf o'qituvchisi", show_alert: true });
+    if (!auth.ok || !(await mayBindClass(auth, classId))) {
+      await ctx.answerCallbackQuery({ text: "⛔ Faqat guruh admini yoki shu sinf o'qituvchisi tanlay oladi", show_alert: true });
       return;
     }
-    await ctx.answerCallbackQuery();
+    await ctx.answerCallbackQuery("✅");
     await ctx.deleteMessage().catch(() => {});
     const title = ctx.chat && "title" in ctx.chat && ctx.chat.title ? ctx.chat.title : "";
-    await bindClass(ctx, classId, title);
+    await bindClass(ctx, classId, title, auth);
+  });
+
+  // Maktab tanlandi → shu maktab sinflari ko'rsatiladi
+  group.callbackQuery(/^g:sch:(\d+)$/, async (ctx) => {
+    const mid = Number(ctx.match[1]);
+    await ctx.answerCallbackQuery().catch(() => {});
+    const classes = await classesOfSchool(mid);
+    if (classes.length === 0) {
+      await ctx.editMessageText(
+        "Bu maktabda hali sinf yo'q (yoki sinflar boshqa maktabga biriktirilgan). Saytda <b>Sinflar</b> bo'limida shu maktabga sinf qo'shing.",
+        { parse_mode: "HTML", reply_markup: new InlineKeyboard().text("⬅️ Boshqa maktab", "g:schback") }
+      ).catch(() => {});
+      return;
+    }
+    const kb = classKbFrom(classes);
+    kb.row().text("⬅️ Boshqa maktab", "g:schback");
+    await ctx.editMessageText("<b>Qaysi sinf?</b> Tanlang 👇", { parse_mode: "HTML", reply_markup: kb })
+      .catch(async () => { await ctx.editMessageReplyMarkup({ reply_markup: kb }).catch(() => {}); });
+  });
+
+  // "Boshqa maktab" → maktab tanlashga qaytish
+  group.callbackQuery("g:schback", async (ctx) => {
+    const kb = await classPicker({ ok: true, who: null, staff: false, groupAdmin: true, anonymous: false, name: "" });
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!kb) { await ctx.editMessageText(NO_CLASSES_TEXT, { parse_mode: "HTML" }).catch(() => {}); return; }
+    await ctx.editMessageText("<b>Bu guruh qaysi maktabniki?</b> Tanlang 👇", { parse_mode: "HTML", reply_markup: kb })
+      .catch(async () => { await ctx.editMessageReplyMarkup({ reply_markup: kb }).catch(() => {}); });
   });
 
   group.command("uzish", async (ctx) => {
-    const who = ctx.from ? await whoIs(ctx.from.id) : null;
-    if (!isStaffLike(who)) { await ctx.reply("⛔ Faqat o'qituvchilar."); return; }
+    const auth = await groupAuth(ctx);
+    if (!auth.ok) { await ctx.reply("⛔ Faqat guruh admini yoki o'qituvchi."); return; }
     await unlinkChat(ctx.chat.id);
-    await ctx.reply("✅ Guruh platformadan uzildi. Avtomatik xabarlar endi kelmaydi.");
+    await ctx.reply("✅ Guruh platformadan uzildi. Avtomatik xabarlar endi kelmaydi. Qayta ulash: /boglash");
   });
 
   group.command("jadval", async (ctx) => {
@@ -1314,16 +1600,16 @@ function registerGroup(group: Composer<Context>): void {
   };
 
   group.command("sozlamalar", async (ctx) => {
-    const who = ctx.from ? await whoIs(ctx.from.id) : null;
-    if (!isStaffLike(who)) { await ctx.reply("⛔ Faqat o'qituvchilar."); return; }
+    const auth = await groupAuth(ctx);
+    if (!auth.ok) { await ctx.reply("⛔ Faqat guruh admini yoki o'qituvchi."); return; }
     const linked = await getLinkedChat(ctx.chat.id);
     if (!linked) { await ctx.reply("Avval guruhni ulang: /boglash"); return; }
     await ctx.reply("⚙️ <b>Avtomatik xabarlar</b>\nYoqish/o'chirish uchun bosing:", { parse_mode: "HTML", reply_markup: settingsKb(linked.settings ?? {}) });
   });
 
   group.callbackQuery(/^g:set:(morning_schedule|birthdays|weekly_top)$/, async (ctx) => {
-    const who = await whoIs(ctx.from.id);
-    if (!isStaffLike(who) || !ctx.chat) { await ctx.answerCallbackQuery({ text: "⛔ Faqat o'qituvchilar", show_alert: true }); return; }
+    const auth = await groupAuth(ctx);
+    if (!auth.ok || !ctx.chat) { await ctx.answerCallbackQuery({ text: "⛔ Faqat guruh admini yoki o'qituvchi", show_alert: true }); return; }
     const linked = await getLinkedChat(ctx.chat.id);
     if (!linked) { await ctx.answerCallbackQuery(); return; }
     const key = ctx.match[1] as "morning_schedule" | "birthdays" | "weekly_top";
@@ -1336,19 +1622,47 @@ function registerGroup(group: Composer<Context>): void {
   // Qolgan barcha guruh xabarlari — e'tiborsiz (spam qilmaymiz)
 }
 
-async function bindClass(ctx: Context, classId: string, title: string): Promise<void> {
+async function mayBindClass(auth: GroupAuth, classId: string): Promise<boolean> {
+  if (auth.groupAdmin || isManagement(auth.who)) return true;
+  return !!auth.who && (await canUseClass(auth.who, classId));
+}
+
+/** Maktab adminiga va sinf rahbariga: "guruh ulandi" + ✖️ Uzish tugmasi (nazorat uchun) */
+async function notifyLinked(ctx: Context, title: string, target: string, classId: string | null, auth: GroupAuth): Promise<void> {
+  if (!ctx.chat) return;
+  const chatId = ctx.chat.id;
+  const byWho = auth.staff ? `${esc(auth.name)} (o'qituvchi)` : auth.anonymous ? "anonim guruh admini" : `${esc(auth.name)} (guruh admini)`;
+  const text = `🔗 <b>Guruh ulandi</b>\n\n👥 «${esc(title)}» → <b>${esc(target)}</b>\n👤 Ulagan: ${byWho}\n\nNotanish guruh bo'lsa — uzib qo'ying.`;
+  const kb = { inline_keyboard: [[{ text: "✖️ Uzish", callback_data: `f:unl:${chatId}` }]] };
+  const targets = new Set<number>();
+  if (ADMIN_ID > 0) targets.add(ADMIN_ID);
+  if (classId) {
+    const heads = await query<{ telegram_id: number }>(
+      "SELECT telegram_id FROM staff WHERE class_id = $1 AND telegram_id IS NOT NULL",
+      [classId]
+    ).catch(() => [] as { telegram_id: number }[]);
+    heads.forEach((h) => targets.add(Number(h.telegram_id)));
+  }
+  if (ctx.from && !auth.anonymous) targets.delete(ctx.from.id); // o'zi ulagan bo'lsa — o'ziga yubormaymiz
+  for (const t of targets) await sendToChat(t, text, { reply_markup: kb });
+}
+
+async function bindClass(ctx: Context, classId: string, title: string, auth: GroupAuth): Promise<void> {
   const cls = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [classId]);
   if (!cls || !ctx.chat) return;
-  await linkChat({ chatId: ctx.chat.id, chatType: ctx.chat.type, title, purpose: "class", classId, linkedBy: ctx.from?.id ?? null });
+  const by = ctx.from && !auth.anonymous ? ctx.from.id : null;
+  await linkChat({ chatId: ctx.chat.id, chatType: ctx.chat.type, title, purpose: "class", classId, linkedBy: by });
   await ctx.reply(
     `✅ Guruh <b>${esc(cls.name)}</b> sinfiga ulandi!\n\n` +
       `Endi bu yerga avtomatik keladi:\n📅 har kuni 7:05 da dars jadvali\n🎂 tug'ilgan kun tabriklari\n🏆 shanba kuni haftalik reyting\n✉️ o'qituvchilar xabarlari\n\n` +
-      `Sozlash: /sozlamalar`,
+      `🎮 <b>/oyin</b> — "Bilimlar jangi" o'yinini boshlash\n` +
+      `⚙️ /sozlamalar — avtomatik xabarlarni yoqish/o'chirish`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard().url("🤖 O'quvchilar: botga ulaning", `https://t.me/${ctx.me.username}?start=sinf`),
     }
   );
+  await notifyLinked(ctx, title, `${cls.name} sinfi`, classId, auth);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1381,8 +1695,53 @@ function startScheduler(): void {
       if (schoolDay && inWindow(hour, min, 15, 30) && (await claimJob(`att-remind:${date}`))) {
         await jobAttendanceReminder(date);
       }
+      // Face ID — har MAKTAB uchun alohida ishlaydi (ko'p-maktab).
+      // Faol maktablar; bo'lmasa/jadval bo'sh bo'lsa — 3-maktab (standart).
+      const faceSchools = async (): Promise<number[]> => {
+        const rows = await query<{ id: number }>("SELECT id FROM maktablar WHERE is_active ORDER BY id").catch(() => [] as { id: number }[]);
+        return rows.length ? rows.map((r) => r.id) : [3];
+      };
+      // 08:00: darslar boshlandi, maktab guruhiga kelganlar soni (qisqa snapshot)
+      if (schoolDay && inWindow(hour, min, 8, 0)) {
+        for (const mid of await faceSchools()) {
+          if (await claimJob(`faceid-arrived:${date}:${mid}`)) {
+            await faceidArrivedCount(mid).catch((err) => logger.warn({ err, mid }, "faceid 08:00 kelganlar soni"));
+          }
+        }
+      }
+      // 10:00: to'liq xulosa (keldi/kech/sababli/sababsiz) + muntazam kelmaydiganlar
+      if (schoolDay && inWindow(hour, min, 10, 0)) {
+        for (const mid of await faceSchools()) {
+          if (await claimJob(`faceid-summary:${date}:${mid}`)) {
+            await faceidGroupSummary(mid).catch((err) => logger.warn({ err, mid }, "faceid 10:00 to'liq xulosa"));
+            await faceidUnexcusedNotify(mid).catch((err) => logger.warn({ err, mid }, "faceid sababsizlar (o'qituvchilarga)"));
+            await faceidChronicNotify(mid).catch((err) => logger.warn({ err, mid }, "faceid muntazam kelmaydiganlar"));
+          }
+        }
+      }
+      // 14:30: kun yakuni (ketgan/qochgan/javob so'ragan) + kunlik arxiv (Word) Telegramga
+      if (schoolDay && inWindow(hour, min, 14, 30)) {
+        for (const mid of await faceSchools()) {
+          if (await claimJob(`faceid-departures:${date}:${mid}`)) {
+            await faceidDepartureSummary(mid).catch((err) => logger.warn({ err, mid }, "faceid 14:30 kun yakuni"));
+            await faceidArchiveToTelegram(mid).catch((err) => logger.warn({ err, mid }, "faceid kunlik arxiv"));
+          }
+        }
+      }
+      // #11: har kuni 14:40 da — chorakda 36 soat chegarasidan o'tganlarni tekshirish
+      if (schoolDay && inWindow(hour, min, 14, 40)) {
+        for (const mid of await faceSchools()) {
+          if (await claimJob(`faceid-hourlimit:${date}:${mid}`)) {
+            await checkHourLimits(mid).catch((err) => logger.warn({ err, mid }, "faceid 36 soat chegara"));
+          }
+        }
+      }
       if (day === 6 && inWindow(hour, min, 16, 0) && (await claimJob(`weekly:${date}`))) {
         await jobWeeklyTop();
+      }
+      // #4: har kuni 03:10 da — 15 kundan oshган arxiv maktablarni butunlay o'chirish
+      if (inWindow(hour, min, 3, 10) && (await claimJob(`purge-schools:${date}`))) {
+        await purgeExpiredSchools().catch((err) => logger.warn({ err }, "arxiv maktablarni tozalash"));
       }
     } catch (err) {
       logger.error({ err }, "Rejalashtirilgan Telegram xabarida xato");
