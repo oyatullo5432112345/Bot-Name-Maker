@@ -7,13 +7,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ClassChips } from "@/components/class-chips";
 import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX, Download, Repeat, Palette } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
 import { api, API_BASE, authHeaders } from "@/lib/face";
 
-interface ClassRow { class_name: string }
+interface ClassRow { class_name: string; total?: number; enrolled?: number }
 interface TodayRow {
   login: string; full_name: string;
   arrived: string | null; status: string | null;
@@ -124,15 +124,13 @@ export default function FaceTodayPage() {
 
       <Card>
         <CardContent className="pt-4 space-y-3">
+          {!scoped && (
+            <div className="space-y-1.5">
+              <div className="text-sm font-medium">Sinfni tanlang</div>
+              <ClassChips classes={classes.data ?? []} value={cls} onChange={setCls} />
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row gap-2">
-            {!scoped && (
-              <Select value={cls} onValueChange={setCls}>
-                <SelectTrigger className="sm:w-44"><SelectValue placeholder="Sinf" /></SelectTrigger>
-                <SelectContent>
-                  {(classes.data ?? []).map((c) => <SelectItem key={c.class_name} value={c.class_name}>{c.class_name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
             <Input placeholder="Ism bo'yicha qidirish…" value={search} onChange={(e) => setSearch(e.target.value)} />
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-sm text-muted-foreground whitespace-nowrap">Vaqt:</span>
