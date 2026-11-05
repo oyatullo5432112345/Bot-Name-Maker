@@ -34,6 +34,7 @@ interface ClassInfo {
   id: string;
   name: string;
   teacher_id?: string;
+  attendance_pct?: number; // Sinfning shu kundagi davomat foizi (ixtiyoriy)
 }
 
 const STATUS_CONFIG: Record<Status, { label: string; color: string; icon: typeof CheckCircle2 }> = {
@@ -227,7 +228,7 @@ export default function DavomatPage() {
         <p className="text-muted-foreground mt-1">O'quvchilar davomatini kiring va kuzating</p>
       </div>
 
-      {/* Sinf va sanani tanlash qismi (Qulaylashtirilgan) */}
+      {/* Sinf va sanani tanlash qismi */}
       <div className="space-y-3">
         <div className="flex flex-wrap gap-3 items-center">
           {canPick && (
@@ -254,21 +255,41 @@ export default function DavomatPage() {
           />
         </div>
 
-        {/* Tezkor sinf tugmalari */}
+        {/* Tezkor sinf tugmalari (Davomatga qarab Yashil / Sariq / Qizil ranglar bilan) */}
         {canPick && classes.length > 0 && (
           <div className="flex flex-wrap gap-1.5 items-center pt-1">
             <span className="text-xs text-muted-foreground mr-1">Tezkor sinflar:</span>
-            {classes.map(c => (
-              <Button
-                key={c.id}
-                variant={selectedClass?.id === c.id ? "default" : "outline"}
-                size="sm"
-                onClick={() => handleClassSelect(c)}
-                className="text-xs h-7 px-2.5 rounded-full"
-              >
-                {c.name}
-              </Button>
-            ))}
+            {classes.map(c => {
+              // Agar sinfda davomat ma'lumoti bo'lsa rang beramiz, aks holda oddiy ko'rinish
+              const pct = c.attendance_pct ?? (selectedClass?.id === c.id ? attendancePct : null);
+              
+              let colorClass = "border-border text-foreground hover:bg-muted";
+              if (pct !== null) {
+                if (pct >= 90) {
+                  colorClass = "bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20";
+                } else if (pct >= 75) {
+                  colorClass = "bg-yellow-500/10 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/20";
+                } else {
+                  colorClass = "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20";
+                }
+              }
+
+              if (selectedClass?.id === c.id) {
+                colorClass += " ring-2 ring-primary font-bold";
+              }
+
+              return (
+                <Button
+                  key={c.id}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleClassSelect(c)}
+                  className={`text-xs h-7 px-2.5 rounded-full transition-all ${colorClass}`}
+                >
+                  {c.name} {pct !== null ? `(${pct}%)` : ""}
+                </Button>
+              );
+            })}
           </div>
         )}
       </div>
