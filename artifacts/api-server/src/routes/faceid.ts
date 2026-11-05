@@ -203,15 +203,15 @@ const STAFF_GROUP = "Xodimlar";
 interface FacePerson { login: string; full_name: string; class_name: string; telegram_id: number | null; kind: "student" | "staff" }
 
 /** Loginni avval o'quvchilardan (users), keyin xodimlardan (staff) qidiradi */
-async function findPerson(login: string): Promise<FacePerson | null> {
+async function findPerson(login: string, mid: number | null = null): Promise<FacePerson | null> {
   const u = await queryOne<{ full_name: string; class_name: string; telegram_id: number | null }>(
-    "SELECT full_name, class_name, telegram_id FROM users WHERE login = $1",
-    [login]
+    "SELECT full_name, class_name, telegram_id FROM users WHERE login = $1 AND ($2::int IS NULL OR maktab_id = $2)",
+    [login, mid]
   );
   if (u) return { login, full_name: u.full_name, class_name: u.class_name, telegram_id: u.telegram_id, kind: "student" };
   const s = await queryOne<{ full_name: string; telegram_id: number | null }>(
-    "SELECT full_name, telegram_id FROM staff WHERE login = $1",
-    [login]
+    "SELECT full_name, telegram_id FROM staff WHERE login = $1 AND ($2::int IS NULL OR maktab_id = $2)",
+    [login, mid]
   );
   if (s) return { login, full_name: s.full_name, class_name: STAFF_GROUP, telegram_id: s.telegram_id, kind: "staff" };
   return null;
@@ -263,29 +263,29 @@ router.get("/faceid/overview", async (req, res): Promise<void> => {
           ),
       mid !== null
         ? query<{ student_name: string; class_name: string; kind: string; status: string; time: string }>(
-            `SELECT student_name, class_name, kind, status, to_char(at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
+            `SELECT student_name, class_name, kind, status, to_char(ts AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
                FROM (
-                 SELECT student_name, class_name, 'in' AS kind, status, checked_at AS at
+                 SELECT student_name, class_name, 'in' AS kind, status, checked_at AS ts
                    FROM face_checkins WHERE date = $1::date AND checked_at IS NOT NULL AND maktab_id = $2
                  UNION ALL
                  SELECT student_name, class_name, 'out' AS kind,
                         CASE WHEN excused THEN 'excused' WHEN left_early THEN 'early' ELSE 'normal' END, left_at
                    FROM face_checkins WHERE date = $1::date AND left_at IS NOT NULL AND maktab_id = $2
                ) e
-              ORDER BY at DESC LIMIT 25`,
+              ORDER BY ts DESC LIMIT 25`,
             [today, mid]
           )
         : query<{ student_name: string; class_name: string; kind: string; status: string; time: string }>(
-            `SELECT student_name, class_name, kind, status, to_char(at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
+            `SELECT student_name, class_name, kind, status, to_char(ts AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
                FROM (
-                 SELECT student_name, class_name, 'in' AS kind, status, checked_at AS at
+                 SELECT student_name, class_name, 'in' AS kind, status, checked_at AS ts
                    FROM face_checkins WHERE date = $1::date AND checked_at IS NOT NULL
                  UNION ALL
                  SELECT student_name, class_name, 'out' AS kind,
                         CASE WHEN excused THEN 'excused' WHEN left_early THEN 'early' ELSE 'normal' END, left_at
                    FROM face_checkins WHERE date = $1::date AND left_at IS NOT NULL
                ) e
-              ORDER BY at DESC LIMIT 25`,
+              ORDER BY ts DESC LIMIT 25`,
             [today]
           ),
       mid !== null
@@ -328,7 +328,8 @@ router.get("/faceid/overview", async (req, res): Promise<void> => {
           [today]
         ).catch(() => null);
     if (staffAgg && staffAgg.total > 0) classes.push({ class_name: STAFF_GROUP, ...staffAgg });
-    const sum = (k: "arrived" | "late" | "left" | "early") => classes.reduce((acc, c) => acc + c[k], 0);
+    const sum = (k: "arrived" | "late" | "left" | "early") =>
+      classes.filter((c) => c.class_name !== STAFF_GROUP).reduce((acc, c) => acc + c[k], 0);
     res.json({
       date: today,
       time: uzTime(),
@@ -365,15 +366,15 @@ router.post("/faceid/settings", async (req, res): Promise<void> => {
   const smena = Number(b.smena) === 1 || Number(b.smena) === 2 ? Number(b.smena) : 0;
   const cur = await getSettings(mid, smena);
   const next: FaceSettings = {
-    late_after: typeof b.late_after === "string" && /^\d{2}:\d{2}$/.test(b.late_after) ? b.late_after : cur.late_after,
+    late_after: typeof b.late_after === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(b.late_after) ? b.late_after : cur.late_after,
     notify: typeof b.notify === "boolean" ? b.notify : cur.notify,
     notify_group: typeof b.notify_group === "boolean" ? b.notify_group : cur.notify_group,
     threshold: typeof b.threshold === "number" && b.threshold >= 0.3 && b.threshold <= 0.65 ? b.threshold : cur.threshold,
     min_stay: typeof b.min_stay === "number" && b.min_stay >= 1 && b.min_stay <= 480 ? Math.round(b.min_stay) : cur.min_stay,
-    default_end: typeof b.default_end === "string" && /^\d{2}:\d{2}$/.test(b.default_end) ? b.default_end : cur.default_end,
-    open_from: typeof b.open_from === "string" && /^\d{2}:\d{2}$/.test(b.open_from) ? b.open_from : cur.open_from,
-    close_after: typeof b.close_after === "string" && /^\d{2}:\d{2}$/.test(b.close_after) ? b.close_after : cur.close_after,
-    late_until: typeof b.late_until === "string" && /^\d{2}:\d{2}$/.test(b.late_until) ? b.late_until : cur.late_until,
+    default_end: typeof b.default_end === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(b.default_end) ? b.default_end : cur.default_end,
+    open_from: typeof b.open_from === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(b.open_from) ? b.open_from : cur.open_from,
+    close_after: typeof b.close_after === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(b.close_after) ? b.close_after : cur.close_after,
+    late_until: typeof b.late_until === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(b.late_until) ? b.late_until : cur.late_until,
     quarter_start: typeof b.quarter_start === "string" && (/^\d{4}-\d{2}-\d{2}$/.test(b.quarter_start) || b.quarter_start === "") ? b.quarter_start : cur.quarter_start,
     quarter_end: typeof b.quarter_end === "string" && (/^\d{4}-\d{2}-\d{2}$/.test(b.quarter_end) || b.quarter_end === "") ? b.quarter_end : cur.quarter_end,
     hour_limit: typeof b.hour_limit === "number" && b.hour_limit >= 1 && b.hour_limit <= 500 ? Math.round(b.hour_limit) : cur.hour_limit,
@@ -591,10 +592,10 @@ router.post("/faceid/enroll", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Yuz namunalari noto'g'ri (1–8 ta, har biri 128 son)" });
     return;
   }
-  const student = await findPerson(student_login);
+  const mid = schoolOf(u);
+  const student = await findPerson(student_login, mid);
   if (!student) { res.status(404).json({ error: "Foydalanuvchi topilmadi" }); return; }
   if (!canTouchClass(u, student.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
-  const mid = schoolOf(u);
 
   // Namunalarning o'zi bir-biriga mosmi (kadrda boshqa odam bo'lib qolmaganmi).
   // Namunalar turli burchakdan (to'g'ri → yon) olinadi, shuning uchun "zanjir" tekshiruvi:
@@ -663,8 +664,9 @@ router.delete("/faceid/enroll/:login", async (req, res): Promise<void> => {
   const u = authAs(req, ENROLL);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const login = String(req.params["login"] ?? "");
-  const person = await findPerson(login);
-  if (person && !canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
+  const person = await findPerson(login, schoolOf(u));
+  if (!person) { res.status(404).json({ error: "Foydalanuvchi topilmadi" }); return; }
+  if (!canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
   await query("DELETE FROM face_profiles WHERE student_login = $1", [login]);
   res.json({ ok: true });
 });
@@ -672,8 +674,12 @@ router.delete("/faceid/enroll/:login", async (req, res): Promise<void> => {
 // POST /api/faceid/reset — HAMMA yuz ma'lumotlarini o'chirish (faqat admin)
 // Eski (3 namunali) ro'yxatdan o'tganlarni tozalash uchun — keyin yangi 7 burchak bilan qayta olinadi.
 router.post("/faceid/reset", async (req, res): Promise<void> => {
-  if (!authAs(req, ["admin"])) { res.status(403).json({ error: "Faqat admin" }); return; }
-  const rows = await query<{ student_login: string }>("DELETE FROM face_profiles RETURNING student_login");
+  const au = authAs(req, ["admin"]);
+  if (!au) { res.status(403).json({ error: "Faqat admin" }); return; }
+  const rows = await query<{ student_login: string }>(
+    "DELETE FROM face_profiles WHERE ($1::int IS NULL OR maktab_id = $1) RETURNING student_login",
+    [schoolOf(au)]
+  );
   logger.info({ deleted: rows.length }, "Face ID: hamma yuz ma'lumoti o'chirildi");
   res.json({ ok: true, deleted: rows.length });
 });
@@ -868,7 +874,7 @@ async function handleScan(
   device: string,
   mid: number | null
 ): Promise<ScanResult | null> {
-  const st = await findPerson(login);
+  const st = await findPerson(login, mid);
   if (!st) return null;
 
   const today = uzDateStr();
@@ -1045,16 +1051,16 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Keldi/ketdi va ruxsat bilan ketishni faqat maktab rahbariyati belgilaydi. Sinf rahbari faqat 'sababli' qila oladi." });
     return;
   }
-  const person = await findPerson(student_login);
+  const mid = schoolOf(u);
+  const person = await findPerson(student_login, mid);
   if (!person) { res.status(404).json({ error: "Topilmadi" }); return; }
   if (!canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
-  const mid = schoolOf(u);
   const byName = String(u.full_name ?? u.login ?? "O'qituvchi").trim();
   const excuseReason = String(reason ?? "").trim().slice(0, 300);
 
   const today = uzDateStr();
   const settings = await getSettings(mid);
-  const t = typeof time === "string" && /^\d{2}:\d{2}$/.test(time) ? time : null;
+  const t = typeof time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : null;
   const ts = t ? `${today}T${t}:00+05:00` : null; // O'zbekiston = UTC+5
   const shownTime = t ?? uzTime();
 
@@ -1171,10 +1177,10 @@ router.post("/faceid/chronic", async (req, res): Promise<void> => {
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const { student_login, on, note } = req.body as { student_login?: string; on?: boolean; note?: string };
   if (!student_login) { res.status(400).json({ error: "student_login kerak" }); return; }
-  const person = await findPerson(student_login);
+  const mid = schoolOf(u);
+  const person = await findPerson(student_login, mid);
   if (!person) { res.status(404).json({ error: "Topilmadi" }); return; }
   if (!canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
-  const mid = schoolOf(u);
   if (on === false) {
     await query("DELETE FROM face_chronic WHERE student_login = $1", [student_login]);
     res.json({ ok: true, chronic: false });
@@ -1930,4 +1936,37 @@ export async function checkHourLimits(mid: number): Promise<{ newly: number }> {
   const fname = `${limit}-soat-chegara-${today}.doc`;
   const caption = `🚨 <b>${esc(sName)} — ${limit} soat chegarasidan o'tganlar</b> (chorak: ${qStr} dan)\nYangi: ${fresh.length} ta o'quvchi`;
   for (const id of await mgmtRecipients(mid)) { await sendDocumentToChat(id, buf, fname, caption); await sleep(120); }
-  for (const ch of await dailyAtt
+  for (const ch of await dailyAttendanceChats(mid)) { await sendDocumentToChat(ch.chat_id, buf, fname, caption); await sleep(120); }
+
+  return { newly: fresh.length };
+}
+
+function renderHourLimitDoc(rows: HourOffender[], sName: string, quarterStart: string, limit: number): string {
+  const qStr = quarterStart.split("-").reverse().join(".");
+  const row = (cells: string[]) => `<tr>${cells.map((c) => `<td>${c}</td>`).join("")}</tr>`;
+  const head = (cells: string[]) => `<tr>${cells.map((c) => `<th>${c}</th>`).join("")}</tr>`;
+  const table =
+    `<table class="list">${head(["#", "Maktab", "Sinf", "Familya, ism", "Qoldirilgan soat"])}` +
+    rows.map((r, i) => row([String(i + 1), esc(sName), esc(r.class_name), esc(r.full_name), String(r.hours)])).join("") +
+    `</table>`;
+  return `<!doctype html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>${limit} soat chegara</title>
+<style>
+  body { font-family: "Times New Roman", serif; font-size: 12pt; color: #111; }
+  h1 { font-size: 16pt; text-align: center; margin: 0 0 2pt; }
+  .sub { text-align: center; color: #555; margin: 0 0 12pt; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0; }
+  table.list th, table.list td { border: 1px solid #bbb; padding: 4pt 6pt; font-size: 11pt; }
+  table.list th { background: #eee; }
+  table.list td:first-child { text-align: center; width: 28pt; }
+  table.list td:last-child { text-align: center; font-weight: bold; }
+</style></head>
+<body>
+  <h1>${limit} soat chegarasidan o'tgan o'quvchilar</h1>
+  <div class="sub">${esc(sName)} · chorak: ${qStr} dan</div>
+  ${table}
+</body></html>`;
+}
+
+export default router;
