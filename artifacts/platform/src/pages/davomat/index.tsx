@@ -37,10 +37,10 @@ interface ClassInfo {
 }
 
 const STATUS_CONFIG: Record<Status, { label: string; color: string; icon: typeof CheckCircle2 }> = {
-  present:  { label: "Keldi",    color: "bg-green-500/20 text-green-400 border-green-500/30",  icon: CheckCircle2 },
-  absent:   { label: "Kelmadi",  color: "bg-red-500/20 text-red-400 border-red-500/30",        icon: XCircle },
-  late:     { label: "Kech",     color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", icon: Clock },
-  excused:  { label: "Sababli",  color: "bg-blue-500/20 text-blue-400 border-blue-500/30",     icon: FileCheck },
+  present:  { label: "Keldi",   color: "bg-green-500/20 text-green-400 border-green-500/30",  icon: CheckCircle2 },
+  absent:   { label: "Kelmadi", color: "bg-red-500/20 text-red-400 border-red-500/30",        icon: XCircle },
+  late:     { label: "Kech",    color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", icon: Clock },
+  excused:  { label: "Sababli", color: "bg-blue-500/20 text-blue-400 border-blue-500/30",     icon: FileCheck },
 };
 
 function todayStr(): string {
@@ -58,16 +58,16 @@ export default function DavomatPage() {
   const { user } = useAuth();
   const [selectedClass, setSelectedClass] = useState<ClassInfo | null>(null);
   const [selectedDate, setSelectedDate] = useState(todayStr());
-  const [records, setRecords] = useState<Map<string, AttendanceRecord>>(new Map());
+  const [records, setRecords] = useState>(new Map());
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const role = user?.role ?? "";
   const isAdmin = ["admin", "director", "zam_direktor", "zavuch"].includes(role);
-  const isClassTeacher = ["sinf_rahbari", "boshlangich_oqituvchi"].includes(role); // o'z sinfi bor
-  const isSubjectTeacher = role === "teacher"; // fan o'qituvchisi — sinf tanlaydi
+  const isClassTeacher = ["sinf_rahbari", "boshlangich_oqituvchi"].includes(role);
+  const isSubjectTeacher = role === "teacher";
   const isTeacher = isClassTeacher || isSubjectTeacher;
-  const canPick = isAdmin || isSubjectTeacher; // sinf tanlab, davomat/sababli qo'ya oladi
+  const canPick = isAdmin || isSubjectTeacher;
 
   const { data: classes = [] } = useQuery<ClassInfo[]>({
     queryKey: ["classes-attendance"],
@@ -88,6 +88,29 @@ export default function DavomatPage() {
     },
     enabled: isClassTeacher && !!user?.class_id,
   });
+
+  // Oxirgi tanlangan sinfni xotiradan (localStorage) tiklash
+  useEffect(() => {
+    if (canPick && classes.length > 0 && !selectedClass) {
+      const savedClassId = localStorage.getItem("last_selected_class_id");
+      if (savedClassId) {
+        const found = classes.find(c => c.id === savedClassId);
+        if (found) {
+          setSelectedClass(found);
+        }
+      }
+    }
+  }, [classes, canPick, selectedClass]);
+
+  const handleClassSelect = (cls: ClassInfo | null) => {
+    setSelectedClass(cls);
+    setSaved(false);
+    if (cls) {
+      localStorage.setItem("last_selected_class_id", cls.id);
+    } else {
+      localStorage.removeItem("last_selected_class_id");
+    }
+  };
 
   const { data: allStudents = [] } = useQuery<Student[]>({
     queryKey: ["students-for-class", selectedClass?.id],
@@ -204,30 +227,50 @@ export default function DavomatPage() {
         <p className="text-muted-foreground mt-1">O'quvchilar davomatini kiring va kuzating</p>
       </div>
 
-      <div className="flex flex-wrap gap-3 items-center">
-        {canPick && (
-          <Select value={selectedClass?.id ?? ""} onValueChange={id => {
-            const cls = classes.find(c => c.id === id);
-            setSelectedClass(cls ?? null);
-            setSaved(false);
-          }}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Sinf tanlang..." />
-            </SelectTrigger>
-            <SelectContent>
-              {classes.map(c => (
-                <SelectItem key={c.id} value={c.id}>{c.name}-sinf</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {/* Sinf va sanani tanlash qismi (Qulaylashtirilgan) */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap gap-3 items-center">
+          {canPick && (
+            <Select value={selectedClass?.id ?? ""} onValueChange={id => {
+              const cls = classes.find(c => c.id === id);
+              handleClassSelect(cls ?? null);
+            }}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Sinf tanlang..." />
+              </SelectTrigger>
+              <SelectContent>
+                {classes.map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}-sinf</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <input
+            type="date"
+            value={selectedDate}
+            max={todayStr()}
+            onChange={e => { setSelectedDate(e.target.value); setSaved(false); }}
+            className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+
+        {/* Tezkor sinf tugmalari */}
+        {canPick && classes.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 items-center pt-1">
+            <span className="text-xs text-muted-foreground mr-1">Tezkor sinflar:</span>
+            {classes.map(c => (
+              <Button
+                key={c.id}
+                variant={selectedClass?.id === c.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => handleClassSelect(c)}
+                className="text-xs h-7 px-2.5 rounded-full"
+              >
+                {c.name}
+              </Button>
+            ))}
+          </div>
         )}
-        <input
-          type="date"
-          value={selectedDate}
-          max={todayStr()}
-          onChange={e => { setSelectedDate(e.target.value); setSaved(false); }}
-          className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-        />
       </div>
 
       {!currentClass && canPick && (
