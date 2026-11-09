@@ -6,27 +6,12 @@ import { useAuth } from "@/lib/use-auth";
 // ═══════════════════════════════════════════════════════════════════
 //  INTELEKTUAL O'YINLAR — hub.
 //  • Admin uchun DOIMIY OCHIQ (countdown yo'q).
-//  • Boshqalar uchun 10-DEKABR 2026 gacha countdown;
-//    tugaganda portlash bilan ochiladi.
+//  • Boshqalar uchun 10-DEKABR 2026, 08:00 (Toshkent) gacha countdown.
+//  • Vaqt tugaganda portlash bilan ochiladi.
+//  • HAMMA UCHUN BIR XIL VAQT — localStorage ishlatilmaydi.
 // ═══════════════════════════════════════════════════════════════════
 const LAUNCH_AT = new Date("2026-12-10T08:00:00+05:00").getTime();
-
-// Progress hisoblash uchun "boshlanish" nuqtasi.
-// Sahifa birinchi marta ochilganda localStorage'ga yoziladi.
-const START_KEY = "intellektual_start_at";
 const BOOM_SEEN_KEY = "intellektual_boom_seen";
-
-function getStartAt(): number {
-  try {
-    const v = localStorage.getItem(START_KEY);
-    if (v) return Number(v);
-    const now = Date.now();
-    localStorage.setItem(START_KEY, String(now));
-    return now;
-  } catch {
-    return Date.now();
-  }
-}
 // ═══════════════════════════════════════════════════════════════════
 
 const CSS = `
@@ -81,10 +66,10 @@ export default function Intellektual() {
   const [now, setNow] = useState(Date.now());
   const [boom, setBoom] = useState(false);
   const [revealed, setRevealed] = useState(false);
-  const [startAt] = useState<number>(() => getStartAt());
   const started = useRef(false);
 
   useEffect(() => {
+    // Admin — doimiy ochiq. Oddiy foydalanuvchi: vaqt o'tgan va portlash ko'rilgan bo'lsa — to'g'ridan-to'g'ri ochiladi.
     const seen = (() => { try { return localStorage.getItem(BOOM_SEEN_KEY) === "1"; } catch { return false; } })();
     if (isAdmin || (Date.now() >= LAUNCH_AT && seen)) { setRevealed(true); started.current = true; }
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -129,17 +114,12 @@ export default function Intellektual() {
     );
   }
 
-  // ─────────── QULF: 10-DEKABRGACHA COUNTDOWN ───────────
+  // ─────────── QULF: faqat countdown soati ───────────
   const rem = Math.max(0, LAUNCH_AT - now);
   const d = Math.floor(rem / 86400000);
   const h = Math.floor((rem % 86400000) / 3600000);
   const m = Math.floor((rem % 3600000) / 60000);
   const s = Math.floor((rem % 60000) / 1000);
-
-  // Progress: sahifa birinchi ochilgan paytdan LAUNCH_AT gacha
-  const total = Math.max(1, LAUNCH_AT - startAt);
-  const elapsed = Math.min(total, Math.max(0, now - startAt));
-  const progress = Math.min(100, Math.max(0, (elapsed / total) * 100));
 
   return (
     <div className="relative min-h-[85vh] flex flex-col items-center justify-center rounded-3xl overflow-hidden p-6
@@ -185,7 +165,7 @@ export default function Intellektual() {
         </p>
 
         {/* Countdown raqamlari */}
-        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-7">
+        <div className="flex items-center justify-center gap-2 sm:gap-3">
           {[
             { v: d, l: "kun" },
             { v: h, l: "soat" },
@@ -212,22 +192,10 @@ export default function Intellektual() {
           ))}
         </div>
 
-        {/* Progress bar */}
-        <div className="w-full max-w-md">
-          <div className="flex justify-between text-[11px] text-white/40 mb-1.5 px-1">
-            <span>Ochilishga</span>
-            <span>{progress.toFixed(1)}%</span>
-          </div>
-          <div className="h-2.5 rounded-full bg-white/10 overflow-hidden border border-white/10">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-400 via-fuchsia-500 to-indigo-500 transition-all duration-1000"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <p className="text-center text-[11px] text-white/30 mt-3">
-            10-dekabr 2026, soat 08:00 (Toshkent)
-          </p>
-        </div>
+        {/* Pastki yozuv */}
+        <p className="text-center text-[11px] text-white/30 mt-6">
+          10-dekabr 2026, soat 08:00 (Toshkent)
+        </p>
       </div>
     </div>
   );
