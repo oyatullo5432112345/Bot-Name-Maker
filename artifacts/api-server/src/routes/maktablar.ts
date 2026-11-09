@@ -25,7 +25,7 @@ function admin(req: { headers: { authorization?: string } }): Record<string, unk
 // bepul oladi; admin uzaytiradi. Muddat tugasa — maktab qulflanadi.
 void query(`ALTER TABLE maktablar ADD COLUMN IF NOT EXISTS pro_until TIMESTAMPTZ;`)
   .catch(() => { /* jadval hali yo'q bo'lsa migratsiya yaratadi */ });
-// #4: yumshoq o'chirish — maktab o'chirilsa 15 kun arxivda turadi (tiklanadi), keyin avto butunlay o'chadi.
+// #4: yumshoq o'chirish — maktab o'chirilsa ARXIVDA turadi (tiklanadi), keyin avto butunlay o'chadi.
 void query(`ALTER TABLE maktablar ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`)
   .catch(() => { /* migratsiya yaratadi */ });
 // #13: 2 smenali maktab belgisi. FALSE = oddiy (bir smenali) maktab — smena tushunchasi
@@ -33,9 +33,9 @@ void query(`ALTER TABLE maktablar ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPT
 void query(`ALTER TABLE maktablar ADD COLUMN IF NOT EXISTS ikki_smena BOOLEAN NOT NULL DEFAULT FALSE;`)
   .catch(() => { /* migratsiya yaratadi */ });
 
-const ARCHIVE_DAYS = 15; // arxivda necha kun saqlanadi
+const ARCHIVE_DAYS = 2; // arxivda necha kun saqlanadi (ilgari 15 edi)
 
-// #4: 15 kundan oshган arxiv maktablarini butunlay o'chiradi (hamma maktab_id li jadvaldan).
+// #4: 2 kundan oshган arxiv maktablarini butunlay o'chiradi (hamma maktab_id li jadvaldan).
 export async function purgeExpiredSchools(): Promise<number> {
   const due = await query<{ id: number }>(
     `SELECT id FROM maktablar WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - INTERVAL '${ARCHIVE_DAYS} days' AND id <> 3`,
@@ -211,7 +211,7 @@ router.put("/maktablar/:id", async (req, res): Promise<void> => {
 });
 
 // DELETE /maktablar/:id — o'chirish (admin). 3-maktab va ma'lumotli maktab o'chmaydi.
-// #4: YUMSHOQ o'chirish — maktab (barcha ma'lumoti bilan) 15 kun arxivga tushadi.
+// #4: YUMSHOQ o'chirish — maktab (barcha ma'lumoti bilan) 2 kun arxivga tushadi.
 // Shu vaqtda tiklash mumkin; keyin avtomatik butunlay o'chadi.
 router.delete("/maktablar/:id", async (req, res): Promise<void> => {
   if (!admin(req)) { res.status(403).json({ error: "Faqat tuman admini" }); return; }
