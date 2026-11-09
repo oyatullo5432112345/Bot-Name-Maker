@@ -1,14 +1,17 @@
 // Face ID — bugungi keldi/ketdini qo'lda to'g'rilash (rahbariyat / sinf rahbari).
 // Ruxsat bilan erta ketgan, yoki Face ID ishlamagan holatlar uchun.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ClassChips } from "@/components/class-chips";
-import { ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX, Download, Repeat, Palette } from "lucide-react";
+import {
+  ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX, Download, Repeat, Palette,
+  Stethoscope, CheckCircle2, AlertTriangle,
+} from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
 import { api, API_BASE, authHeaders } from "@/lib/face";
@@ -48,13 +51,31 @@ export default function FaceTodayPage() {
     refetchInterval: 30_000,
   });
 
-  // MUHIM: bu funksiya bosilganda ishlashi uchun FUNKSIYA qaytaradi (darhol ishga tushmaydi)
+  // Sinf bo'yicha statistika (keldi / sababli / kelmagan / foiz)
+  const stats = useMemo(() => {
+    const rows = list.data ?? [];
+    const total = rows.length;
+    let arrived = 0;   // kelgan (keldi + kech keldi)
+    let excused = 0;   // sababli
+    let absent = 0;    // kelmagan (sababsiz)
+    for (const r of rows) {
+      if (r.arrived) arrived++;
+      else if (r.excused) excused++;
+      else absent++;
+    }
+    // Foiz: keldi + sababli (ular "yo'q" hisoblanmaydi) / jami
+    const pct = total > 0 ? Math.round(((arrived + excused) / total) * 100) : 0;
+    let color: "green" | "amber" | "red" = "green";
+    if (absent > 0) color = "red";
+    else if (excused > 0 && arrived < total) color = "amber";
+    return { total, arrived, excused, absent, pct, color };
+  }, [list.data]);
+
   const act = (login: string, action: "in" | "out" | "out_excused" | "clear" | "absent_excused" | "club", name: string) => async () => {
-    // "Sababli (kelmadi)" — sababini so'raymiz; u sinf guruhiga va o'quvchiga xabar bilan boradi
     let reason: string | undefined;
     if (action === "absent_excused") {
       const r = window.prompt(`${name} — bugun sababli (kela olmaydi).\nSababini yozing (guruhga shu matn chiqadi):`, "");
-      if (r === null) return; // bekor qilindi
+      if (r === null) return;
       reason = r.trim() || undefined;
     }
     setBusy(`${login}:${action}`);
@@ -68,7 +89,6 @@ export default function FaceTodayPage() {
     } finally { setBusy(""); }
   };
 
-  // "Muntazam kelmaydigan" belgisi (yil oxirigacha) — har kuni 10:00 da sinf guruhiga eslatiladi
   const toggleChronic = (login: string, name: string, on: boolean) => async () => {
     let note: string | undefined;
     if (on) {
@@ -86,7 +106,6 @@ export default function FaceTodayPage() {
     } finally { setBusy(""); }
   };
 
-  // Kunlik davomat hisoboti (Word .doc) — faqat rahbariyat yuklab oladi
   const downloadArchive = async () => {
     setDl(true);
     try {
@@ -105,6 +124,15 @@ export default function FaceTodayPage() {
   };
 
   const rows = (list.data ?? []).filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase()));
+
+  // Ranglar
+  const statColor = {
+    green: { bg: "bg-emerald-500/15", border: "border-emerald-500/40", text: "text-emerald-600 dark:text-emerald-400", icon: CheckCircle2 },
+    amber: { bg: "bg-amber-500/15", border: "border-amber-500/40", text: "text-amber-600 dark:text-amber-400", icon: AlertTriangle },
+    red:   { bg: "bg-rose-500/15", border: "border-rose-500/40", text: "text-rose-600 dark:text-rose-400", icon: UserX },
+  };
+  const SC = statColor[stats.color];
+  const SIcon = SC.icon;
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -142,15 +170,74 @@ export default function FaceTodayPage() {
         </CardContent>
       </Card>
 
+      {/* Sinfning umumiy holati — rangli karta */}
+      {cls && !list.isLoading && stats.total > 0 && (
+        <Card className={`border-2 ${SC.border} ${SC.bg} overflow-hidden`}>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className={`w-12 h-12 rounded-xl ${SC.bg} ${SC.border} border flex items-center justify-center shrink-0`}>
+                <SIcon className={`w-6 h-6 ${SC.text}`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold">{cls}-sinf — bugungi holat</div>
+                <div className={`text-3xl font-black ${SC.text} tabular-nums leading-tight`}>{stats.pct}%</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg bg-emerald-500/15 border border-emerald-500/30 p-2 text-center">
+                <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase">Keldi</div>
+                <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 tabular-nums">{stats.arrived}</div>
+              </div>
+              <div className="rounded-lg bg-amber-500/15 border border-amber-500/30 p-2 text-center">
+                <div className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase">Sababli</div>
+                <div className="text-lg font-black text-amber-600 dark:text-amber-400 tabular-nums">{stats.excused}</div>
+              </div>
+              <div className="rounded-lg bg-rose-500/15 border border-rose-500/30 p-2 text-center">
+                <div className="text-[10px] font-bold text-rose-700 dark:text-rose-300 uppercase">Kelmagan</div>
+                <div className="text-lg font-black text-rose-600 dark:text-rose-400 tabular-nums">{stats.absent}</div>
+              </div>
+            </div>
+            <div className="mt-3 h-2 rounded-full bg-background/60 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${stats.color === "green" ? "bg-emerald-500" : stats.color === "amber" ? "bg-amber-500" : "bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500"}`}
+                style={{ width: `${stats.pct}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1.5 text-center">
+              Jami {stats.total} o'quvchi · {stats.arrived + stats.excused} ta hisobga olindi
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {list.isLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>}
       {list.isError && <div className="text-destructive text-sm">{(list.error as Error).message}</div>}
 
       <div className="space-y-2">
         {rows.map((r) => {
           const b = busy.startsWith(`${r.login}:`);
+          // Rang holati: kelgan (yashil), sababli (sariq), kelmagan (qizil)
+          const isArrived = !!r.arrived;
+          const isExcused = !r.arrived && r.excused;
+          const isAbsent = !r.arrived && !r.excused;
+          const cardCls = isArrived
+            ? "border-emerald-500/40 bg-emerald-500/5"
+            : isExcused
+              ? "border-amber-500/40 bg-amber-500/5"
+              : "border-rose-500/40 bg-rose-500/5";
           return (
-            <div key={r.login} className="rounded-xl border bg-card px-4 py-3">
+            <div key={r.login} className={`rounded-xl border-2 ${cardCls} px-4 py-3 transition-colors`}>
               <div className="flex items-center gap-3">
+                {/* Chap holat indikatori */}
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                  isArrived ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" :
+                  isExcused ? "bg-amber-500/20 text-amber-600 dark:text-amber-400" :
+                  "bg-rose-500/20 text-rose-600 dark:text-rose-400"
+                }`}>
+                  {isArrived ? <CheckCircle2 className="w-5 h-5" /> :
+                   isExcused ? <Stethoscope className="w-5 h-5" /> :
+                   <UserX className="w-5 h-5" />}
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate flex items-center gap-2">
                     {r.full_name}
@@ -158,12 +245,14 @@ export default function FaceTodayPage() {
                   </div>
                   <div className="text-xs mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
                     {r.arrived ? (
-                      <span className={r.status === "late" ? "text-amber-500" : "text-emerald-600 dark:text-emerald-400"}>
+                      <span className={r.status === "late" ? "text-amber-600 dark:text-amber-400 font-semibold" : "text-emerald-600 dark:text-emerald-400 font-semibold"}>
                         {r.status === "late" ? "Kech keldi" : "Keldi"}: {r.arrived}
                       </span>
                     ) : r.excused && !r.left ? (
-                      <span className="text-indigo-500">Sababli (kelmadi)</span>
-                    ) : <span className="text-muted-foreground">Kelmagan</span>}
+                      <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                        <Stethoscope className="w-3 h-3" /> Sababli (kelmadi)
+                      </span>
+                    ) : <span className="text-rose-600 dark:text-rose-400 font-semibold">Kelmagan</span>}
                     {r.left && (
                       <span className={r.excused ? "text-violet-500" : r.early ? "text-amber-500" : "text-sky-500"}>
                         {r.excused ? "Ruxsat bilan ketdi" : r.early ? "Erta ketdi" : "Ketdi"}: {r.left}
@@ -173,7 +262,6 @@ export default function FaceTodayPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5 mt-2.5">
-                {/* Keldi/Ketdi/Ruxsat — faqat maktab rahbariyati (sinf rahbari emas) */}
                 {isManager && (
                   <>
                     <Button size="sm" variant="outline" className="text-emerald-600" disabled={b} onClick={act(r.login, "in", r.full_name)}>
@@ -187,11 +275,9 @@ export default function FaceTodayPage() {
                     </Button>
                   </>
                 )}
-                {/* Sababli — sinf rahbari ham qila oladi */}
-                <Button size="sm" variant="outline" className="text-indigo-600" disabled={b} onClick={act(r.login, "absent_excused", r.full_name)}>
-                  <UserX className="w-3.5 h-3.5 mr-1" /> Sababli (kelmadi)
+                <Button size="sm" variant="outline" className="text-amber-600" disabled={b} onClick={act(r.login, "absent_excused", r.full_name)}>
+                  <Stethoscope className="w-3.5 h-3.5 mr-1" /> Sababli (kelmadi)
                 </Button>
-                {/* To'garak qoldi — sinf rahbari ham qila oladi (#10) */}
                 <Button size="sm" variant="outline" className="text-fuchsia-600" disabled={b} onClick={act(r.login, "club", r.full_name)}>
                   <Palette className="w-3.5 h-3.5 mr-1" /> To'garak qoldi
                 </Button>
@@ -211,4 +297,4 @@ export default function FaceTodayPage() {
       </div>
     </div>
   );
-}
+        }
