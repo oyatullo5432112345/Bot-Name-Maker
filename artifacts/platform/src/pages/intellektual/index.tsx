@@ -6,11 +6,27 @@ import { useAuth } from "@/lib/use-auth";
 // ═══════════════════════════════════════════════════════════════════
 //  INTELEKTUAL O'YINLAR — hub.
 //  • Admin uchun DOIMIY OCHIQ (countdown yo'q).
-//  • Boshqalar uchun 48 soatlik countdown; tugaganда portlash bilan ochiladi.
-//
-//  ⬇⬇⬇  MUHIM: deploy qilganда shu sanani "hozir + 48 soat" ga qo'ying.
-const LAUNCH_AT = new Date("2026-10-20T08:00:00+05:00").getTime();
+//  • Boshqalar uchun 10-DEKABR 2026 gacha countdown;
+//    tugaganda portlash bilan ochiladi.
+// ═══════════════════════════════════════════════════════════════════
+const LAUNCH_AT = new Date("2026-12-10T08:00:00+05:00").getTime();
+
+// Progress hisoblash uchun "boshlanish" nuqtasi.
+// Sahifa birinchi marta ochilganda localStorage'ga yoziladi.
+const START_KEY = "intellektual_start_at";
 const BOOM_SEEN_KEY = "intellektual_boom_seen";
+
+function getStartAt(): number {
+  try {
+    const v = localStorage.getItem(START_KEY);
+    if (v) return Number(v);
+    const now = Date.now();
+    localStorage.setItem(START_KEY, String(now));
+    return now;
+  } catch {
+    return Date.now();
+  }
+}
 // ═══════════════════════════════════════════════════════════════════
 
 const CSS = `
@@ -19,7 +35,8 @@ const CSS = `
 @keyframes intel-particle { 0%{opacity:1} 100%{opacity:0} }
 @keyframes intel-title { 0%{transform:scale(.3);opacity:0} 60%{transform:scale(1.15);opacity:1} 100%{transform:scale(1);opacity:1} }
 @keyframes intel-glow { 0%,100%{opacity:.4} 50%{opacity:.9} }
-@keyframes intel-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
+@keyframes intel-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+@keyframes intel-tick { 0%,100%{opacity:1} 50%{opacity:.5} }
 `;
 
 function Boom() {
@@ -64,10 +81,10 @@ export default function Intellektual() {
   const [now, setNow] = useState(Date.now());
   const [boom, setBoom] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [startAt] = useState<number>(() => getStartAt());
   const started = useRef(false);
 
   useEffect(() => {
-    // Admin — doimiy ochiq. Oddiy foydalanuvchi: allaqachon ochilган va portlashni ko'rgan bo'lsa — to'g'ridan-to'g'ri.
     const seen = (() => { try { return localStorage.getItem(BOOM_SEEN_KEY) === "1"; } catch { return false; } })();
     if (isAdmin || (Date.now() >= LAUNCH_AT && seen)) { setRevealed(true); started.current = true; }
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -112,43 +129,104 @@ export default function Intellektual() {
     );
   }
 
-  // ─────────── QULF: faqat countdown soati ───────────
+  // ─────────── QULF: 10-DEKABRGACHA COUNTDOWN ───────────
   const rem = Math.max(0, LAUNCH_AT - now);
   const d = Math.floor(rem / 86400000);
   const h = Math.floor((rem % 86400000) / 3600000);
   const m = Math.floor((rem % 3600000) / 60000);
   const s = Math.floor((rem % 60000) / 1000);
 
+  // Progress: sahifa birinchi ochilgan paytdan LAUNCH_AT gacha
+  const total = Math.max(1, LAUNCH_AT - startAt);
+  const elapsed = Math.min(total, Math.max(0, now - startAt));
+  const progress = Math.min(100, Math.max(0, (elapsed / total) * 100));
+
   return (
-    <div className="relative min-h-[78vh] flex flex-col items-center justify-center rounded-3xl overflow-hidden p-6
+    <div className="relative min-h-[85vh] flex flex-col items-center justify-center rounded-3xl overflow-hidden p-6
       bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-950">
       <style>{CSS}</style>
       {boom && <Boom />}
 
-      {/* fon halqalari (matnsiz) */}
-      {[0, 1, 2].map((i) => (
+      {/* fon halqalari */}
+      {[0, 1, 2, 3].map((i) => (
         <div key={i} className="absolute rounded-full pointer-events-none"
           style={{
-            width: 280 + i * 200, height: 280 + i * 200,
-            border: "1px solid rgba(168,85,247,0.12)",
-            animation: "intel-glow 4s ease-in-out infinite", animationDelay: `${i * 0.5}s`,
+            width: 260 + i * 180, height: 260 + i * 180,
+            border: "1px solid rgba(168,85,247,0.10)",
+            animation: "intel-glow 4s ease-in-out infinite", animationDelay: `${i * 0.4}s`,
           }} />
       ))}
 
-      {/* FAQAT qulf + soat */}
-      <div className="relative z-10 flex flex-col items-center" style={{ animation: "intel-pulse 4s ease-in-out infinite" }}>
-        <div className="w-16 h-16 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center mb-7">
-          <Lock className="w-8 h-8 text-amber-300" />
+      {/* yulduzcha effekt */}
+      {Array.from({ length: 18 }).map((_, i) => (
+        <div key={`star-${i}`} className="absolute w-1 h-1 rounded-full bg-white/40 pointer-events-none"
+          style={{
+            left: `${(i * 37) % 100}%`,
+            top: `${(i * 53) % 100}%`,
+            animation: `intel-tick ${2 + (i % 3)}s ease-in-out infinite`,
+            animationDelay: `${i * 0.15}s`,
+          }} />
+      ))}
+
+      <div className="relative z-10 flex flex-col items-center w-full max-w-2xl">
+
+        {/* Qulf ikonkasi */}
+        <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-amber-400/20 to-fuchsia-500/20 border border-white/20 flex items-center justify-center mb-6 backdrop-blur"
+          style={{ animation: "intel-float 3s ease-in-out infinite" }}>
+          <Lock className="w-10 h-10 text-amber-300" />
         </div>
-        <div className="flex items-center justify-center gap-2 sm:gap-3">
-          {[{ v: d, l: "kun" }, { v: h, l: "soat" }, { v: m, l: "daqiqa" }, { v: s, l: "soniya" }].map((x, i) => (
+
+        {/* Sarlavha */}
+        <h2 className="text-xl sm:text-2xl font-extrabold text-white text-center mb-1 tracking-tight">
+          Intellektual o'yinlar
+        </h2>
+        <p className="text-white/50 text-sm text-center mb-7">
+          10-dekabr 2026 da ochiladi — sabr qiling!
+        </p>
+
+        {/* Countdown raqamlari */}
+        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-7">
+          {[
+            { v: d, l: "kun" },
+            { v: h, l: "soat" },
+            { v: m, l: "daqiqa" },
+            { v: s, l: "soniya" },
+          ].map((x, i) => (
             <div key={i} className="flex flex-col items-center">
-              <div className="w-[68px] sm:w-[76px] h-[84px] rounded-2xl bg-white/8 border border-white/12 backdrop-blur flex items-center justify-center text-white font-black text-4xl sm:text-5xl tabular-nums">
-                {pad(x.v)}
+              <div
+                className="relative w-[72px] sm:w-[88px] h-[88px] sm:h-[104px] rounded-2xl
+                  bg-gradient-to-b from-white/[0.12] to-white/[0.04]
+                  border border-white/15 backdrop-blur
+                  flex items-center justify-center
+                  shadow-[0_8px_32px_rgba(168,85,247,0.15)]"
+              >
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-amber-400/10 to-fuchsia-500/10" />
+                <span className="relative text-white font-black text-4xl sm:text-5xl tabular-nums tracking-tight">
+                  {pad(x.v)}
+                </span>
               </div>
-              <div className="text-white/40 text-[11px] mt-1.5 uppercase tracking-wider">{x.l}</div>
+              <div className="text-white/40 text-[10px] sm:text-[11px] mt-2 uppercase tracking-[0.15em] font-semibold">
+                {x.l}
+              </div>
             </div>
           ))}
+        </div>
+
+        {/* Progress bar */}
+        <div className="w-full max-w-md">
+          <div className="flex justify-between text-[11px] text-white/40 mb-1.5 px-1">
+            <span>Ochilishga</span>
+            <span>{progress.toFixed(1)}%</span>
+          </div>
+          <div className="h-2.5 rounded-full bg-white/10 overflow-hidden border border-white/10">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-amber-400 via-fuchsia-500 to-indigo-500 transition-all duration-1000"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="text-center text-[11px] text-white/30 mt-3">
+            10-dekabr 2026, soat 08:00 (Toshkent)
+          </p>
         </div>
       </div>
     </div>
@@ -173,4 +251,4 @@ function GameCard({ href, emoji, title, desc, from, via, to, cta }: {
       </div>
     </Link>
   );
-}
+          }
