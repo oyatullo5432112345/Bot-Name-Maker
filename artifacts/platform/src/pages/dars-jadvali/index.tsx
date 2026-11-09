@@ -716,7 +716,8 @@ function AdminScheduleView() {
             </div>
             {/* ── TUZATILDI #11: yuklash natijasi yaxshiroq ko'rsatiladi */}
             {importResult && (
-              <div className="mt-3 text-sm rounded-lg bg-secondary/50 p-3                <div className="flex items-start justify-between gap-2">
+              <div className="mt-3 text-sm rounded-lg bg-secondary/50 p-3">         
+                <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />
                     <span className="font-medium text-green-700 dark:text-green-300">
