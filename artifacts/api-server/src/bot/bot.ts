@@ -1897,135 +1897,11 @@ export function createBot(): Bot {
     try {
       const { hour, min } = getTodayUzHourMin();
       const day = getTodayUzDay();
-      // 7:00–7:14 oynasi, dam olish kuni emas (1–6)
-      if (hour === 7 && min < 15 && day >= 1 && day <= 6) {
-        // Kun bo'yicha bitta marta — bir nechta instans/restart'da ham takrorlanmaydi
-        if (!(await claimJob(`teacher-morning:${uzDateStr()}`))) return;
-        logger.info({ day }, "Kundalik jadval xabarlari yuborilmoqda...");
-
-        const teachers = await query<{ id: string; full_name: string; telegram_id: number; role: string }>(
-          "SELECT id, full_name, telegram_id, role FROM staff WHERE telegram_id IS NOT NULL AND role IN ('teacher','sinf_rahbari','director','zam_direktor','zavuch')"
-        );
-
-        for (const t of teachers) {
-          if (!t.telegram_id) continue;
-          try {
-            const text = await getTodayScheduleText(t.id);
-            const greeting = `☀️ *Xayrli tong, ${t.full_name.split(" ")[1] ?? t.full_name}!*\n\n`;
-            const kb = new InlineKeyboard()
-              .text("📆 Ertangi jadval", `schedule_tomorrow:${t.id}`)
-              .row()
-              .url("🌐 Platforma", `${WEBSITE_URL}/dars-jadvali`);
-            await bot.api.sendMessage(t.telegram_id, greeting + text, {
-              parse_mode: "Markdown",
-              reply_markup: kb,
-            });
-          } catch {
-            // Xabar yubormasa — davom etaveradi
-          }
-        }
-        logger.info("Kundalik jadval xabarlari yuborildi ✅");
-      }
-    } catch (err) {
-      logger.error({ err }, "Kundalik xabar yuborishda xatolik");
-    }
-  }, 60 * 1000); // har 1 daqiqada tekshiriladi
-
-  return bot;
-}
-// ═══════════════════════════════════════════════════════════════════════════
-//  O'QUVCHI KIRISH TASDIQLASH (yangi)
-//  Bot sinf guruhiga "Tasdiqlash" tugmasini yuboradi. Foydalanuvchi bosganda
-//  — 4 xonali kod yaratiladi va guruhga javob yoziladi.
-// ═══════════════════════════════════════════════════════════════════════════
-
-// O'quvchi "✅ Tasdiqlash" tugmasini bosdi
-bot.callbackQuery(/^confirm_student:(.+)$/, async (ctx) => {
-  const token = ctx.match[1];
-  if (!token) { await ctx.answerCallbackQuery("Xatolik"); return; }
-
-  try {
-    // Backend'ga so'rov — 4 xonali kod yaratish
-    const res = await fetch(`${WEBSITE_URL}/api/auth/student/confirm`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    const data = await res.json() as { ok?: boolean; code?: string; name?: string; class_name?: string; error?: string };
-
-    if (!res.ok || !data.ok) {
-      await ctx.answerCallbackQuery({
-        text: `❌ ${data.error || "Xatolik"}`,
-        show_alert: true,
-      });
-      // ═══════════════════════════════════════════════════════════════════════════
-//  O'QUVCHI KIRISH TASDIQLASH (yangi)
-//  Bot sinf guruhiga "Tasdiqlash" tugmasini yuboradi. Foydalanuvchi bosganda
-//  — 4 xonali kod yaratiladi va guruhga javob yoziladi.
-// ═══════════════════════════════════════════════════════════════════════════
-
-// O'quvchi "✅ Tasdiqlash" tugmasini bosdi
-bot.callbackQuery(/^confirm_student:(.+)$/, async (ctx) => {
-  const token = ctx.match[1];9
-  if (!token) { await ctx.answerCallbackQuery("Xatolik"); return; }
-
-  try {
-    // Backend'ga so'rov — 4 xonali kod yaratish
-    const res = await fetch(`${WEBSITE_URL}/api/auth/student/confirm`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    const data = await res.json() as { ok?: boolean; code?: string; name?: string; class_name?: string; error?: string };
-
-    if (!res.ok || !data.ok) {
-      await ctx.answerCallbackQuery({
-        text: `❌ ${data.error || "Xatolik"}`,
-        show_alert: true,
-      });
-      return;
-    }
-
-    await ctx.answerCallbackQuery({ text: "✅ Tasdiqlandi!" });
-    const esc = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
-    await ctx.editMessageText(
-      `✅ *Tasdiqlandi!*\n\n` +
-      `👤 ${esc(data.name || "")}\n` +
-      `🏫 ${esc(data.class_name || "")}\n\n` +
-      `🔑 *Kirish kodi:* \`${data.code}\`\n\n` +
-      `⏱ Kod 5 daqiqa amal qiladi\\.\n` +
-      `Platformaga qaytib, shu kodni kiriting\\.`,
-      { parse_mode: "MarkdownV2" }
-    );
-  } catch (err) {
-    logger.error({ err }, "confirm_student callback");
-    await ctx.answerCallbackQuery({
-      text: "❌ Server bilan bog'lanib bo'lmadi",
-      show_alert: true,
-    });
-  }
-});
-
-// O'quvchi "❌ Bekor qilish" tugmasini bosdi
-bot.callbackQuery(/^cancel_student:(.+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery({ text: "❌ Bekor qilindi" });
-  await ctx.editMessageText("❌ Tasdiqlash bekor qilindi. Qaytadan urinib ko'ring.");
-});
-
-// ─── Kundalik ertalab 7:00 (O'zbekiston UTC+5) jadval xabari ────────────────
-setInterval(async () => {
-  try {
-    const { hour, min } = getTodayUzHourMin();
-    const day = getTodayUzDay();
-    if (hour === 7 && min < 15 && day >= 1 && day <= 6) {
-      if (!(await claimJob(`teacher-morning:${uzDateStr()}`))) return;
-      logger.info({ day }, "Kundalik jadval xabarlari yuborilmoqda...");
-
       const teachers = await query<{ id: string; full_name: string; telegram_id: number; role: string }>(
         "SELECT id, full_name, telegram_id, role FROM staff WHERE telegram_id IS NOT NULL AND role IN ('teacher','sinf_rahbari','director','zam_direktor','zavuch')"
       );
 
-      for (const t of teachers) {
+            for (const t of teachers) {
         if (!t.telegram_id) continue;
         try {
           const text = await getTodayScheduleText(t.id);
@@ -2047,8 +1923,7 @@ setInterval(async () => {
   } catch (err) {
     logger.error({ err }, "Kundalik xabar yuborishda xatolik");
   }
-
 }, 60 * 1000);
 
 return bot;
-  }
+        }
