@@ -1929,9 +1929,7 @@ export function createBot(): Bot {
     try {
       const { hour, min } = getTodayUzHourMin();
       const day = getTodayUzDay();
-      // 7:00–7:14 oynasi, dam olish kuni emas (1–6)
       if (hour === 7 && min < 15 && day >= 1 && day <= 6) {
-        // Kun bo'yicha bitta marta — bir nechta instans/restart'da ham takrorlanmaydi
         if (!(await claimJob(`teacher-morning:${uzDateStr()}`))) return;
         logger.info({ day }, "Kundalik jadval xabarlari yuborilmoqda...");
 
@@ -1961,9 +1959,7 @@ export function createBot(): Bot {
     } catch (err) {
       logger.error({ err }, "Kundalik xabar yuborishda xatolik");
     }
-  }, 60 * 1000); // har 1 daqiqada tekshiriladi
+  }, 60 * 1000);
 
   return bot;
-                    }
-return bot;
-        }
+}
