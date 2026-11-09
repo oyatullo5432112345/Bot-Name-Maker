@@ -373,4 +373,79 @@ router.post("/maktablar/:id/subscription", async (req, res): Promise<void> => {
   }
 });
 
+// GET /api/admin/staff-ids — barcha xodimlar (5 xonali ID bilan)
+router.get("/admin/staff-ids", async (req, res): Promise<void> => {
+  const u = admin(req);
+  if (!u) { res.status(403).json({ error: "Faqat admin" }); return; }
+  const mid = schoolOf(u);
+  
+  const rows = mid !== null
+    ? await query<{ id: string; full_name: string; login: string; role: string; login_id: string | null }>(
+        "SELECT id, full_name, login, role, login_id FROM staff WHERE maktab_id = $1 ORDER BY full_name",
+        [mid]
+      )
+    : await query<{ id: string; full_name: string; login: string; role: string; login_id: string | null }>(
+        "SELECT id, full_name, login, role, login_id FROM staff ORDER BY full_name"
+      );
+  
+  res.json(rows);
+});
+
+// POST /api/admin/staff-ids/regenerate — bitta xodim uchun yangi 5 xonali ID
+router.post("/admin/staff-ids/regenerate", async (req, res): Promise<void> => {
+  const u = admin(req);
+  if (!u) { res.status(403).json({ error: "Faqat admin" }); return; }
+  const { staff_id } = req.body as { staff_id?: string };
+  if (!staff_id) { res.status(400).json({ error: "staff_id kerak" }); return; }
+  
+  const staff = await queryOne<{ maktab_id: number }>(
+    "SELECT maktab_id FROM staff WHERE id = $1", [staff_id]
+  );
+  if (!staff) { res.status(404).json({ error: "Xodim topilmadi" }); return; }
+  
+  // 5 xonali unikal ID yaratish
+  let newId = "";
+  for (let i = 0; i < 100; i++) {
+    const candidate = String(Math.floor(10000 + Math.random() * 90000));
+    const exists = await queryOne<{ id: string }>(
+      "SELECT id FROM staff WHERE login_id = $1 UNION SELECT id FROM users WHERE login_id = $1",
+      [candidate]
+    );
+    if (!exists) { newId = candidate; break; }
+  }
+  if (!newId) { res.status(500).json({ error: "Bo'sh ID topilmadi" }); return; }
+  
+  await query("UPDATE staff SET login_id = $1 WHERE id = $2", [newId, staff_id]);
+  res.json({ login_id: newId });
+});
+
+// POST /api/admin/staff-ids/regenerate-all — barcha xodimlarga yangi 5 xonali ID
+router.post("/admin/staff-ids/regenerate-all", async (req, res): Promise<void> => {
+  const u = admin(req);
+  if (!u) { res.status(403).json({ error: "Faqat admin" }); return; }
+  const mid = schoolOf(u);
+  
+  const staffRows = mid !== null
+    ? await query<{ id: string }>("SELECT id FROM staff WHERE maktab_id = $1", [mid])
+    : await query<{ id: string }>("SELECT id FROM staff");
+  
+  let updated = 0;
+  for (const s of staffRows) {
+    let newId = "";
+    for (let i = 0; i < 100; i++) {
+      const candidate = String(Math.floor(10000 + Math.random() * 90000));
+      const exists = await queryOne<{ id: string }>(
+        "SELECT id FROM staff WHERE login_id = $1 AND id != $2 UNION SELECT id FROM users WHERE login_id = $1",
+        [candidate, s.id]
+      );
+      if (!exists) { newId = candidate; break; }
+    }
+    if (newId) {
+      await query("UPDATE staff SET login_id = $1 WHERE id = $2", [newId, s.id]);
+      updated++;
+    }
+  }
+  
+  res.json({ updated });
+});
 export default router;
