@@ -2047,7 +2047,8 @@ setInterval(async () => {
   } catch (err) {
     logger.error({ err }, "Kundalik xabar yuborishda xatolik");
   }
+
 }, 60 * 1000);
 
 return bot;
-}
+  }
