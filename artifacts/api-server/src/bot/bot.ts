@@ -2010,6 +2010,7 @@ bot.callbackQuery(/^confirm_student:(.+)$/, async (ctx) => {
 bot.callbackQuery(/^cancel_student:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: "❌ Bekor qilindi" });
   await ctx.editMessageText("❌ Tasdiqlash bekor qilindi. Qaytadan urinib ko'ring.");
-});
-      return;
+  });
+
+  return bot;
     }
