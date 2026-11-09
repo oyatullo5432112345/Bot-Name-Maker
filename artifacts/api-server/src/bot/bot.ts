@@ -1924,6 +1924,46 @@ export function createBot(): Bot {
     logger.error({ err }, "Kundalik xabar yuborishda xatolik");
   }
 }, 60 * 1000);
+  // ─── Kundalik ertalab 7:00 (O'zbekiston UTC+5) jadval xabari ────────────────
+  setInterval(async () => {
+    try {
+      const { hour, min } = getTodayUzHourMin();
+      const day = getTodayUzDay();
+      // 7:00–7:14 oynasi, dam olish kuni emas (1–6)
+      if (hour === 7 && min < 15 && day >= 1 && day <= 6) {
+        // Kun bo'yicha bitta marta — bir nechta instans/restart'da ham takrorlanmaydi
+        if (!(await claimJob(`teacher-morning:${uzDateStr()}`))) return;
+        logger.info({ day }, "Kundalik jadval xabarlari yuborilmoqda...");
 
+        const teachers = await query<{ id: string; full_name: string; telegram_id: number; role: string }>(
+          "SELECT id, full_name, telegram_id, role FROM staff WHERE telegram_id IS NOT NULL AND role IN ('teacher','sinf_rahbari','director','zam_direktor','zavuch')"
+        );
+
+        for (const t of teachers) {
+          if (!t.telegram_id) continue;
+          try {
+            const text = await getTodayScheduleText(t.id);
+            const greeting = `☀️ *Xayrli tong, ${t.full_name.split(" ")[1] ?? t.full_name}!*\n\n`;
+            const kb = new InlineKeyboard()
+              .text("📆 Ertangi jadval", `schedule_tomorrow:${t.id}`)
+              .row()
+              .url("🌐 Platforma", `${WEBSITE_URL}/dars-jadvali`);
+            await bot.api.sendMessage(t.telegram_id, greeting + text, {
+              parse_mode: "Markdown",
+              reply_markup: kb,
+            });
+          } catch {
+            // Xabar yubormasa — davom etaveradi
+          }
+        }
+        logger.info("Kundalik jadval xabarlari yuborildi ✅");
+      }
+    } catch (err) {
+      logger.error({ err }, "Kundalik xabar yuborishda xatolik");
+    }
+  }, 60 * 1000); // har 1 daqiqada tekshiriladi
+
+  return bot;
+                    }
 return bot;
         }
