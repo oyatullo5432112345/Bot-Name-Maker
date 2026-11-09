@@ -1,14 +1,11 @@
-// Elektron kutubxona — Maktab Olami o'yinidagi "Kutubxona" binosiga bog'langan.
-//   O'quvchi: kitobni 10 kunga oladi, o'qiydi/tinglaydi, topshiradi, 10 savollik testdan o'tadi
-//   (5 tadan ko'p to'g'ri → keyingi kitob ochiladi). Eng yaxshi kitobxon reytingi, xabar yuborish.
-//   Kutubxonachi/rahbariyat: kitob qo'shadi (muqova/PDF/audio havolasi + parcha + 10 savol), xabarlarni ko'radi.
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode, lazy, Suspense } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, Loader2, BookOpen, Headphones, Trophy, Plus, X, Trash2, Send, MessageSquare, Lock, CheckCircle2, Clock, BookMarked, History, Building2, Upload } from "lucide-react";
+import { ArrowLeft, Loader2, BookOpen, Headphones, Trophy, Plus, X, Trash2, Send, MessageSquare, Lock, CheckCircle2, Clock, BookMarked, History, Building2, Upload, Box } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { api, API_BASE } from "@/lib/face";
 
-// Havolasiz yuklangan PDF/audio — token bilan (brauzer yangi tabda ochganda header bo'lmaydi)
+const BookShelf3D = lazy(() => import("./BookShelf3D"));
+
 const fileUrl = (id: string, kind: "pdf" | "audio") => `${API_BASE}/elib/file/${id}/${kind}?t=${encodeURIComponent(localStorage.getItem("talim_auth_token") ?? "")}`;
 const readDataUrl = (file: File) => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error("o'qilmadi")); r.readAsDataURL(file); });
 async function fileToParts(file: File): Promise<{ mime: string; b64: string }> {
@@ -43,11 +40,12 @@ export default function Kutubxona() {
   const [quizBook, setQuizBook] = useState<Book | null>(null);
   const [lbOpen, setLbOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
-  const [msgOpen, setMsgOpen] = useState(false);     // o'quvchi xabar yozadi
-  const [inboxOpen, setInboxOpen] = useState(false); // kutubxonachi xabarlarni ko'radi
-  const [myHistOpen, setMyHistOpen] = useState(false);   // o'quvchining o'qiganlari
-  const [mgHistOpen, setMgHistOpen] = useState(false);   // rahbariyat: barcha tarix
-  const [ovOpen, setOvOpen] = useState(false);           // umumiy ko'rinish (maktablar)
+  const [msgOpen, setMsgOpen] = useState(false);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [myHistOpen, setMyHistOpen] = useState(false);
+  const [mgHistOpen, setMgHistOpen] = useState(false);
+  const [ovOpen, setOvOpen] = useState(false);
+  const [use3D, setUse3D] = useState(true); // 3D rejim boshqaruvi
 
   const load = async () => { try { setData(await api<BooksResp>("/elib/books")); } catch (e) { toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message }); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, []); // eslint-disable-line
@@ -75,11 +73,15 @@ export default function Kutubxona() {
 
   return (
     <div style={{ minHeight: "100vh", background: `linear-gradient(180deg, #241B4A 0%, ${INK2} 42%, ${INK} 100%)`, color: CREAM }}>
-      <div style={{ maxWidth: 680, margin: "0 auto", padding: "16px 16px 48px" }}>
+      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "16px 16px 48px" }}>
         {/* Yuqori panel */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
           <Link href="/oyin" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "rgba(243,238,226,0.7)", fontSize: 14 }}><ArrowLeft size={18} /> Shaharcha</Link>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {/* 3D / 2D rejim almashtirgich */}
+            <button onClick={() => setUse3D(!use3D)} style={btn(use3D ? GOLD : PANEL, use3D ? INK : CREAM)}>
+              <Box size={14} style={{ verticalAlign: "-2px" }} /> {use3D ? "2D Ko'rinish" : "3D Ko'rinish"}
+            </button>
             <button onClick={() => setLbOpen(true)} style={btn(PANEL, CREAM)}><Trophy size={14} color={GOLD} style={{ verticalAlign: "-2px" }} /> Reyting</button>
             <button onClick={() => setMyHistOpen(true)} style={btn(PANEL, CREAM)}><BookMarked size={14} style={{ verticalAlign: "-2px" }} /> O'qiganlarim</button>
             {data?.can_manage
@@ -109,7 +111,29 @@ export default function Kutubxona() {
             <BookOpen size={40} color={GOLD} style={{ opacity: 0.5 }} />
             <p style={{ marginTop: 10 }}>Hali kitob yo'q.{data?.can_manage ? " \"Kitob\" tugmasi orqali qo'shing." : ""}</p>
           </div>
+        ) : use3D ? (
+          // ── 3D Javon ────────────────────────────────────────────────
+          <div style={{ marginTop: 14, height: "65vh", minHeight: 420, borderRadius: 16, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)", background: "#0E1230" }}>
+            <Suspense fallback={
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12 }}>
+                <Loader2 className="animate-spin" color={GOLD} size={32} />
+                <div style={{ color: GOLD, fontSize: 14, fontWeight: 600 }}>3D sahna yuklanmoqda...</div>
+              </div>
+            }>
+              <BookShelf3D books={data.books} onSelect={(b) => {
+                if (b.my_borrow) {
+                  if (!b.my_borrow.quiz_passed && b.question_count > 0) setQuizBook(b);
+                } else if (!data.locked) {
+                  void borrow(b);
+                }
+              }} />
+            </Suspense>
+            <p style={{ textAlign: "center", fontSize: 11, color: "rgba(243,238,226,0.45)", margin: "6px 0 0" }}>
+              Sichqoncha yoki barmoq bilan aylantiring · kitobni bosib oching
+            </p>
+          </div>
         ) : (
+          // ── 2D Javon (zaxira) ──────────────────────────────────────
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, marginTop: 14 }}>
             {data.books.map((b) => {
               const mb = b.my_borrow;
@@ -120,7 +144,6 @@ export default function Kutubxona() {
               const audioSrc = b.audio_url || (b.audio_uploaded ? fileUrl(b.id, "audio") : "");
               return (
                 <div key={b.id} style={{ borderRadius: 16, overflow: "hidden", background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column" }}>
-                  {/* Muqova */}
                   <div style={{ position: "relative", aspectRatio: "3/4", background: `linear-gradient(135deg, ${PANEL}, ${INK})`, display: "grid", placeItems: "center", overflow: "hidden" }}>
                     {b.cover_url
                       ? <img src={b.cover_url} alt={b.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
@@ -129,7 +152,6 @@ export default function Kutubxona() {
                     {active && <span style={{ position: "absolute", top: 6, right: 6, background: GOLD, color: INK, fontSize: 10, fontWeight: 800, borderRadius: 999, padding: "2px 7px", display: "inline-flex", alignItems: "center", gap: 3 }}><Clock size={10} /> {dl > 0 ? `${dl} kun` : "muddati o'tgan"}</span>}
                     {data.can_manage && <button onClick={() => void del(b)} style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: 8, padding: 5, cursor: "pointer" }}><Trash2 size={13} color="#F08A8A" /></button>}
                   </div>
-                  {/* Ma'lumot */}
                   <div style={{ padding: "8px 10px 10px", display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.25 }}>{b.title}</div>
                     {b.author && <div style={{ fontSize: 11.5, color: "rgba(243,238,226,0.55)" }}>{b.author}</div>}
@@ -171,7 +193,6 @@ export default function Kutubxona() {
     </div>
   );
 }
-
 // ─── Statusni rangli yorliqqa aylantirish ───────────────────────────────────────
 function statusChip(h: { quiz_passed: boolean; quiz_score: number; returned_at: string | null }): { text: string; color: string } {
   if (h.quiz_passed) return { text: `✓ Test o'tdi${h.quiz_score >= 0 ? ` (${h.quiz_score}/10)` : ""}`, color: TEAL };
@@ -206,7 +227,7 @@ function MyHistoryModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ─── Umumiy ko'rinish: har maktabdan kitoblar + sinflar qancha o'qigani (super-admin) ──
+// ─── Umumiy ko'rinish: har maktabdan kitoblar + sinflar qancha o'qigani ────────
 interface OvSchool { maktab_id: number; maktab_nom: string; book_count: number; borrow_count: number; passed_count: number; classes: { class_name: string; total: number; passed: number }[] }
 function OverviewModal({ onClose }: { onClose: () => void }) {
   const [data, setData] = useState<{ schools: OvSchool[]; is_admin: boolean } | null>(null);
@@ -239,7 +260,7 @@ function OverviewModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ─── Rahbariyat: barcha o'quvchilar o'qigan kitoblari (o'quvchi bo'yicha guruhlab) ──
+// ─── Rahbariyat: barcha o'quvchilar o'qigan kitoblari ──────────────────────────
 interface MgRow { student_login: string; student_name: string; class_name: string; title: string; author: string; borrowed_at: string; returned_at: string | null; quiz_passed: boolean; quiz_score: number }
 function ManageHistoryModal({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<MgRow[] | null>(null);
@@ -414,7 +435,7 @@ interface QDraft { q: string; options: string[]; correct: number }
 function AddBookModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { toast } = useToast();
   const [f, setF] = useState({ title: "", author: "", cover_url: "", pdf_url: "", audio_url: "", excerpt: "", description: "" });
-  const [coverData, setCoverData] = useState("");            // yuklangan muqova (data-URL)
+  const [coverData, setCoverData] = useState("");
   const [coverName, setCoverName] = useState("");
   const [pdfFile, setPdfFile] = useState<{ mime: string; b64: string } | null>(null);
   const [pdfName, setPdfName] = useState("");
@@ -457,14 +478,12 @@ function AddBookModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
       <input style={inp} placeholder="Kitob nomi *" value={f.title} onChange={(e) => set("title", e.target.value)} />
       <input style={inp} placeholder="Muallif" value={f.author} onChange={(e) => set("author", e.target.value)} />
 
-      {/* Muqova rasmi — fayldan yuklash (havolasiz) yoki havola */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
         {coverData && <img src={coverData} alt="" style={{ width: 40, height: 54, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />}
         <label style={fileBtn}><Upload size={14} /> {coverName || "Muqova rasmini yuklash"}
           <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => void pick(e.target.files?.[0] ?? null, "cover")} /></label>
       </div>
 
-      {/* PDF — fayl yoki havola (ixtiyoriy) */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         <label style={fileBtn}><Upload size={14} /> {pdfName || "PDF yuklash"}
           <input type="file" accept="application/pdf,.pdf" style={{ display: "none" }} onChange={(e) => void pick(e.target.files?.[0] ?? null, "pdf")} /></label>
@@ -472,7 +491,6 @@ function AddBookModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
         <input style={{ ...inp, marginBottom: 0, flex: 1, minWidth: 140 }} placeholder="PDF havolasi (ixtiyoriy)" value={f.pdf_url} onChange={(e) => set("pdf_url", e.target.value)} />
       </div>
 
-      {/* Audio — fayl yoki havola (ixtiyoriy) */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         <label style={fileBtn}><Upload size={14} /> {audioName || "Audio yuklash"}
           <input type="file" accept="audio/*" style={{ display: "none" }} onChange={(e) => void pick(e.target.files?.[0] ?? null, "audio")} /></label>
@@ -498,4 +516,4 @@ function AddBookModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
       <button onClick={() => void save()} disabled={busy} style={{ ...btn(`linear-gradient(135deg, ${TEAL}, ${GOLD})`), width: "100%", marginTop: 4 }}>{busy ? "…" : "Kitobni saqlash"}</button>
     </Shell>
   );
-}
+                                                                            }
