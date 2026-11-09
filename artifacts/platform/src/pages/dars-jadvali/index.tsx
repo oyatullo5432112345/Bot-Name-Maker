@@ -3,7 +3,7 @@ import { useAuth } from "@/lib/use-auth";
 import { useListClasses, getListClassesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus, Pencil, Trash2, CalendarDays, BookOpen, Upload } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CalendarDays, BookOpen, Upload, AlertTriangle, CheckCircle2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -32,11 +32,25 @@ const DAYS = [
   { id: 6, name: "Shanba" },
 ];
 
-// Matndagi kun nomini (turli yozilishlarda) DAYS ro'yxatidagi id'ga moslaydi.
+// ── TUZATILDI #1: matchDay endi aniq moslikni tekshiradi.
+// Avval "shanba" → "Seshanba" ni ham topardi (includes tufayli).
+// Endi: avval to'liq moslik, keyin boshidan moslik — lekin faqat bitta nomzod bo'lsa.
 function matchDay(raw: string): number | null {
-  const norm = raw.trim().toLowerCase().replace(/'/g, "");
-  const found = DAYS.find(d => d.name.toLowerCase().replace(/'/g, "").startsWith(norm) || norm.startsWith(d.name.toLowerCase().replace(/'/g, "")));
-  return found ? found.id : null;
+  const norm = raw.trim().toLowerCase().replace(/[''`]/g, "").replace(/\s+/g, " ");
+  if (!norm) return null;
+  const normDays = DAYS.map(d => ({ id: d.id, key: d.name.toLowerCase().replace(/[''`]/g, "") }));
+  // 1. To'liq moslik
+  const exact = normDays.find(d => d.key === norm);
+  if (exact) return exact.id;
+  // 2. Boshidan moslik (masalan "dush" → "dushanba") — faqat bitta nomzod bo'lsa
+  const starts = normDays.filter(d => d.key.startsWith(norm) || norm.startsWith(d.key));
+  if (starts.length === 1) return starts[0]!.id;
+  // 3. Bir nechta nomzod bo'lsa — eng uzun moslikni tanlaymiz
+  if (starts.length > 1) {
+    starts.sort((a, b) => b.key.length - a.key.length);
+    return starts[0]!.id;
+  }
+  return null;
 }
 
 const PERIOD_TIMES: Record<number, string> = {
@@ -45,12 +59,37 @@ const PERIOD_TIMES: Record<number, string> = {
   7: "13:30–14:15", 8: "14:25–15:10",
 };
 
+// ── TUZATILDI #6: darslar soni endi dinamik (7 ta bo'lsa ham ishlaydi)
+const PERIOD_COUNT = Object.keys(PERIOD_TIMES).length;
+
 const COMMON_SUBJECTS = [
   "Matematika", "Ona tili", "Adabiyot", "Ingliz tili", "Rus tili",
   "Fizika", "Kimyo", "Biologiya", "Geografiya", "Tarix",
   "Informatika", "Chizmachilik", "Jismoniy tarbiya", "Musiqa",
   "Texnologiya", "Astronomiya", "Mehnat", "Tarbiya soati",
 ];
+
+// Fan bo'yicha rang — dars kartalarida chap chiziq uchun
+const SUBJECT_COLORS: Record<string, string> = {
+  "Matematika": "from-blue-500 to-indigo-500",
+  "Ona tili": "from-rose-500 to-pink-500",
+  "Adabiyot": "from-fuchsia-500 to-purple-500",
+  "Ingliz tili": "from-cyan-500 to-teal-500",
+  "Rus tili": "from-sky-500 to-blue-500",
+  "Fizika": "from-violet-500 to-indigo-500",
+  "Kimyo": "from-emerald-500 to-green-500",
+  "Biologiya": "from-lime-500 to-emerald-500",
+  "Geografiya": "from-amber-500 to-orange-500",
+  "Tarix": "from-yellow-500 to-amber-500",
+  "Informatika": "from-slate-500 to-gray-500",
+  "Chizmachilik": "from-stone-500 to-neutral-500",
+  "Jismoniy tarbiya": "from-red-500 to-rose-500",
+  "Musiqa": "from-pink-500 to-rose-500",
+  "Texnologiya": "from-teal-500 to-cyan-500",
+};
+function subjectColor(subject: string): string {
+  return SUBJECT_COLORS[subject] ?? "from-primary to-primary/70";
+}
 
 interface TimetableEntry {
   id: string;
@@ -80,9 +119,42 @@ interface TeacherSubjectItem {
   class_name: string | null;
 }
 
-// ─── TEACHER VIEW ─────────────────────────────────────────────────────────────
+// ── TUZATILDI #2: o'qituvchi ismini solishtirish — faqat includes emas, so'z chegarasi bilan
+function matchTeacher(raw: string, staff: StaffItem[]): string | null {
+  const q = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!q) return null;
+  // 1. To'liq moslik
+  const exact = staff.find(s => s.full_name.toLowerCase() === q);
+  if (exact) return exact.id;
+  // 2. Har bir so'z bo'yicha moslik (ism yoki familiya)
+  const qWords = q.split(" ").filter(w => w.length >= 2);
+  if (qWords.length === 0) return null;
+  let best: { id: string; score: number } | null = null;
+  for (const s of staff) {
+    const words = s.full_name.toLowerCase().split(" ").filter(w => w.length >= 2);
+    let score = 0;
+    for (const qw of qWords) {
+      if (words.some(w => w === qw || w.startsWith(qw) || qw.startsWith(w))) score++;
+    }
+    if (score > 0 && (!best || score > best.score)) best = { id: s.id, score };
+  }
+  // Kamida bitta so'z mos kelsa va faqat bitta nomzod bo'lsa
+  if (best && best.score >= 1) {
+    const candidates = staff.filter(s => {
+      const words = s.full_name.toLowerCase().split(" ").filter(w => w.length >= 2);
+      return qWords.some(qw => words.some(w => w === qw || w.startsWith(qw) || qw.startsWith(w)));
+    });
+    if (candidates.length === 1) return candidates[0]!.id;
+  }
+  return null;
+}
+
+// ── TEACHER VIEW ─────────────────────────────────────────────────────────────
 function TeacherView({ userId }: { userId: string }) {
-  const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay() || 1);
+  // ── TUZATILDI #4: yakshanba (0) → dushanba (1), shanba (6) saqlanadi
+  const todayDow = new Date().getDay();
+  const initDay = todayDow === 0 ? 1 : todayDow;
+  const [selectedDay, setSelectedDay] = useState<number>(initDay);
   const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
   const [assignments, setAssignments] = useState<TeacherSubjectItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,13 +175,11 @@ function TeacherView({ userId }: { userId: string }) {
     .filter(e => e.day_of_week === selectedDay)
     .sort((a, b) => a.period - b.period);
 
-  // Which class+subject pairs have NO timetable entry yet
   const scheduledPairs = new Set(timetable.map(e => `${e.class_id}::${e.subject}`));
   const unscheduledAssignments = assignments.filter(
     a => !scheduledPairs.has(`${a.class_id}::${a.subject}`)
   );
 
-  // Group assignments by subject for summary
   const assignmentsBySubject = assignments.reduce<Record<string, TeacherSubjectItem[]>>((acc, a) => {
     if (!acc[a.subject]) acc[a.subject] = [];
     acc[a.subject]!.push(a);
@@ -123,21 +193,25 @@ function TeacherView({ userId }: { userId: string }) {
         <p className="text-muted-foreground mt-1">Haftalik dars jadvali va biriktirilgan sinflar</p>
       </div>
 
-      {/* Day selector */}
+      {/* ── TUZATILDI #9: bugungi kun alohida belgilanadi */}
       <div className="flex flex-wrap gap-2">
-        {DAYS.map(day => (
-          <Button
-            key={day.id}
-            variant={selectedDay === day.id ? "default" : "outline"}
-            size="sm"
-            onClick={() => setSelectedDay(day.id)}
-          >
-            {day.name}
-          </Button>
-        ))}
+        {DAYS.map(day => {
+          const isToday = day.id === initDay;
+          return (
+            <Button
+              key={day.id}
+              variant={selectedDay === day.id ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedDay(day.id)}
+              className={isToday && selectedDay !== day.id ? "border-primary/60" : ""}
+            >
+              {day.name}
+              {isToday && <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+            </Button>
+          );
+        })}
       </div>
 
-      {/* Timetable for selected day */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
@@ -156,10 +230,12 @@ function TeacherView({ userId }: { userId: string }) {
           ) : (
             <div className="space-y-2">
               {dayEntries.map(entry => (
+                // ── TUZATILDI #8: rangli chap chiziq + yaxshi dizayn
                 <div
                   key={entry.id}
-                  className="flex items-center gap-4 rounded-lg border bg-card px-4 py-3 hover:bg-accent/30 transition-colors"
+                  className="relative flex items-center gap-4 rounded-lg border bg-card px-4 py-3 hover:bg-accent/30 transition-colors overflow-hidden"
                 >
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${subjectColor(entry.subject)}`} />
                   <div className="text-center min-w-[2.5rem]">
                     <div className="text-lg font-bold text-primary">{entry.period}</div>
                     <div className="text-xs text-muted-foreground">dars</div>
@@ -177,7 +253,6 @@ function TeacherView({ userId }: { userId: string }) {
         </CardContent>
       </Card>
 
-      {/* Assigned classes summary */}
       {assignments.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
@@ -196,14 +271,20 @@ function TeacherView({ userId }: { userId: string }) {
                       const hasSchedule = timetable.some(
                         t => t.class_id === row.class_id && t.subject === row.subject
                       );
+                      // ── TUZATILDI #12: "jadval yo'q" alohida rangli belgi
                       return (
                         <Badge
                           key={row.id}
                           variant={hasSchedule ? "default" : "outline"}
-                          className="text-xs"
+                          className={`text-xs ${!hasSchedule ? "border-amber-400 text-amber-700 dark:text-amber-300" : ""}`}
                         >
                           {row.class_name ?? row.class_id}
-                          {!hasSchedule && <span className="ml-1 text-muted-foreground">(jadval yo'q)</span>}
+                          {!hasSchedule && (
+                            <span className="ml-1.5 inline-flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              jadval yo'q
+                            </span>
+                          )}
                         </Badge>
                       );
                     })}
@@ -212,9 +293,12 @@ function TeacherView({ userId }: { userId: string }) {
               ))}
             </div>
             {unscheduledAssignments.length > 0 && (
-              <div className="mt-4 rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
-                ⏳ {unscheduledAssignments.length} ta sinf-fan uchun hali dars jadvali tuzilmagan.
-                Jadval tuzilgach bu yerda soatlar ko'rinadi.
+              <div className="mt-4 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  {unscheduledAssignments.length} ta sinf-fan uchun hali dars jadvali tuzilmagan.
+                  Jadval tuzilgach bu yerda soatlar ko'rinadi.
+                </span>
               </div>
             )}
           </CardContent>
@@ -237,10 +321,6 @@ function TeacherView({ userId }: { userId: string }) {
 export default function DarsJadvaliPage() {
   const { user } = useAuth();
   const isTeacher = ["teacher", "sinf_rahbari"].includes(user?.role ?? "");
-  // O'qituvchi — o'z ko'rinishi; qolganlar — admin/muharrir ko'rinishi.
-  // MUHIM: har bir ko'rinish ALOHIDA komponent. Ilgari erta return'dan KEYIN
-  // yana ~20 ta hook chaqirilardi — bu "Rules of Hooks" buzilishi bo'lib,
-  // rol/user yuklanishi o'zgarganda sahifa "oq ekran" bo'lib ketishi mumkin edi.
   if (isTeacher && user?.id) {
     return <TeacherView userId={user.id} />;
   }
@@ -275,12 +355,10 @@ function AdminScheduleView() {
     unmatched: { row: { class_name: string; subject: string }; reason: string }[];
   } | null>(null);
 
-  // Matndan bir vaqtda (butun hafta uchun) jadval kiritish
   const [textImportOpen, setTextImportOpen] = useState(false);
   const [scheduleText, setScheduleText] = useState("");
   const [textImporting, setTextImporting] = useState(false);
 
-  // Sinf tanlashni qulaylashtirish: bo'lim (boshlang'ich/yuqori) + smena filtri + tabiiy tartib
   const [isTwoShift, setIsTwoShift] = useState(false);
   const [smenaMap, setSmenaMap] = useState<Record<string, number | null>>({});
   const [bolimSel, setBolimSel] = useState<"all" | "boshlangich" | "yuqori">("all");
@@ -302,7 +380,7 @@ function AdminScheduleView() {
             setSmenaMap(map);
           }
         }
-      } catch { /* ixtiyoriy — filtrsiz ham ishlaydi */ }
+      } catch { /* ixtiyoriy */ }
     })();
   }, []);
 
@@ -327,9 +405,11 @@ function AdminScheduleView() {
       if (res.ok) {
         const data = await res.json() as TimetableEntry[];
         setTimetable(data);
+        return data; // ── TUZATILDI #5: yangi ma'lumotni qaytaramiz
       }
     } catch { /* ignore */ }
-    setLoading(false);
+    finally { setLoading(false); }
+    return null;
   }, []);
 
   useEffect(() => {
@@ -375,7 +455,7 @@ function AdminScheduleView() {
           toast({ variant: "destructive", title: "Xatolik", description: d.error });
         } else {
           toast({ title: "Saqlandi" });
-          void loadTimetable(selectedClassId);
+          await loadTimetable(selectedClassId);
           setDialogOpen(false);
         }
       } else {
@@ -396,14 +476,14 @@ function AdminScheduleView() {
         } else {
           toast({ title: "Qo'shildi" });
           const justAdded = Number(formPeriod);
-          void loadTimetable(selectedClassId);
+          // ── TUZATILDI #5: yangi ma'lumotni await bilan olamiz
+          const fresh = await loadTimetable(selectedClassId);
           if (keepOpen) {
-            // Oynani yopmasdan keyingi bo'sh darsga o'tamiz — ketma-ket tez kiritish uchun
-            const used = new Set(timetable.filter(e => e.day_of_week === selectedDay).map(e => e.period));
+            const used = new Set((fresh ?? []).filter(e => e.day_of_week === selectedDay).map(e => e.period));
             used.add(justAdded);
             let next = justAdded + 1;
-            while (next <= 8 && used.has(next)) next++;
-            setFormPeriod(next <= 8 ? String(next) : "");
+            while (next <= PERIOD_COUNT && used.has(next)) next++;
+            setFormPeriod(next <= PERIOD_COUNT ? String(next) : "");
             setFormSubject("");
             setFormTeacherId("");
           } else {
@@ -440,7 +520,7 @@ function AdminScheduleView() {
       } else {
         setImportResult(data);
         toast({ title: "Jadval yuklandi", description: `${data.saved} ta dars saqlandi` });
-        if (selectedClassId) void loadTimetable(selectedClassId);
+        if (selectedClassId) await loadTimetable(selectedClassId);
       }
     } catch {
       toast({ variant: "destructive", title: "Xatolik", description: "Server bilan bog'lanib bo'lmadi" });
@@ -449,7 +529,9 @@ function AdminScheduleView() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // ── TUZATILDI #7: o'chirishdan oldin tasdiqlash
   const handleDelete = async (id: string) => {
+    if (!confirm("Bu darsni o'chirishni tasdiqlaysizmi?")) return;
     try {
       const res = await fetch(`${API_BASE}/timetable/${id}`, {
         method: "DELETE",
@@ -457,58 +539,67 @@ function AdminScheduleView() {
       });
       if (res.ok) {
         toast({ title: "O'chirildi" });
-        void loadTimetable(selectedClassId);
+        await loadTimetable(selectedClassId);
       }
     } catch { /* ignore */ }
   };
 
-  // "Kun | Dars raqami | Fan | O'qituvchi" formatidagi matnni tanlangan sinf
-  // uchun bir vaqtda ko'p qatorli jadvalga aylantiradi. O'qituvchi ustuni
-  // ixtiyoriy — yozilgan ism xodimlar ro'yxati bilan (mos kelgan qismi
-  // bo'yicha) avtomatik solishtiriladi.
+  // ── TUZATILDI #3: matndan yuklash — parallel so'rovlar (sekinlik tuzatildi)
   const handleTextImport = async () => {
     if (!selectedClassId || !scheduleText.trim()) return;
     setTextImporting(true);
-    let saved = 0;
-    const failed: string[] = [];
-
     const lines = scheduleText.split("\n").map(l => l.trim()).filter(Boolean);
+    const payloads: { line: string; body: Record<string, unknown> | null }[] = [];
     for (const line of lines) {
       const parts = line.split("|").map(p => p.trim());
       const dayRaw = parts[0] ?? "";
       const periodRaw = parts[1] ?? "";
       const subject = parts[2] ?? "";
-      const teacherRaw = (parts[3] ?? "").toLowerCase();
+      const teacherRaw = parts[3] ?? "";
 
       const day_of_week = matchDay(dayRaw);
       const period = Number(periodRaw);
 
-      if (!day_of_week || !period || period < 1 || period > 8 || !subject) {
-        failed.push(line);
+      if (!day_of_week || !period || period < 1 || period > PERIOD_COUNT || !subject) {
+        payloads.push({ line, body: null });
         continue;
       }
+      const teacher_id = matchTeacher(teacherRaw, staff);
+      payloads.push({
+        line,
+        body: { class_id: selectedClassId, day_of_week, period, subject, teacher_id },
+      });
+    }
 
-      const teacher_id = teacherRaw
-        ? staff.find(s => s.full_name.toLowerCase().includes(teacherRaw) || teacherRaw.includes(s.full_name.toLowerCase()))?.id ?? null
-        : null;
-
-      try {
-        const res = await fetch(`${API_BASE}/timetable`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ class_id: selectedClassId, day_of_week, period, subject, teacher_id }),
-        });
-        if (res.ok) saved++;
-        else failed.push(line);
-      } catch {
-        failed.push(line);
+    // Parallel yuboramiz (maksimal 5 ta bir vaqtda) — sekinlikni kamaytirish uchun
+    let saved = 0;
+    const failed: string[] = [];
+    const CONCURRENCY = 5;
+    for (let i = 0; i < payloads.length; i += CONCURRENCY) {
+      const chunk = payloads.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(chunk.map(async (p) => {
+        if (!p.body) return { ok: false, line: p.line };
+        try {
+          const res = await fetch(`${API_BASE}/timetable`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify(p.body),
+          });
+          return { ok: res.ok, line: p.line };
+        } catch {
+          return { ok: false, line: p.line };
+        }
+      }));
+      for (const r of results) {
+        if (r.ok) saved++;
+        else failed.push(r.line);
       }
     }
 
     setTextImporting(false);
     setTextImportOpen(false);
     setScheduleText("");
-    void loadTimetable(selectedClassId);
+    await loadTimetable(selectedClassId);
 
     if (failed.length === 0) {
       toast({ title: "Muvaffaqiyatli", description: `${saved} ta dars jadvalga qo'shildi` });
@@ -524,7 +615,6 @@ function AdminScheduleView() {
 
   const selectedClassName = classes?.find((c: { id: string; name: string }) => c.id === selectedClassId)?.name ?? "";
 
-  // Tabiiy tartib (5-A, 5-B, ... 10-A) + bo'lim/smena filtri — uzun ro'yxatdan sinfni tez topish uchun
   const sortedClasses = ([...((classes ?? []) as { id: string; name: string }[])]).sort((a, b) => {
     const ga = gradeNum(a.name), gb = gradeNum(b.name);
     if (ga !== gb) return ga - gb;
@@ -538,7 +628,6 @@ function AdminScheduleView() {
     return true;
   });
 
-  // O'qituvchilar + can_teach=true bo'lgan rahbariyat xodimlari
   const teacherStaff = staff.filter(s =>
     ["teacher", "sinf_rahbari"].includes(s.role) ||
     (["director", "zam_direktor", "zavuch"].includes(s.role) && s.can_teach === true)
@@ -552,7 +641,6 @@ function AdminScheduleView() {
       </div>
 
       <div className="space-y-3">
-        {/* Bo'lim + smena filtri — uzun ro'yxatni qisqartirib, sinfni tez topish uchun */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-muted-foreground mr-1">Bo'lim:</span>
@@ -570,7 +658,6 @@ function AdminScheduleView() {
           )}
         </div>
 
-        {/* Sinflar — bir bosishda tanlanadi (ochib, aylantirib o'tirish shart emas) */}
         <div className="flex flex-wrap gap-1.5">
           {visibleClasses.length === 0 ? (
             <span className="text-sm text-muted-foreground">Bu filtrda sinf topilmadi</span>
@@ -627,230 +714,6 @@ function AdminScheduleView() {
                 </Button>
               </div>
             </div>
+            {/* ── TUZATILDI #11: yuklash natijasi yaxshiroq ko'rsatiladi */}
             {importResult && (
-              <div className="mt-3 text-sm rounded-lg bg-secondary/50 p-3">
-                <p>✅ {importResult.saved} ta dars saqlandi ({importResult.total_parsed} tasi rasmda topildi)</p>
-                {importResult.unmatched.length > 0 && (
-                  <div className="mt-2 text-amber-600">
-                    <p className="font-medium">⚠️ {importResult.unmatched.length} ta qatorni qo'lda tekshiring:</p>
-                    <ul className="list-disc pl-5 mt-1 space-y-0.5">
-                      {importResult.unmatched.map((u, i) => (
-                        <li key={i}>{u.row.class_name} — {u.row.subject}: {u.reason}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {!selectedClassId ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <CalendarDays className="w-8 h-8 mx-auto mb-3 opacity-40" />
-            Dars jadvalini ko'rish uchun sinf tanlang
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {DAYS.map(day => (
-              <Button
-                key={day.id}
-                variant={selectedDay === day.id ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedDay(day.id)}
-              >
-                {day.name}
-              </Button>
-            ))}
-          </div>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">
-                {selectedClassName} — {DAYS.find(d => d.id === selectedDay)?.name}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                </div>
-              ) : (!isEditor && dayEntries.length === 0) ? (
-                <div className="text-center py-8 text-muted-foreground text-sm">
-                  Bu kun uchun dars kiritilmagan
-                </div>
-              ) : (
-                // 8 ta dars uyasi — to'ldirilganlari ko'rinadi, bo'shlarini bosib darhol qo'shiladi
-                <div className="space-y-2">
-                  {Array.from({ length: 8 }, (_, i) => i + 1).map((p) => {
-                    const entry = dayEntries.find(e => e.period === p);
-                    if (!entry) {
-                      if (!isEditor) return null;
-                      return (
-                        <button
-                          key={`empty-${p}`}
-                          type="button"
-                          onClick={() => openAdd(p)}
-                          className="flex w-full items-center gap-4 rounded-lg border border-dashed bg-muted/20 px-4 py-3 text-left text-muted-foreground hover:bg-accent/40 hover:text-foreground transition-colors"
-                        >
-                          <div className="text-center min-w-[2.5rem]">
-                            <div className="text-lg font-bold">{p}</div>
-                            <div className="text-xs">dars</div>
-                          </div>
-                          <div className="border-l pl-4 flex items-center gap-2">
-                            <Plus className="w-4 h-4" />
-                            <span className="text-sm">{PERIOD_TIMES[p]} — dars qo'shish</span>
-                          </div>
-                        </button>
-                      );
-                    }
-                    return (
-                      <div
-                        key={entry.id}
-                        className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 hover:bg-accent/30 transition-colors"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="text-center min-w-[2.5rem]">
-                            <div className="text-lg font-bold text-primary">{entry.period}</div>
-                            <div className="text-xs text-muted-foreground">dars</div>
-                          </div>
-                          <div className="border-l pl-4">
-                            <div className="font-medium">{entry.subject}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {PERIOD_TIMES[entry.period]} · {entry.teacher_name ?? "O'qituvchi belgilanmagan"}
-                            </div>
-                          </div>
-                        </div>
-                        {isEditor && (
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => openEdit(entry)}>
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => void handleDelete(entry.id)}>
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editEntry ? "Darsni tahrirlash" : "Yangi dars qo'shish"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            {!editEntry && (
-              <div className="space-y-1">
-                <Label>Dars raqami</Label>
-                <Select value={formPeriod} onValueChange={setFormPeriod}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Tanlang..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 8 }, (_, i) => i + 1).map(p => (
-                      <SelectItem key={p} value={String(p)} disabled={usedPeriods.has(p)}>
-                        {p}-dars — {PERIOD_TIMES[p]}
-                        {usedPeriods.has(p) ? " (band)" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <div className="space-y-1">
-              <Label>Fan nomi</Label>
-              <Select value={formSubject} onValueChange={setFormSubject}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Fan tanlang..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {COMMON_SUBJECTS.map(s => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                placeholder="Yoki boshqa fan nomi kiriting..."
-                value={formSubject}
-                onChange={e => setFormSubject(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>O'qituvchi (fan o'qituvchilari)</Label>
-              <Select value={formTeacherId} onValueChange={setFormTeacherId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="O'qituvchi tanlang..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">— Belgilanmagan —</SelectItem>
-                  {teacherStaff.map(s => (
-                    <SelectItem key={s.id} value={s.id}>{s.full_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Bekor qilish</Button>
-            {!editEntry && (
-              <Button
-                variant="secondary"
-                onClick={() => void handleSave(true)}
-                disabled={saving || !formSubject.trim() || !formPeriod}
-              >
-                {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Saqlab, yana qo'shish
-              </Button>
-            )}
-            <Button onClick={() => void handleSave(false)} disabled={saving || !formSubject.trim() || (!editEntry && !formPeriod)}>
-              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Saqlash
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={textImportOpen} onOpenChange={setTextImportOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{selectedClassName} — Matndan jadval yuklash</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label>Har bir darsni yangi qatorga yozing</Label>
-            <Textarea
-              placeholder={"Dushanba | 1 | Matematika | Aliyeva Gulnora\nDushanba | 2 | Ona tili\nSeshanba | 1 | Tarix | Karimov Bobur"}
-              rows={8}
-              value={scheduleText}
-              onChange={e => setScheduleText(e.target.value)}
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Format: <span className="font-mono">Kun | Dars raqami | Fan | O'qituvchi</span> — o'qituvchi ixtiyoriy,
-              yozgan ismingiz xodimlar ro'yxati bilan avtomatik solishtiriladi. Band bo'lgan soat bo'lsa, eskisi yangisi bilan almashadi.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTextImportOpen(false)}>Bekor qilish</Button>
-            <Button onClick={handleTextImport} disabled={textImporting || !scheduleText.trim()}>
-              {textImporting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Jadvalga qo'shish
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
+              <div className="mt-3 text-sm rounded-lg bg-secondary/50 p-3
