@@ -36,11 +36,19 @@ import maktablarRouter from "./maktablar.js";
 import analyticsRouter, { activityMiddleware } from "./analytics.js";
 import confirmRouter from "./confirm.js";
 import elibraryRouter from "./elibrary.js";
+// 🔴 YANGI: o'quvchi (4 xonali kod) + o'qituvchi (5 xonali ID) uchun yangi kirish routeri
+import studentLoginRouter from "./student-login.js";
+// 🔴 YANGI: login sahifasi uchun ochiq (public) ma'lumotlar
+import publicRouter from "./public.js";
 
 const router: IRouter = Router();
 
 // Faollik kuzatuvi — barcha route'lardan oldin (autentifikatsiyalangan so'rovlarni yozadi)
 router.use(activityMiddleware);
+
+// 🔴 Yangi router'lar — eng oldin (autentifikatsiyasiz, ochiq)
+router.use(publicRouter);
+router.use(studentLoginRouter);
 
 router.use(healthRouter);
 router.use(authRouter);
