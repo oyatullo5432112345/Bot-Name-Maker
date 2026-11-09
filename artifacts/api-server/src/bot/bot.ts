@@ -1933,3 +1933,83 @@ export function createBot(): Bot {
 
   return bot;
 }
+// ═══════════════════════════════════════════════════════════════════════════
+//  O'QUVCHI KIRISH TASDIQLASH (yangi)
+//  Bot sinf guruhiga "Tasdiqlash" tugmasini yuboradi. Foydalanuvchi bosganda
+//  — 4 xonali kod yaratiladi va guruhga javob yoziladi.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// O'quvchi "✅ Tasdiqlash" tugmasini bosdi
+bot.callbackQuery(/^confirm_student:(.+)$/, async (ctx) => {
+  const token = ctx.match[1];
+  if (!token) { await ctx.answerCallbackQuery("Xatolik"); return; }
+
+  try {
+    // Backend'ga so'rov — 4 xonali kod yaratish
+    const res = await fetch(`${WEBSITE_URL}/api/auth/student/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json() as { ok?: boolean; code?: string; name?: string; class_name?: string; error?: string };
+
+    if (!res.ok || !data.ok) {
+      await ctx.answerCallbackQuery({
+        text: `❌ ${data.error || "Xatolik"}`,
+        show_alert: true,
+      });
+      // ═══════════════════════════════════════════════════════════════════════════
+//  O'QUVCHI KIRISH TASDIQLASH (yangi)
+//  Bot sinf guruhiga "Tasdiqlash" tugmasini yuboradi. Foydalanuvchi bosganda
+//  — 4 xonali kod yaratiladi va guruhga javob yoziladi.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// O'quvchi "✅ Tasdiqlash" tugmasini bosdi
+bot.callbackQuery(/^confirm_student:(.+)$/, async (ctx) => {
+  const token = ctx.match[1];
+  if (!token) { await ctx.answerCallbackQuery("Xatolik"); return; }
+
+  try {
+    // Backend'ga so'rov — 4 xonali kod yaratish
+    const res = await fetch(`${WEBSITE_URL}/api/auth/student/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json() as { ok?: boolean; code?: string; name?: string; class_name?: string; error?: string };
+
+    if (!res.ok || !data.ok) {
+      await ctx.answerCallbackQuery({
+        text: `❌ ${data.error || "Xatolik"}`,
+        show_alert: true,
+      });
+      return;
+    }
+
+    await ctx.answerCallbackQuery({ text: "✅ Tasdiqlandi!" });
+    const esc = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+    await ctx.editMessageText(
+      `✅ *Tasdiqlandi!*\n\n` +
+      `👤 ${esc(data.name || "")}\n` +
+      `🏫 ${esc(data.class_name || "")}\n\n` +
+      `🔑 *Kirish kodi:* \`${data.code}\`\n\n` +
+      `⏱ Kod 5 daqiqa amal qiladi\\.\n` +
+      `Platformaga qaytib, shu kodni kiriting\\.`,
+      { parse_mode: "MarkdownV2" }
+    );
+  } catch (err) {
+    logger.error({ err }, "confirm_student callback");
+    await ctx.answerCallbackQuery({
+      text: "❌ Server bilan bog'lanib bo'lmadi",
+      show_alert: true,
+    });
+  }
+});
+
+// O'quvchi "❌ Bekor qilish" tugmasini bosdi
+bot.callbackQuery(/^cancel_student:(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery({ text: "❌ Bekor qilindi" });
+  await ctx.editMessageText("❌ Tasdiqlash bekor qilindi. Qaytadan urinib ko'ring.");
+});
+      return;
+    }
