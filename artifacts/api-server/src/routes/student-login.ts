@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
+import crypto from "node:crypto";
 import { query, queryOne } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
-import { sendToChat, esc, uzDateStr } from "../lib/tg-shared.js";
-import { getClassChats } from "../lib/tg-shared.js";
-import { signToken } from "./auth.js";
+import { sendToChat, esc, getClassChats } from "../lib/tg-shared.js";
+import { createToken } from "./auth.js";
 
 const router: IRouter = Router();
 
@@ -32,8 +32,6 @@ router.post("/auth/student/request-code", async (req, res) => {
       res.status(400).json({ error: "Ma'lumotlar to'liq emas" });
       return;
     }
-
-    // O'quvchi bazada bormi?
     const student = await queryOne<{ login: string; full_name: string; class_name: string; maktab_id: number }>(
       "SELECT login, full_name, class_name, maktab_id FROM users WHERE login = $1 AND class_name = $2 AND maktab_id = $3",
       [student_login, class_name, maktab_id]
@@ -42,8 +40,6 @@ router.post("/auth/student/request-code", async (req, res) => {
       res.status(404).json({ error: "O'quvchi topilmadi" });
       return;
     }
-
-    // Sinf guruhini topish
     const cls = await queryOne<{ id: string }>(
       "SELECT id FROM classes WHERE name = $1 AND maktab_id = $2",
       [class_name, maktab_id]
@@ -54,18 +50,16 @@ router.post("/auth/student/request-code", async (req, res) => {
     }
     const chats = await getClassChats(cls.id);
     if (chats.length === 0) {
-      res.status(400).json({ error: "Sinf guruhi botga ulanmagan" });
+      res.status(400).json({ error: "Sinf guruhi botga ulanmagan. Maktab ma'muriyatiga murojaat qiling." });
       return;
     }
 
-    // Tasdiqlash tokeni yaratish
     const token = crypto.randomUUID();
     await query(
       `INSERT INTO student_confirm_tokens (token, student_login) VALUES ($1, $2)`,
       [token, student.login]
     );
 
-    // Botga xabar
     const confirmText =
       `🎓 <b>${esc(student.full_name)}</b> (${esc(student.class_name)}) platformaga kirmoqchi.\n\n` +
       `Agar bu siz bo'lsangiz — tasdiqlang.`;
@@ -89,7 +83,6 @@ router.post("/auth/student/request-code", async (req, res) => {
       res.status(500).json({ error: "Xabar yuborilmadi" });
       return;
     }
-
     res.json({ ok: true, sent });
   } catch (err) {
     logger.error({ err }, "student/request-code");
@@ -157,26 +150,35 @@ router.post("/auth/student/verify-code", async (req, res) => {
     }
     await query("DELETE FROM student_login_codes WHERE student_login = $1", [student_login]);
 
-    const student = await queryOne<{ login: string; full_name: string; role: string; class_name: string; maktab_id: number }>(
-      "SELECT login, full_name, role, class_name, maktab_id FROM users WHERE login = $1",
+    const student = await queryOne<{ id: string; login: string; full_name: string; role: string; class_name: string; maktab_id: number; telegram_id: number | null }>(
+      "SELECT id, login, full_name, role, class_name, maktab_id, telegram_id FROM users WHERE login = $1",
       [student_login]
     );
     if (!student) {
       res.status(404).json({ error: "O'quvchi topilmadi" });
       return;
     }
-    const authToken = signToken({
-      login: student.login,
-      role: student.role || "student",
+    const cls = await queryOne<{ id: string }>(
+      "SELECT id FROM classes WHERE name = $1 AND maktab_id = $2",
+      [student.class_name, student.maktab_id]
+    );
+    const payload = {
+      id: student.id,
+      role: "student",
       full_name: student.full_name,
+      login: student.login,
       class_name: student.class_name,
+      class_id: cls?.id ?? null,
+      telegram_id: student.telegram_id,
       maktab_id: student.maktab_id,
-    });
+    };
+    const authToken = createToken(payload);
     res.json({
       token: authToken,
-      role: student.role || "student",
+      role: "student",
       full_name: student.full_name,
       class_name: student.class_name,
+      class_id: cls?.id ?? null,
       maktab_id: student.maktab_id,
     });
   } catch (err) {
@@ -191,31 +193,54 @@ router.post("/auth/staff/login", async (req, res) => {
     const { login_id } = req.body;
     if (!login_id) { res.status(400).json({ error: "ID kerak" }); return; }
     const staff = await queryOne<{
-      login: string; full_name: string; role: string; maktab_id: number; class_name: string | null;
+      id: string; login: string; full_name: string; role: string; maktab_id: number; class_id: string | null;
     }>(
-      "SELECT login, full_name, role, maktab_id, class_name FROM staff WHERE login_id = $1",
+      "SELECT id, login, full_name, role, maktab_id, class_id FROM staff WHERE login_id = $1",
       [login_id]
     );
     if (!staff) {
       res.status(401).json({ error: "Bunday ID topilmadi. Maktab ma'muriyatiga murojaat qiling." });
       return;
     }
-    const authToken = signToken({
-      login: staff.login,
+    let class_name: string | null = null;
+    if (staff.class_id) {
+      const c = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [staff.class_id]).catch(() => null);
+      class_name = c?.name ?? null;
+    }
+    const payload = {
+      id: staff.id,
       role: staff.role,
       full_name: staff.full_name,
-      class_name: staff.class_name,
-      maktab_id: staff.maktab_id,
-    });
+      login: staff.login,
+      class_name,
+      class_id: staff.class_id,
+      maktab_id: staff.role === "admin" ? null : staff.maktab_id,
+    };
+    const authToken = createToken(payload);
     res.json({
       token: authToken,
       role: staff.role,
       full_name: staff.full_name,
-      class_name: staff.class_name,
+      class_name,
+      class_id: staff.class_id,
       maktab_id: staff.maktab_id,
     });
   } catch (err) {
     logger.error({ err }, "staff/login");
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ─── 5. Tasdiqlash holatini tekshirish (polling) ───
+router.get("/auth/student/check-code", async (req, res) => {
+  try {
+    const login = String(req.query.student_login ?? "");
+    const row = await queryOne<{ code: string }>(
+      "SELECT code FROM student_login_codes WHERE student_login = $1 AND expires_at > NOW()",
+      [login]
+    );
+    res.json({ ready: !!row });
+  } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 });
