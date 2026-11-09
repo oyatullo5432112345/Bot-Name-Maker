@@ -139,7 +139,8 @@ void query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_set BOOLEAN NOT NULL 
 const ADMIN_ID = process.env["ADMIN_ID"] ?? "";
 const ADMIN_PASSWORD = process.env["ADMIN_PASSWORD"] ?? ADMIN_ID;
 
-function createToken(payload: object): string {
+// 🔴 TUZATILDI: `createToken` endi `export` qilingan — boshqa fayllar (masalan, student-login.ts) import qila oladi.
+export function createToken(payload: object): string {
   // Har bir sessiya tokeniga yaratilgan vaqt + amal qilish muddatini qo'shamiz.
   const withExpiry = { ...payload, _issuedAt: Date.now(), _expiresAt: Date.now() + SESSION_TTL_MS };
   return createSignedToken(withExpiry);
