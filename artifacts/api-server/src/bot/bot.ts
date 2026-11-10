@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard, InputFile, Keyboard } from "grammy";
+import { Bot, Context, InlineKeyboard, InputFile, Keyboard } from "grammy";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "../lib/logger.js";
@@ -511,6 +511,48 @@ function buildStudentPageKb(classId: string, all: { login: string; full_name: st
   return kb;
 }
 
+const htmlEsc = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// Guruhdagi "Tasdiqlash" havolasi (/start confirm_<token>) bosilganda:
+// faqat bog'langan o'quvchining o'ziga shaxsiy chatda ✅/❌ tugmalarini ko'rsatadi.
+async function handleStudentConfirmStart(ctx: Context, token: string, userId: number): Promise<void> {
+  const row = await queryOne<{
+    expected_tg: string | number | null;
+    used: boolean;
+    expired: boolean;
+    full_name: string | null;
+    class_name: string | null;
+  }>(
+    `SELECT t.expected_tg, t.used, (t.expires_at < NOW()) AS expired, u.full_name, u.class_name
+       FROM student_confirm_tokens t
+       LEFT JOIN users u ON u.login = t.student_login
+      WHERE t.token = $1`,
+    [token]
+  );
+
+  if (!row || row.used) {
+    await ctx.reply("❌ Havola yaroqsiz yoki allaqachon ishlatilgan.");
+    return;
+  }
+  if (row.expired) {
+    await ctx.reply("⏱ Havola muddati o'tgan. Platformada qaytadan so'rang.");
+    return;
+  }
+  if (row.expected_tg == null || Number(row.expected_tg) !== userId) {
+    await ctx.reply("⛔ Bu havola sizga tegishli emas.");
+    return;
+  }
+
+  const kb = new InlineKeyboard()
+    .text("✅ Tasdiqlash", `c:${token}`)
+    .text("❌ Bekor qilish", `x:${token}`);
+  await ctx.reply(
+    `🎓 <b>${htmlEsc(row.full_name ?? "")}</b> (${htmlEsc(row.class_name ?? "")}) platformaga kirmoqchi.\n\nTasdiqlaysizmi?`,
+    { parse_mode: "HTML", reply_markup: kb }
+  );
+}
+
 export function createBot(): Bot {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN kerak");
@@ -556,6 +598,14 @@ export function createBot(): Bot {
   bot.command("start", async (ctx) => {
     const userId = ctx.from?.id;
     if (!userId) return;
+
+    // Guruhdagi "Tasdiqlash" havolasi: /start confirm_<token>
+    const payload = (ctx.match ?? "").toString().trim();
+    const confirmMatch = /^confirm_([a-f0-9]{32})$/.exec(payload);
+    if (confirmMatch) {
+      await handleStudentConfirmStart(ctx, confirmMatch[1]!, userId);
+      return;
+    }
     userStates.set(userId, { type: "idle" });
 
     // ─── Admin uchun avto-login (kanal tekshiruvisiz) ─────────────────────────
