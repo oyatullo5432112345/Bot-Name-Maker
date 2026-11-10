@@ -14,7 +14,6 @@ type Screen =
   | "student-school"
   | "student-class"
   | "student-name"
-  | "student-waiting"
   | "student-code"
   | "staff-id";
 
@@ -97,7 +96,7 @@ export default function Login() {
     setLoading(false);
   };
 
-  // ── O'quvchi tanlandi → botga tasdiqlash xabari ──
+  // ── O'quvchi tanlandi → 4 xonali kod yaratish va kod ekraniga o'tish ──
   const handleSelectStudent = async (st: Student) => {
     if (!school || !className) return;
     setStudent(st);
@@ -120,31 +119,14 @@ export default function Login() {
         setTimeout(() => setShake(false), 500);
         return;
       }
-      setScreen("student-waiting");
+      // Kod guruhga yuborildi → to'g'ridan-to'g'ri kod kiritish ekraniga o'tamiz
+      setScreen("student-code");
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
   };
-
-  // ── Bot tasdiqlaganini tekshirish (polling) ──
-  useEffect(() => {
-    if (screen !== "student-waiting" || !student) return;
-    const check = setInterval(async () => {
-      try {
-        const r = await fetch(`${API_BASE}/auth/student/check-code?student_login=${encodeURIComponent(student.login)}`);
-        if (r.ok) {
-          const d = await r.json() as { ready: boolean };
-          if (d.ready) {
-            clearInterval(check);
-            setScreen("student-code");
-          }
-        }
-      } catch { /* ignore */ }
-    }, 3000);
-    return () => clearInterval(check);
-  }, [screen, student]);
 
   // ── O'quvchi 4 xonali kodni kiritdi → kirish ──
   const handleVerifyCode = async () => {
@@ -202,7 +184,6 @@ export default function Login() {
     }
   };
 
-  // Auto-focus va Enter
   const onKeyDown = (fn: () => void) => (e: React.KeyboardEvent) => {
     if (e.key === "Enter") fn();
   };
@@ -226,9 +207,7 @@ export default function Login() {
 
       <div className="relative z-10 w-full max-w-md" style={{ animation: "tt-fade-up 0.5s ease both" }}>
 
-        {/* ═══════════════════════════════════════════
-            EKRAN 1: Tanlash
-        ═══════════════════════════════════════════ */}
+        {/* EKRAN 1: Tanlash */}
         {screen === "choice" && (
           <div className="space-y-5 text-center">
             <div style={{ fontSize: 72, marginBottom: 8, animation: "tt-float 3.5s ease-in-out infinite" }}>🏫</div>
@@ -252,15 +231,13 @@ export default function Login() {
             </button>
 
             <p className="text-white/30 text-xs mt-6 leading-relaxed">
-              O'quvchi: sinf guruhi orqali tasdiqlash<br />
+              O'quvchi: ismingizni tanlang, kod keladi<br />
               O'qituvchi: 5 xonali ID
             </p>
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════
-            EKRAN 2: Maktab tanlash
-        ═══════════════════════════════════════════ */}
+        {/* EKRAN 2: Maktab tanlash */}
         {screen === "student-school" && (
           <div>
             <button
@@ -294,9 +271,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════
-            EKRAN 3: Sinf tanlash
-        ═══════════════════════════════════════════ */}
+        {/* EKRAN 3: Sinf tanlash */}
         {screen === "student-class" && (
           <div>
             <button
@@ -329,9 +304,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════
-            EKRAN 4: O'zini tanlash
-        ═══════════════════════════════════════════ */}
+        {/* EKRAN 4: O'zini tanlash */}
         {screen === "student-name" && (
           <div>
             <button
@@ -372,49 +345,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════
-            EKRAN 5: Botni kutish
-        ═══════════════════════════════════════════ */}
-        {screen === "student-waiting" && (
-          <div className="text-center">
-            <div style={{ fontSize: 72, marginBottom: 12, animation: "tt-float 3.5s ease-in-out infinite" }}>📱</div>
-            <h2 className="text-white text-2xl font-black mb-2">Telegramni tekshiring</h2>
-            <p className="text-white/60 text-sm mb-6">
-              <b className="text-white">{student?.full_name}</b> — sizning <b className="text-white">{className}</b> sinf guruhiga tasdiqlash xabari yuborildi.
-            </p>
-
-            <div className="p-4 rounded-xl text-left space-y-2" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
-              <div className="flex items-start gap-2 text-white/80 text-sm">
-                <span className="w-5 h-5 rounded-full bg-indigo-500/30 text-indigo-300 text-xs font-bold flex items-center justify-center shrink-0">1</span>
-                <span>Telegram'da sinf guruhini oching</span>
-              </div>
-              <div className="flex items-start gap-2 text-white/80 text-sm">
-                <span className="w-5 h-5 rounded-full bg-indigo-500/30 text-indigo-300 text-xs font-bold flex items-center justify-center shrink-0">2</span>
-                <span>"✅ Tasdiqlash" tugmasini bosing</span>
-              </div>
-              <div className="flex items-start gap-2 text-white/80 text-sm">
-                <span className="w-5 h-5 rounded-full bg-indigo-500/30 text-indigo-300 text-xs font-bold flex items-center justify-center shrink-0">3</span>
-                <span>Bot sizga 4 xonali kod yuboradi</span>
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center justify-center gap-2">
-              <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
-              <span className="text-white/50 text-sm">Tasdiqlashni kutmoqda...</span>
-            </div>
-
-            <button
-              onClick={() => setScreen("student-code")}
-              className="mt-6 text-white/40 text-sm underline hover:text-white/60 transition"
-            >
-              Kodni kiritishga o'tish →
-            </button>
-          </div>
-        )}
-
-        {/* ═══════════════════════════════════════════
-            EKRAN 6: Kod kiritish
-        ═══════════════════════════════════════════ */}
+        {/* EKRAN 5: Kod kiritish */}
         {screen === "student-code" && (
           <div className="text-center">
             <button
@@ -426,7 +357,7 @@ export default function Login() {
 
             <div style={{ fontSize: 64, marginBottom: 12 }}>🔑</div>
             <h2 className="text-white text-2xl font-black mb-1">Kodni kiriting</h2>
-            <p className="text-white/40 text-sm mb-6">Bot yuborgan 4 xonali kod</p>
+            <p className="text-white/40 text-sm mb-6">Sinf guruhingizga yuborilgan 4 xonali kod</p>
 
             <div className={`relative ${shake ? "animate-[tt-shake_0.3s_ease-in-out]" : ""}`} style={{ animation: shake ? "tt-shake 0.3s ease-in-out" : "none" }}>
               <input
@@ -473,14 +404,12 @@ export default function Login() {
               onClick={() => { setCode(""); setError(""); setScreen("student-name"); }}
               className="mt-4 text-white/40 text-sm flex items-center gap-1.5 justify-center hover:text-white/60 transition"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> Qaytadan tasdiqlash
+              <RefreshCw className="w-3.5 h-3.5" /> Qaytadan tanlash
             </button>
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════
-            EKRAN 7: O'qituvchi — 5 xonali ID
-        ═══════════════════════════════════════════ */}
+        {/* EKRAN 6: O'qituvchi — 5 xonali ID */}
         {screen === "staff-id" && (
           <div className="text-center">
             <button
@@ -494,7 +423,7 @@ export default function Login() {
             <h2 className="text-white text-2xl font-black mb-1">O'qituvchi / Xodim</h2>
             <p className="text-white/40 text-sm mb-6">5 xonali ID raqamingizni kiriting</p>
 
-            <div className={shake ? "" : ""} style={{ animation: shake ? "tt-shake 0.3s ease-in-out" : "none" }}>
+            <div style={{ animation: shake ? "tt-shake 0.3s ease-in-out" : "none" }}>
               <input
                 type="text"
                 inputMode="numeric"
@@ -538,4 +467,4 @@ export default function Login() {
       </div>
     </div>
   );
-                            }
+  }
