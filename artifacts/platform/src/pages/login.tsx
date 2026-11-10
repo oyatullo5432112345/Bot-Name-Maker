@@ -225,10 +225,25 @@ export default function Login() {
               <Users className="w-6 h-6" /> O'qituvchi / Xodim
             </button>
 
-            <p className="text-white/30 text-xs mt-6 leading-relaxed">
-              O'quvchi: ismingizni tanlang, kod keladi<br />
-              O'qituvchi: 5 xonali ID
-            </p>
+            {/* Pastki qism: bo'lim va Kelajak logotiplari */}
+            <div className="pt-8 flex flex-col items-center justify-center gap-4">
+              <img
+                src="/tuman-logo.jpg"
+                alt="Toshloq tumani maktabgacha va maktab ta'limi bo'limi"
+                className="w-48 max-w-full h-auto rounded-2xl shadow-lg"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+              <img
+                src="/kelajak-logo.jpg"
+                alt="Kelajak - Toshloq tumani"
+                className="w-44 max-w-full h-auto rounded-2xl shadow-lg"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </div>
           </div>
         )}
 
@@ -354,19 +369,19 @@ export default function Login() {
             <h2 className="text-white text-2xl font-black mb-4">Kodni kiriting</h2>
 
             {/* 🔴 TUSHUNTIRISH YOZUVI */}
-            <div 
-              className="rounded-xl p-4 mb-6 text-left" 
-              style={{ 
-                background: "rgba(99,102,241,0.15)", 
-                border: "1px solid rgba(99,102,241,0.3)" 
+            <div
+              className="rounded-xl p-4 mb-6 text-left"
+              style={{
+                background: "rgba(99,102,241,0.15)",
+                border: "1px solid rgba(99,102,241,0.3)"
               }}
             >
               <p className="text-white/90 text-sm font-semibold mb-2">
                 📱 Kodni qayerdan olasiz?
               </p>
               <p className="text-white/70 text-xs leading-relaxed">
-                <b className="text-white">{className}</b> sinfining Telegram guruhiga bot tomonidan 
-                <b className="text-white"> 4 xonali kod</b> yuborildi. 
+                <b className="text-white">{className}</b> sinfining Telegram guruhiga bot tomonidan
+                <b className="text-white"> 4 xonali kod</b> yuborildi.
                 Telegram'da sinf guruhingizni oching va shu kodni kiriting.
               </p>
               <p className="text-white/50 text-xs mt-2">
