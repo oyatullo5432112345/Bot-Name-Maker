@@ -1,11 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import {
   Loader2, ArrowLeft, GraduationCap, Users, KeyRound, Eye, EyeOff,
   RefreshCw, ShieldCheck, LogIn,
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 
@@ -34,15 +33,11 @@ const GLOBAL_CSS = `
     25% { transform: translateX(-8px); }
     75% { transform: translateX(8px); }
   }
-  @keyframes tt-spin {
-    to { transform: rotate(360deg); }
-  }
 `;
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { login: authLogin } = useAuth();
-  const { toast } = useToast();
 
   const [screen, setScreen] = useState<Screen>("choice");
   const [loading, setLoading] = useState(false);
@@ -207,7 +202,7 @@ export default function Login() {
 
       <div className="relative z-10 w-full max-w-md" style={{ animation: "tt-fade-up 0.5s ease both" }}>
 
-        {/* EKRAN 1: Tanlash */}
+        {/* ═══ EKRAN 1: Tanlash ═══ */}
         {screen === "choice" && (
           <div className="space-y-5 text-center">
             <div style={{ fontSize: 72, marginBottom: 8, animation: "tt-float 3.5s ease-in-out infinite" }}>🏫</div>
@@ -237,7 +232,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* EKRAN 2: Maktab tanlash */}
+        {/* ═══ EKRAN 2: Maktab tanlash ═══ */}
         {screen === "student-school" && (
           <div>
             <button
@@ -271,7 +266,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* EKRAN 3: Sinf tanlash */}
+        {/* ═══ EKRAN 3: Sinf tanlash ═══ */}
         {screen === "student-class" && (
           <div>
             <button
@@ -304,7 +299,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* EKRAN 4: O'zini tanlash */}
+        {/* ═══ EKRAN 4: O'zini tanlash ═══ */}
         {screen === "student-name" && (
           <div>
             <button
@@ -345,7 +340,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* EKRAN 5: Kod kiritish */}
+        {/* ═══ EKRAN 5: Kod kiritish (Tushuntirish bilan) ═══ */}
         {screen === "student-code" && (
           <div className="text-center">
             <button
@@ -356,8 +351,28 @@ export default function Login() {
             </button>
 
             <div style={{ fontSize: 64, marginBottom: 12 }}>🔑</div>
-            <h2 className="text-white text-2xl font-black mb-1">Kodni kiriting</h2>
-            <p className="text-white/40 text-sm mb-6">Sinf guruhingizga yuborilgan 4 xonali kod</p>
+            <h2 className="text-white text-2xl font-black mb-4">Kodni kiriting</h2>
+
+            {/* 🔴 TUSHUNTIRISH YOZUVI */}
+            <div 
+              className="rounded-xl p-4 mb-6 text-left" 
+              style={{ 
+                background: "rgba(99,102,241,0.15)", 
+                border: "1px solid rgba(99,102,241,0.3)" 
+              }}
+            >
+              <p className="text-white/90 text-sm font-semibold mb-2">
+                📱 Kodni qayerdan olasiz?
+              </p>
+              <p className="text-white/70 text-xs leading-relaxed">
+                <b className="text-white">{className}</b> sinfining Telegram guruhiga bot tomonidan 
+                <b className="text-white"> 4 xonali kod</b> yuborildi. 
+                Telegram'da sinf guruhingizni oching va shu kodni kiriting.
+              </p>
+              <p className="text-white/50 text-xs mt-2">
+                ⏱ Kod 5 daqiqa amal qiladi
+              </p>
+            </div>
 
             <div className={`relative ${shake ? "animate-[tt-shake_0.3s_ease-in-out]" : ""}`} style={{ animation: shake ? "tt-shake 0.3s ease-in-out" : "none" }}>
               <input
@@ -409,7 +424,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* EKRAN 6: O'qituvchi — 5 xonali ID */}
+        {/* ═══ EKRAN 6: O'qituvchi — 5 xonali ID ═══ */}
         {screen === "staff-id" && (
           <div className="text-center">
             <button
@@ -467,4 +482,4 @@ export default function Login() {
       </div>
     </div>
   );
-  }
+    }
