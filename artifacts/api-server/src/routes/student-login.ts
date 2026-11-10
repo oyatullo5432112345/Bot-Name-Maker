@@ -24,7 +24,6 @@ CREATE TABLE IF NOT EXISTS student_confirm_tokens (
 void query(SCHEMA).catch(() => {});
 
 // ─── 1. O'quvchi "O'zini tanladi" → 4 xonali kod yaratish va guruhga yuborish ───
-// Hech qanday tasdiqlash tugmasi yo'q. Kod darhol guruhga ketadi.
 router.post("/auth/student/request-code", async (req, res) => {
   try {
     const { student_login, class_name, maktab_id } = req.body;
@@ -33,7 +32,6 @@ router.post("/auth/student/request-code", async (req, res) => {
       return;
     }
 
-    // O'quvchi bazada bormi?
     const student = await queryOne<{ login: string; full_name: string; class_name: string; maktab_id: number }>(
       "SELECT login, full_name, class_name, maktab_id FROM users WHERE login = $1 AND class_name = $2 AND maktab_id = $3",
       [student_login, class_name, maktab_id]
@@ -43,7 +41,6 @@ router.post("/auth/student/request-code", async (req, res) => {
       return;
     }
 
-    // Sinf guruhini topish
     const cls = await queryOne<{ id: string }>(
       "SELECT id FROM classes WHERE name = $1 AND maktab_id = $2",
       [class_name, maktab_id]
@@ -58,10 +55,9 @@ router.post("/auth/student/request-code", async (req, res) => {
       return;
     }
 
-    // 🔴 YANGI MANTIQ: 4 xonali kod yaratish
+    // 4 xonali kod yaratish
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     
-    // Kodni bazaga saqlash (5 daqiqa amal qiladi)
     await query(
       `INSERT INTO student_login_codes (student_login, code, expires_at)
        VALUES ($1, $2, NOW() + INTERVAL '5 minutes')
@@ -69,7 +65,7 @@ router.post("/auth/student/request-code", async (req, res) => {
       [student.login, code]
     );
 
-    // 🔴 Guruhga xabar yuborish (tugmasiz, faqat matn)
+    // Guruhga xabar yuborish (tugmasiz, faqat matn)
     const text =
       `🔑 <b>${esc(student.full_name)}</b> (${esc(student.class_name)}) uchun kirish kodi:\n\n` +
       `<code>${code}</code>\n\n` +
@@ -118,8 +114,9 @@ router.post("/auth/student/verify-code", async (req, res) => {
     }
     await query("DELETE FROM student_login_codes WHERE student_login = $1", [student_login]);
 
-    const student = await queryOne<{ id: string; login: string; full_name: string; role: string; class_name: string; maktab_id: number; telegram_id: number | null }>(
-      "SELECT id, login, full_name, role, class_name, maktab_id, telegram_id FROM users WHERE login = $1",
+    // 🔴 TUZATILDI: "role" ustuni users jadvalida yo'q
+    const student = await queryOne<{ id: string; login: string; full_name: string; class_name: string; maktab_id: number; telegram_id: number | null }>(
+      "SELECT id, login, full_name, class_name, maktab_id, telegram_id FROM users WHERE login = $1",
       [student_login]
     );
     if (!student) {
@@ -132,7 +129,7 @@ router.post("/auth/student/verify-code", async (req, res) => {
     );
     const payload = {
       id: student.id,
-      role: "student",
+      role: "student", // 🔴 QO'LDA YOZILDI
       full_name: student.full_name,
       login: student.login,
       class_name: student.class_name,
@@ -199,7 +196,7 @@ router.post("/auth/staff/login", async (req, res) => {
   }
 });
 
-// ─── 4. Tasdiqlash holatini tekshirish (polling — endi kerak emas, lekin qoldirildi) ───
+// ─── 4. Tasdiqlash holatini tekshirish (polling — endi kerak emas) ───
 router.get("/auth/student/check-code", async (req, res) => {
   try {
     const login = String(req.query.student_login ?? "");
