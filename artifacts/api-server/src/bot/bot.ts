@@ -32,12 +32,14 @@ const LOGO_PATH = path.resolve(__dirname, "logo.png");
 const replitDevDomain = process.env["REPLIT_DEV_DOMAIN"]?.trim();
 const replitDomain = process.env["REPLIT_DOMAINS"]?.split(",")[0]?.trim();
 const isProductionBot = process.env["NODE_ENV"] === "production";
-// Production da REPLIT_DOMAINS ishlatiladi (to'g'ri production URL)
 const WEBSITE_URL = isProductionBot
   ? (replitDomain ? `https://${replitDomain}` : process.env["WEBSITE_URL"] ?? "https://talim-platform.replit.app")
   : (replitDevDomain ? `https://${replitDevDomain}` : process.env["WEBSITE_URL"] ?? (replitDomain ? `https://${replitDomain}` : "https://talim-platform.replit.app"));
 
 const ADMIN_ID = Number(process.env["ADMIN_ID"] ?? "0");
+
+// Bir martalik kirish kodi: 5 daqiqa amal qiladi
+const OTP_TTL_MS = 5 * 60 * 1000;
 
 type ManagementRole = "director" | "zavuch" | "zam_direktor" | "kutubxonachi";
 type RegRoleGroup = "student" | "teacher" | "sinf_rahbari" | "management";
@@ -54,13 +56,17 @@ type UserState =
   | { type: "awaiting_new_reg_code" }
   | { type: "awaiting_set_role_code"; role: keyof RoleRegCodes }
   | { type: "awaiting_login_input" }
-  | { type: "awaiting_password_input"; login: string };
+  | { type: "awaiting_password_input"; login: string }
+  | { type: "awaiting_otp"; login: string };
 
 // Sessiya bazaga ham yoziladi — server qayta ishga tushsa ham foydalanuvchi
 // qayerda to'xtagan bo'lsa, o'sha yerdan davom etadi.
 const userStates = createSessionStore<UserState>("bot_main", { type: "idle" });
 void userStates.loadAll();
 void initSettings();
+
+// Kutilayotgan kodlar (telegram id → kod). Kod xotirada saqlanadi, bazaga yozilmaydi.
+const pendingOtp = new Map<number, { login: string; code: string; expires: number }>();
 
 interface SupportTicket {
   fromUserId: number;
@@ -70,6 +76,25 @@ const supportTickets = new Map<string, SupportTicket>();
 
 function isAdmin(userId: number): boolean {
   return ADMIN_ID > 0 && userId === ADMIN_ID;
+}
+
+function generateOtp(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+// Kod yuboriladigan guruhlar: avval OTP_GROUP_CHAT_ID (vergul bilan ajratilgan),
+// bo'lmasa tg_chats jadvalidagi barcha guruhlar.
+async function getOtpGroupIds(): Promise<number[]> {
+  const fromEnv = (process.env["OTP_GROUP_CHAT_ID"] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(Number)
+    .filter((n) => !Number.isNaN(n));
+  if (fromEnv.length > 0) return fromEnv;
+
+  const rows = await query<{ chat_id: number }>("SELECT chat_id FROM tg_chats").catch(() => [] as { chat_id: number }[]);
+  return rows.map((r) => Number(r.chat_id));
 }
 
 async function checkAllChannels(bot: Bot, userId: number): Promise<{ allJoined: boolean; missing: string[] }> {
@@ -84,10 +109,7 @@ async function checkAllChannels(bot: Bot, userId: number): Promise<{ allJoined: 
         missing.push(channel.id);
       }
     } catch (err) {
-      // MUHIM: xato = botning o'zi kanalni tekshira olmayapti (bot admin emas yoki
-      // kanal topilmadi) — bu KONFIG muammosi, foydalanuvchi aybi emas. Shuning
-      // uchun foydalanuvchini BLOKLAMAYMIZ (o'tkazamiz). Aks holda noto'g'ri kanal
-      // butun botni "o'lik" qilib qo'yardi ("bari bekor").
+      // Xato = bot kanalni tekshira olmayapti (konfig muammosi). Foydalanuvchini bloklamaymiz.
       logger.warn({ err, channel: channel.id }, "Majburiy kanalni tekshirib bo'lmadi — bot admin ekanini tekshiring");
     }
   }
@@ -100,7 +122,6 @@ function buildSubscribeKeyboard(missingChannels: string[]): InlineKeyboard {
   for (const chId of missingChannels) {
     const ch = settings.channels.find((c) => c.id === chId);
     const label = ch?.name ?? chId;
-    // Saqlangan havola bo'lsa — o'shani ishlatamiz (yopiq kanal invite linki ham).
     const link = ch?.link
       ? ch.link
       : chId.startsWith("@")
@@ -203,9 +224,8 @@ const DAY_NAMES_UZ: Record<number, string> = {
 // O'zbekiston vaqti bo'yicha bugungi kun (1=Dushanba..6=Shanba, 0=Yakshanba)
 function getTodayUzDay(): number {
   const now = new Date();
-  // UTC+5 (O'zbekiston)
   const uzTime = new Date(now.getTime() + 5 * 60 * 60 * 1000);
-  return uzTime.getUTCDay(); // 0=Yakshanba, 1=Dushanba, ...
+  return uzTime.getUTCDay();
 }
 
 function getTodayUzHourMin(): { hour: number; min: number } {
@@ -299,7 +319,6 @@ async function getOnboardUserList(
     return { rows, table: "staff" as const, hasMore: rows.length === limit };
   }
 
-  // management or specific role
   const mgmtRoles = roleGroup === "management"
     ? ["director", "zam_direktor", "zavuch", "kutubxonachi", "admin"]
     : [roleGroup];
@@ -414,6 +433,39 @@ async function sendAccountInfo(
   }
 }
 
+// O'quvchi uchun kirish havolasini yaratadi va telegram akkauntini unga bog'laydi
+async function buildStudentLogin(login: string, tgId: number) {
+  const u = await queryOne<{ full_name: string; login: string; class_name: string | null; maktab_id: number | null }>(
+    "SELECT full_name, login, class_name, maktab_id FROM users WHERE login = $1",
+    [login]
+  ).catch(() =>
+    queryOne<{ full_name: string; login: string; class_name: string | null; maktab_id: number | null }>(
+      "SELECT full_name, login, class_name, NULL::int AS maktab_id FROM users WHERE login = $1",
+      [login]
+    ).catch(() => null)
+  );
+  if (!u) return null;
+
+  await query("UPDATE users SET telegram_id = $1 WHERE login = $2", [tgId, login]).catch(() => {});
+
+  let classId: string | null = null;
+  if (u.class_name) {
+    const c = typeof u.maktab_id === "number"
+      ? await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1 AND maktab_id = $2", [u.class_name, u.maktab_id]).catch(() => null)
+      : await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [u.class_name]).catch(() => null);
+    classId = c?.id ?? null;
+  }
+
+  const payload: Record<string, unknown> = {
+    id: String(tgId), role: "student", full_name: u.full_name,
+    login: u.login, class_name: u.class_name ?? "", class_id: classId, telegram_id: tgId,
+  };
+  if (typeof u.maktab_id === "number") payload["maktab_id"] = u.maktab_id;
+
+  const magicToken = createMagicToken(payload);
+  return { user: u, loginUrl: `${WEBSITE_URL}/login?token=${magicToken}` };
+}
+
 function buildRoleSelectionKb(): InlineKeyboard {
   return new InlineKeyboard()
     .text("👨‍🎓 O'quvchi", "reg_role:student").row()
@@ -424,7 +476,7 @@ function buildRoleSelectionKb(): InlineKeyboard {
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  YANGI, SODDA ONBOARDING (majburiy obunadan keyin)
-//   • O'quvchi  → sinf tanlash → ism tanlash → F.I.O + 5-xonali ID + PAROLSIZ kirish
+//   • O'quvchi  → sinf → ism tanlash → kod guruhga yuboriladi → kodni botga yozadi → kiradi
 //   • O'qituvchi → to'g'ridan 5-xonali kod kiritish sahifasiga (saytga) yo'naltirish
 // ═══════════════════════════════════════════════════════════════════════════
 function buildOnboardRoleKb(): InlineKeyboard {
@@ -511,48 +563,6 @@ function buildStudentPageKb(classId: string, all: { login: string; full_name: st
   return kb;
 }
 
-const htmlEsc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-// Guruhdagi "Tasdiqlash" havolasi (/start confirm_<token>) bosilganda:
-// faqat bog'langan o'quvchining o'ziga shaxsiy chatda ✅/❌ tugmalarini ko'rsatadi.
-async function handleStudentConfirmStart(ctx: Context, token: string, userId: number): Promise<void> {
-  const row = await queryOne<{
-    expected_tg: string | number | null;
-    used: boolean;
-    expired: boolean;
-    full_name: string | null;
-    class_name: string | null;
-  }>(
-    `SELECT t.expected_tg, t.used, (t.expires_at < NOW()) AS expired, u.full_name, u.class_name
-       FROM student_confirm_tokens t
-       LEFT JOIN users u ON u.login = t.student_login
-      WHERE t.token = $1`,
-    [token]
-  );
-
-  if (!row || row.used) {
-    await ctx.reply("❌ Havola yaroqsiz yoki allaqachon ishlatilgan.");
-    return;
-  }
-  if (row.expired) {
-    await ctx.reply("⏱ Havola muddati o'tgan. Platformada qaytadan so'rang.");
-    return;
-  }
-  if (row.expected_tg == null || Number(row.expected_tg) !== userId) {
-    await ctx.reply("⛔ Bu havola sizga tegishli emas.");
-    return;
-  }
-
-  const kb = new InlineKeyboard()
-    .text("✅ Tasdiqlash", `c:${token}`)
-    .text("❌ Bekor qilish", `x:${token}`);
-  await ctx.reply(
-    `🎓 <b>${htmlEsc(row.full_name ?? "")}</b> (${htmlEsc(row.class_name ?? "")}) platformaga kirmoqchi.\n\nTasdiqlaysizmi?`,
-    { parse_mode: "HTML", reply_markup: kb }
-  );
-}
-
 export function createBot(): Bot {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN kerak");
@@ -560,14 +570,8 @@ export function createBot(): Bot {
   const bot = new Bot(token);
 
   // ─── MAJBURIY KANAL: ENG BIRINCHI middleware ─────────────────────────────────
-  // Foydalanuvchi botga QANDAY xabar yoki tugma yuborishidan qat'i nazar — a'zo
-  // bo'lmagan bo'lsa hech qanday handler (onboarding, o'yin, menyu, boshqa tugmalar)
-  // ishlamaydi; faqat "kanalga a'zo bo'ling" chiqadi. Shu sabab bu BOShqa hamma
-  // narsadan OLDIN turadi (registerTelegramFeatures dan ham oldin).
-  // Istisno: /start va "A'zo bo'ldim ✅" — ular a'zolikni o'zi tekshiradi.
-  // (Bot kanalda ADMIN bo'lishi shart — /majburiy bilan tekshiring.)
   bot.use(async (ctx, next) => {
-    if (ctx.chat?.type !== "private") return next(); // guruh/kanalga tegmaymiz
+    if (ctx.chat?.type !== "private") return next();
     const uid = ctx.from?.id;
     if (!uid || isAdmin(uid)) return next();
 
@@ -578,7 +582,6 @@ export function createBot(): Bot {
     const { allJoined, missing } = await checkAllChannels(bot, uid);
     if (allJoined) return next();
 
-    // A'zo emas — obuna so'raymiz va so'rovni to'xtatamiz (next chaqirilmaydi)
     if (ctx.callbackQuery) { try { await ctx.answerCallbackQuery("Avval kanalga a'zo bo'ling"); } catch { /* */ } }
     const settings = loadSettings();
     const names = settings.channels.filter((c) => missing.includes(c.id)).map((c) => `• ${c.name}`).join("\n");
@@ -590,25 +593,15 @@ export function createBot(): Bot {
     } catch { /* yuborilmasa jim o'tamiz */ }
   });
 
-  // Yangi Telegram funksiyalari: rol menyulari, davomat, sinf guruhlari,
-  // maktab kanali, avtomatik postlar.
   registerTelegramFeatures(bot, { websiteUrl: WEBSITE_URL, adminId: ADMIN_ID });
 
   // ─── /start ────────────────────────────────────────────────────────────────
   bot.command("start", async (ctx) => {
     const userId = ctx.from?.id;
     if (!userId) return;
-
-    // Guruhdagi "Tasdiqlash" havolasi: /start confirm_<token>
-    const payload = (ctx.match ?? "").toString().trim();
-    const confirmMatch = /^confirm_([a-f0-9]{32})$/.exec(payload);
-    if (confirmMatch) {
-      await handleStudentConfirmStart(ctx, confirmMatch[1]!, userId);
-      return;
-    }
     userStates.set(userId, { type: "idle" });
+    pendingOtp.delete(userId);
 
-    // ─── Admin uchun avto-login (kanal tekshiruvisiz) ─────────────────────────
     if (isAdmin(userId)) {
       const adminPayload = {
         id: String(userId),
@@ -661,7 +654,6 @@ export function createBot(): Bot {
       return;
     }
 
-    // DB da bog'langanligini tekshirish
     const [staffLinked, userLinked] = await Promise.all([
       queryOne<{ id: string }>("SELECT id FROM staff WHERE telegram_id = $1", [userId]),
       queryOne<{ telegram_id: number }>("SELECT telegram_id FROM users WHERE telegram_id = $1", [userId]),
@@ -707,8 +699,6 @@ export function createBot(): Bot {
       return;
     }
 
-    // Bog'lanmagan → to'g'ridan-to'g'ri platformaga kirish havolasi.
-    // Maktab/sinf/ism tanlash va maxfiy kod (PIN/chizma) o'rnatish — endi PLATFORMADA.
     {
       const loginUrl = `${WEBSITE_URL}/login?tg=${createTgBindToken(userId)}`;
       const kb = new InlineKeyboard().url("🚀 Platformaga kirish", loginUrl);
@@ -720,7 +710,6 @@ export function createBot(): Bot {
       );
     }
 
-    // Admin bildirishnomasi
     const adminTgId = Number(process.env["ADMIN_ID"] ?? "0");
     if (adminTgId && adminTgId !== userId) {
       const fName = ctx.from?.first_name ?? "";
@@ -840,7 +829,7 @@ export function createBot(): Bot {
 
     const today = getTodayUzDay();
     let tomorrow = today + 1;
-    if (tomorrow > 6) tomorrow = 1; // Yakshanba o'tib ketsa — Dushanba
+    if (tomorrow > 6) tomorrow = 1;
 
     const text = await getTodayScheduleText(staffId, tomorrow);
     await ctx.answerCallbackQuery();
@@ -858,7 +847,6 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Callback: support_cancel ────────────────────────────────────────────────
   bot.callbackQuery("support_cancel", async (ctx) => {
     const userId = ctx.from.id;
     userStates.set(userId, { type: "idle" });
@@ -866,7 +854,6 @@ export function createBot(): Bot {
     await ctx.editMessageText("❌ Bekor qilindi.");
   });
 
-  // ─── Callback: reply_support:ticketId ────────────────────────────────────────
   bot.callbackQuery(/^reply_support:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
     const ticketId = ctx.match[1];
@@ -905,7 +892,6 @@ export function createBot(): Bot {
     const phone = contact.phone_number;
     const normalized = normalizePhone(phone);
 
-    // Faqat o'z telefon raqamini ulash mumkin
     if (contact.user_id && contact.user_id !== userId) {
       await ctx.reply(
         "⛔ Faqat *o'z* telefon raqamingizni ulashingiz mumkin.",
@@ -914,7 +900,6 @@ export function createBot(): Bot {
       return;
     }
 
-    // Avval bog'langan bo'lsa
     const alreadyLinked = getPhoneByChatId(userId);
     if (alreadyLinked === normalized) {
       await ctx.reply(
@@ -924,7 +909,6 @@ export function createBot(): Bot {
       return;
     }
 
-    // Bazadan topish (users jadvali)
     const student = await findStudentByPhone(normalized);
 
     if (student) {
@@ -933,7 +917,6 @@ export function createBot(): Bot {
 
       const clsData = await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [student.class_name]);
 
-      // Magic token yaratish — bir marta bosib kirish uchun
       const payload = {
         id: String(userId),
         role: "student",
@@ -969,7 +952,6 @@ export function createBot(): Bot {
       );
       await sendMainMenu(ctx, userId);
     } else {
-      // Saytda hali qo'shilmagan — faylga saqlab qo'yamiz
       linkPhoneToChatId(normalized, userId);
       await ctx.reply(
         "📱 *Telefon raqamingiz saqlandi.*\n\n" +
@@ -982,7 +964,7 @@ export function createBot(): Bot {
     }
   });
 
-  // ─── Callback: admin_panel ──────────────────────────────────────────────────
+  // ─── Admin callbacks ────────────────────────────────────────────────────────
   bot.callbackQuery("admin_panel", async (ctx) => {
     if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
     userStates.set(ctx.from.id, { type: "idle" });
@@ -993,7 +975,6 @@ export function createBot(): Bot {
     });
   });
 
-  // ─── Callback: admin_channels ───────────────────────────────────────────────
   bot.callbackQuery("admin_channels", async (ctx) => {
     if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
     await ctx.answerCallbackQuery();
@@ -1005,7 +986,6 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Callback: add_channel ──────────────────────────────────────────────────
   bot.callbackQuery("add_channel", async (ctx) => {
     if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
     userStates.set(ctx.from.id, { type: "awaiting_channel" });
@@ -1018,7 +998,6 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Callback: del_channel:id ──────────────────────────────────────────────
   bot.callbackQuery(/^del_channel:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
     const channelId = ctx.match[1];
@@ -1033,7 +1012,6 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Callback: admin_edit_msg ───────────────────────────────────────────────
   bot.callbackQuery("admin_edit_msg", async (ctx) => {
     if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
     const settings = loadSettings();
@@ -1049,7 +1027,6 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Callback: admin_preview ────────────────────────────────────────────────
   bot.callbackQuery("admin_preview", async (ctx) => {
     if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
     await ctx.answerCallbackQuery();
@@ -1060,13 +1037,11 @@ export function createBot(): Bot {
     });
   });
 
-  // ─── Callback: admin_close ──────────────────────────────────────────────────
   bot.callbackQuery("admin_close", async (ctx) => {
     await ctx.answerCallbackQuery();
     await ctx.deleteMessage().catch(() => null);
   });
 
-  // ─── Callback: admin_reg_codes ──────────────────────────────────────────────
   bot.callbackQuery("admin_reg_codes", async (ctx) => {
     if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
     await ctx.answerCallbackQuery();
@@ -1079,7 +1054,6 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Callback: admin_set_code:role ──────────────────────────────────────────
   bot.callbackQuery(/^admin_set_code:(teacher|sinfRahbari|director|zavuch|zamDirector|kutubxonachi)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) { await ctx.answerCallbackQuery("⛔ Ruxsat yo'q"); return; }
     const role = ctx.match[1] as keyof RoleRegCodes;
@@ -1104,7 +1078,6 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Callback: check_membership ─────────────────────────────────────────────
   bot.callbackQuery("check_membership", async (ctx) => {
     const userId = ctx.from.id;
     await ctx.answerCallbackQuery();
@@ -1136,7 +1109,6 @@ export function createBot(): Bot {
         reply_markup: buildWelcomeKeyboard(),
       });
     } else {
-      // Bog'lanmagan → to'g'ridan-to'g'ri platformaga kirish havolasi (maktab/sinf/ism — platformada).
       const loginUrl = `${WEBSITE_URL}/login?tg=${createTgBindToken(userId)}`;
       const kb = new InlineKeyboard().url("🚀 Platformaga kirish", loginUrl);
       await ctx.reply(
@@ -1148,18 +1120,16 @@ export function createBot(): Bot {
     }
   });
 
-  // ─── Callback: noop ─────────────────────────────────────────────────────────
   bot.callbackQuery("noop", async (ctx) => {
     await ctx.answerCallbackQuery();
   });
 
-  // ─── Login with credentials callback ─────────────────────────────────────────
   bot.callbackQuery("login_with_creds", async (ctx) => {
     const userId = ctx.from.id;
     await ctx.answerCallbackQuery();
     userStates.set(userId, { type: "awaiting_login_input" });
     await ctx.reply(
-      "🔑 *Login orqali kirish*\n\nLoginингizni kiriting:",
+      "🔑 *Login orqali kirish*\n\nLoginingizni kiriting:",
       { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("❌ Bekor qilish", "cancel_login") }
     );
   });
@@ -1167,15 +1137,15 @@ export function createBot(): Bot {
   bot.callbackQuery("cancel_login", async (ctx) => {
     const userId = ctx.from.id;
     userStates.set(userId, { type: "idle" });
+    pendingOtp.delete(userId);
     await ctx.answerCallbackQuery();
     await ctx.editMessageText("❌ Bekor qilindi.");
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  YANGI ONBOARDING callback'lari (ob:*)
+  //  ONBOARDING callback'lari (ob:*)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Rol tanlashga qaytish
   bot.callbackQuery("ob:back", async (ctx) => {
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(
@@ -1184,7 +1154,6 @@ export function createBot(): Bot {
     ).catch(() => {});
   });
 
-  // O'qituvchi → to'g'ridan 5-xonali kod kiritish sahifasiga
   bot.callbackQuery("ob:teacher", async (ctx) => {
     await ctx.answerCallbackQuery();
     const kb = new InlineKeyboard()
@@ -1197,7 +1166,6 @@ export function createBot(): Bot {
     ).catch(() => {});
   });
 
-  // O'quvchi → sinflar ro'yxati
   bot.callbackQuery("ob:student", async (ctx) => {
     await ctx.answerCallbackQuery();
     const all = await obListClasses();
@@ -1213,7 +1181,6 @@ export function createBot(): Bot {
     }).catch(() => {});
   });
 
-  // Sinflar sahifasi
   bot.callbackQuery(/^ob:cp:(\d+)$/, async (ctx) => {
     const page = parseInt(ctx.match[1] ?? "0", 10);
     await ctx.answerCallbackQuery();
@@ -1221,7 +1188,6 @@ export function createBot(): Bot {
     await ctx.editMessageReplyMarkup({ reply_markup: buildClassPageKb(all, page) }).catch(() => {});
   });
 
-  // Sinf tanlandi → o'quvchilar ro'yxati
   bot.callbackQuery(/^ob:c:(.+)$/, async (ctx) => {
     const classId = ctx.match[1]!;
     await ctx.answerCallbackQuery();
@@ -1238,7 +1204,6 @@ export function createBot(): Bot {
     }).catch(() => {});
   });
 
-  // O'quvchilar sahifasi
   bot.callbackQuery(/^ob:sp:(.+):(\d+)$/, async (ctx) => {
     const classId = ctx.match[1]!;
     const page = parseInt(ctx.match[2] ?? "0", 10);
@@ -1247,61 +1212,66 @@ export function createBot(): Bot {
     await ctx.editMessageReplyMarkup({ reply_markup: buildStudentPageKb(classId, students, page) }).catch(() => {});
   });
 
-  // O'quvchi tanlandi → F.I.O + 5-xonali ID + PAROLSIZ kirish
+  // O'quvchi ism tanlaydi → 6 xonali kod guruhga yuboriladi → o'quvchi kodni botga yozadi
   bot.callbackQuery(/^ob:p:(.+)$/, async (ctx) => {
     const login = ctx.match[1]!;
+    const tgId = ctx.from.id;
     await ctx.answerCallbackQuery();
-    const u = await queryOne<{ full_name: string; login: string; class_name: string | null; maktab_id: number | null }>(
-      "SELECT full_name, login, class_name, maktab_id FROM users WHERE login = $1",
+
+    const u = await queryOne<{ full_name: string; class_name: string | null }>(
+      "SELECT full_name, class_name FROM users WHERE login = $1",
       [login]
-    ).catch(() =>
-      queryOne<{ full_name: string; login: string; class_name: string | null; maktab_id: number | null }>(
-        "SELECT full_name, login, class_name, NULL::int AS maktab_id FROM users WHERE login = $1",
-        [login]
-      ).catch(() => null)
-    );
+    ).catch(() => null);
+
     if (!u) {
       await ctx.editMessageText("❌ O'quvchi topilmadi. Qaytadan urinib ko'ring.", {
         reply_markup: new InlineKeyboard().text("🔙 Sinflar", "ob:student"),
       }).catch(() => {});
       return;
     }
-    const tgId = ctx.from.id;
-    // Bu Telegram akkauntni shu o'quvchiga bog'laymiz (kelgusi /start va xabarlar uchun)
-    await query("UPDATE users SET telegram_id = $1 WHERE login = $2", [tgId, login]).catch(() => {});
 
-    let classId: string | null = null;
-    if (u.class_name) {
-      const c = typeof u.maktab_id === "number"
-        ? await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1 AND maktab_id = $2", [u.class_name, u.maktab_id]).catch(() => null)
-        : await queryOne<{ id: string }>("SELECT id FROM classes WHERE name = $1", [u.class_name]).catch(() => null);
-      classId = c?.id ?? null;
+    const groupIds = await getOtpGroupIds();
+    if (groupIds.length === 0) {
+      await ctx.editMessageText("❌ Kod yuboriladigan guruh sozlanmagan. Admin bilan bog'laning.", {
+        reply_markup: new InlineKeyboard().text("🔙 Sinflar", "ob:student"),
+      }).catch(() => {});
+      return;
     }
 
-    const payload: Record<string, unknown> = {
-      id: String(tgId), role: "student", full_name: u.full_name,
-      login: u.login, class_name: u.class_name ?? "", class_id: classId, telegram_id: tgId,
-    };
-    if (typeof u.maktab_id === "number") payload["maktab_id"] = u.maktab_id;
+    const code = generateOtp();
+    const groupText =
+      `🔐 Kirish kodi\n\n` +
+      `👤 ${u.full_name}\n` +
+      `🏫 ${u.class_name ?? "—"}\n\n` +
+      `🔑 Kod: ${code}\n\n` +
+      `(Kod 5 daqiqa amal qiladi)`;
 
-    const magicToken = createMagicToken(payload);
-    const loginUrl = `${WEBSITE_URL}/login?token=${magicToken}`;
-    const kb = new InlineKeyboard()
-      .url("🚀 Platformaga kirish", loginUrl).row()
-      .text("🔙 Orqaga", "ob:student");
+    let sent = 0;
+    for (const gid of groupIds) {
+      try {
+        await bot.api.sendMessage(gid, groupText);
+        sent++;
+      } catch (err) {
+        logger.warn({ err, chatId: gid }, "Kirish kodini guruhga yuborib bo'lmadi");
+      }
+    }
 
-    const esc = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+    if (sent === 0) {
+      await ctx.editMessageText("❌ Kodni guruhga yuborib bo'lmadi. Admin bilan bog'laning.", {
+        reply_markup: new InlineKeyboard().text("🔙 Sinflar", "ob:student"),
+      }).catch(() => {});
+      return;
+    }
+
+    pendingOtp.set(tgId, { login, code, expires: Date.now() + OTP_TTL_MS });
+    userStates.set(tgId, { type: "awaiting_otp", login });
+
     await ctx.editMessageText(
-      `✅ *${esc(u.full_name)}*\n` +
-      `🏫 ${esc(u.class_name ?? "—")}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `🆔 *5\\-xonali ID:* \`${esc(u.login)}\`\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `Quyidagi tugma orqali *parolsiz*, to'g'ridan\\-to'g'ri kiring 👇\n` +
-      `_(Havola 15 daqiqa amal qiladi)_`,
-      { parse_mode: "MarkdownV2", reply_markup: kb }
+      `📨 Kirish kodi sinf guruhiga yuborildi.\n\n` +
+      `Guruhdan 6 xonali kodni oling va shu yerga yozing 👇\n` +
+      `(Kod 5 daqiqa amal qiladi)`,
+      { reply_markup: new InlineKeyboard().text("🔙 Sinflar", "ob:student") }
     ).catch(() => {});
-    await sendMainMenu(ctx, tgId).catch(() => {});
   });
 
   // ─── Admin: hamma foydalanuvchi + guruhlarga "majburiy obuna" xabari ─────────
@@ -1369,7 +1339,7 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Onboarding: videoni ko'rgach yoki video yo'q → davom etish ──────────────
+  // ─── Onboarding: davom etish ──────────────────────────────────────────────────
   bot.callbackQuery(/^reg_proceed:(student|teacher|sinf_rahbari)$/, async (ctx) => {
     const roleGroup = ctx.match[1] as "student" | "teacher" | "sinf_rahbari";
     const userId = ctx.from.id;
@@ -1392,7 +1362,6 @@ export function createBot(): Bot {
       return;
     }
 
-    // Kod kerak emas — to'g'ridan ro'yxat
     const { rows, table, hasMore } = await getOnboardUserList(roleGroup, 0);
     const labels: Record<string, string> = {
       student: "O'quvchilar",
@@ -1435,7 +1404,6 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Onboarding: orqaga ───────────────────────────────────────────────────────
   bot.callbackQuery("reg_back", async (ctx) => {
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(
@@ -1444,7 +1412,6 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Onboarding: foydalanuvchi tanlandi ──────────────────────────────────────
   bot.callbackQuery(/^reg_pick:(users|staff):(.+)$/, async (ctx) => {
     const table = ctx.match[1] as "users" | "staff";
     const dbId = ctx.match[2];
@@ -1490,7 +1457,6 @@ export function createBot(): Bot {
     );
   });
 
-  // ─── Onboarding: tasdiqlash (Ha, bu men) ─────────────────────────────────────
   bot.callbackQuery(/^reg_yes:(users|staff):(.+)$/, async (ctx) => {
     const table = ctx.match[1] as "users" | "staff";
     const dbId = ctx.match[2];
@@ -1501,7 +1467,6 @@ export function createBot(): Bot {
     const videoFileId = settings.onboardingVideoFileId;
 
     if (videoFileId) {
-      // Yoriqnoma videoni yuborish
       const kb = new InlineKeyboard().text(
         "✅ Ko'rdim, tasdiqlash",
         `reg_watched:${table}:${dbId}`
@@ -1516,14 +1481,12 @@ export function createBot(): Bot {
         reply_markup: kb,
       });
     } else {
-      // Video yo'q — to'g'ridan akkaunt bog'lash
       await ctx.editMessageText("⏳ Akkauntingiz bog'lanmoqda...");
       await sendAccountInfo(ctx, table, dbId, ctx.from.id);
       await sendMainMenu(ctx, ctx.from.id);
     }
   });
 
-  // ─── Onboarding: video ko'rildi → akkaunt bog'lash ───────────────────────────
   bot.callbackQuery(/^reg_watched:(users|staff):(.+)$/, async (ctx) => {
     const table = ctx.match[1] as "users" | "staff";
     const dbId = ctx.match[2];
@@ -1561,6 +1524,54 @@ export function createBot(): Bot {
   bot.on("message:text", async (ctx) => {
     const userId = ctx.from.id;
     const state = userStates.get(userId) ?? { type: "idle" };
+
+    // ── O'quvchi: guruhdagi kirish kodini tekshirish ──────────────────────
+    if (state.type === "awaiting_otp") {
+      const entered = ctx.message.text.trim();
+      const pending = pendingOtp.get(userId);
+
+      if (!pending || pending.expires < Date.now()) {
+        pendingOtp.delete(userId);
+        userStates.set(userId, { type: "idle" });
+        await ctx.reply(
+          "⏰ Kod muddati tugagan. /start yuboring va ismingizni qaytadan tanlang.",
+        );
+        return;
+      }
+
+      if (entered !== pending.code) {
+        await ctx.reply(
+          "❌ Kod noto'g'ri. Guruhdagi oxirgi kodni kiriting.",
+          { reply_markup: new InlineKeyboard().text("🔙 Sinflar", "ob:student") }
+        );
+        return;
+      }
+
+      pendingOtp.delete(userId);
+      userStates.set(userId, { type: "idle" });
+
+      const result = await buildStudentLogin(pending.login, userId);
+      if (!result) {
+        await ctx.reply("❌ O'quvchi topilmadi. Admin bilan bog'laning.");
+        return;
+      }
+
+      const esc = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+      const kb = new InlineKeyboard()
+        .url("🚀 Platformaga kirish", result.loginUrl).row()
+        .text("🔙 Sinflar", "ob:student");
+
+      await ctx.reply(
+        `✅ *Tasdiqlandi\\!*\n\n` +
+        `👤 *${esc(result.user.full_name)}*\n` +
+        `🏫 ${esc(result.user.class_name ?? "—")}\n\n` +
+        `Quyidagi tugma orqali *parolsiz*, to'g'ridan\\-to'g'ri kiring 👇\n` +
+        `_(Havola 15 daqiqa amal qiladi)_`,
+        { parse_mode: "MarkdownV2", reply_markup: kb }
+      );
+      await sendMainMenu(ctx, userId).catch(() => {});
+      return;
+    }
 
     // ── Admin: kanal qo'shish ──────────────────────────────────────────────
     if (state.type === "awaiting_channel" && isAdmin(userId)) {
@@ -1799,7 +1810,6 @@ export function createBot(): Bot {
         );
         return;
       }
-      // Kod to'g'ri — ro'yxatni ko'rsatish
       userStates.set(userId, { type: "idle" });
       const { rows, table, hasMore } = await getOnboardUserList(roleGroup, 0);
       const labels: Record<string, string> = {
@@ -1930,62 +1940,7 @@ export function createBot(): Bot {
       return;
     }
 
-    // ── Oddiy foydalanuvchi ───────────────────────────────────────────────
     await ctx.reply("Boshlash uchun /start yuboring.");
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  O'QUVCHI KIRISH TASDIQLASH
-  //  Ikki prefiks qabul qilinadi: "confirm_student:<token>" va "c:<token>".
-  //  Cancel: "cancel_student:<token>" yoki "x:<token>".
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  bot.callbackQuery(/^(?:confirm_student|c):(.+)$/, async (ctx) => {
-    const token = ctx.match[1];
-    logger.info({ from: ctx.from.id, hasToken: Boolean(token) }, "confirm_student bosildi");
-    if (!token) { await ctx.answerCallbackQuery("Xatolik"); return; }
-    try {
-      const res = await fetch(`${WEBSITE_URL}/api/auth/student/confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, telegram_id: ctx.from.id }),
-      });
-
-      // Javobni avval matn sifatida o'qiymiz: server HTML (404/500) qaytarsa ham
-      // aniq xabar beramiz, "Unexpected token" kabi xato chiqmasin.
-      const raw = await res.text();
-      let data: { ok?: boolean; code?: string; name?: string; class_name?: string; error?: string };
-      try {
-        data = JSON.parse(raw) as typeof data;
-      } catch {
-        logger.error({ status: res.status, preview: raw.slice(0, 120) }, "confirm: JSON emas");
-        await ctx.answerCallbackQuery({ text: `❌ Server javobi noto'g'ri (HTTP ${res.status})`, show_alert: true });
-        return;
-      }
-
-      if (!res.ok || !data.ok) {
-        await ctx.answerCallbackQuery({ text: `❌ ${data.error || "Xatolik"}`.slice(0, 190), show_alert: true });
-        return;
-      }
-
-      await ctx.answerCallbackQuery({ text: "✅ Tasdiqlandi!" });
-      const esc = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
-      await ctx.editMessageText(
-        `✅ *Tasdiqlandi!*\n\n👤 ${esc(data.name || "")}\n🏫 ${esc(data.class_name || "")}\n\n🔑 *Kirish kodi:* \`${data.code}\`\n\n⏱ Kod 5 daqiqa amal qiladi\\.\nPlatformaga qaytib, shu kodni kiriting\\.`,
-        { parse_mode: "MarkdownV2" }
-      );
-    } catch (err) {
-      logger.error({ err }, "confirm_student callback");
-      await ctx.answerCallbackQuery({
-        text: `❌ Xato: ${(err as Error).message.slice(0, 60)}`,
-        show_alert: true,
-      });
-    }
-  });
-
-  bot.callbackQuery(/^(?:cancel_student|x):(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery({ text: "❌ Bekor qilindi" });
-    await ctx.editMessageText("❌ Tasdiqlash bekor qilindi. Qaytadan urinib ko'ring.").catch(() => {});
   });
 
   bot.catch((err) => {
@@ -1993,17 +1948,11 @@ export function createBot(): Bot {
   });
 
   // ─── Kundalik ertalab 7:00 (O'zbekiston UTC+5) jadval xabari ────────────────
-  // Har daqiqa soat tekshiriladi. OLDIN faqat min===0 da ishlardi — agar o'sha
-  // aniq daqiqada server band/uyquda bo'lsa, xabar umuman bormay qolardi. Endi
-  // 7:00–7:14 oynasi + claimJob (DB) ishlatiladi: kuniga aniq BIR marta yuboriladi,
-  // qayta ishga tushsa ham (restart/deploy) takrorlanmaydi.
   setInterval(async () => {
     try {
       const { hour, min } = getTodayUzHourMin();
       const day = getTodayUzDay();
-      // 7:00–7:14 oynasi, dam olish kuni emas (1–6)
       if (hour === 7 && min < 15 && day >= 1 && day <= 6) {
-        // Kun bo'yicha bitta marta — bir nechta instans/restart'da ham takrorlanmaydi
         if (!(await claimJob(`teacher-morning:${uzDateStr()}`))) return;
         logger.info({ day }, "Kundalik jadval xabarlari yuborilmoqda...");
 
@@ -2033,7 +1982,7 @@ export function createBot(): Bot {
     } catch (err) {
       logger.error({ err }, "Kundalik xabar yuborishda xatolik");
     }
-  }, 60 * 1000); // har 1 daqiqada tekshiriladi
+  }, 60 * 1000);
 
   return bot;
 }
