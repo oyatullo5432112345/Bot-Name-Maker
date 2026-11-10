@@ -2,14 +2,14 @@ import { Router, type IRouter } from "express";
 import { randomBytes, randomInt } from "node:crypto";
 import { query, queryOne } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
-import { sendToChat, esc } from "../lib/tg-shared.js";
+import { sendToChat, esc, getClassChats } from "../lib/tg-shared.js";
 import { createToken } from "./auth.js";
 
 const router: IRouter = Router();
 
+const BOT_USERNAME = (process.env["BOT_USERNAME"] ?? "").replace(/^@/, "");
+
 // ─── Sxema ───
-// CREATE TABLE IF NOT EXISTS mavjud jadvalga ustun qo'shmaydi, shuning uchun
-// ALTER ... ADD COLUMN IF NOT EXISTS bilan eski bazani ham yangilaymiz.
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS student_login_codes (
   student_login TEXT PRIMARY KEY,
@@ -28,10 +28,9 @@ CREATE TABLE IF NOT EXISTS student_confirm_tokens (
 ALTER TABLE student_confirm_tokens ADD COLUMN IF NOT EXISTS expected_tg BIGINT;
 ALTER TABLE student_confirm_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '10 minutes');
 `;
-void query(SCHEMA).catch(() => {});
+void query(SCHEMA).catch((e) => logger.error({ err: e }, "student-login schema"));
 
-// ─── 1. O'quvchi "Tasdiqlash" bosganda → o'quvchining SHAXSIY chatiga xabar ───
-// Guruhga yubormaymiz: guruhda boshqa a'zolar ham tugmani bosishi mumkin edi.
+// ─── 1. O'quvchi "Tasdiqlash" bosganda → sinf guruhiga HAVOLA ───
 router.post("/auth/student/request-code", async (req, res) => {
   try {
     const { student_login, class_name, maktab_id } = req.body;
@@ -39,6 +38,12 @@ router.post("/auth/student/request-code", async (req, res) => {
       res.status(400).json({ error: "Ma'lumotlar to'liq emas" });
       return;
     }
+    if (!BOT_USERNAME) {
+      logger.error("BOT_USERNAME sozlanmagan");
+      res.status(500).json({ error: "Server sozlamasi noto'g'ri. Administratorga murojaat qiling." });
+      return;
+    }
+
     const student = await queryOne<{
       login: string;
       full_name: string;
@@ -52,42 +57,59 @@ router.post("/auth/student/request-code", async (req, res) => {
       res.status(404).json({ error: "O'quvchi topilmadi" });
       return;
     }
+    // Tasdiqlash faqat bog'langan akkaunt uchun: kodni boshqa odam ololmasligi uchun
     if (!student.telegram_id) {
       res.status(400).json({
-        error: "Akkauntingiz Telegram botga bog'lanmagan. Botda /start yuboring va qayta urinib ko'ring.",
+        error: "Akkauntingiz Telegram botga bog'lanmagan. Botda o'quvchi sifatida bog'laning va qayta urinib ko'ring.",
       });
       return;
     }
 
-    // Kriptografik xavfsiz token (32 belgi → callback_data 64 baytdan kichik)
-    const token = randomBytes(16).toString("hex");
-
-    await query(
-      `INSERT INTO student_confirm_tokens (token, student_login, expected_tg)
-       VALUES ($1, $2, $3)`,
-      [token, student.login, Number(student.telegram_id)]
+    const cls = await queryOne<{ id: string }>(
+      "SELECT id FROM classes WHERE name = $1 AND maktab_id = $2",
+      [class_name, maktab_id]
     );
-
-    const confirmText =
-      `🎓 <b>${esc(student.full_name)}</b> (${esc(student.class_name)}) platformaga kirmoqchi.\n\n` +
-      `Agar bu siz bo'lsangiz — tasdiqlang. Bo'lmasa — bekor qiling.`;
-
-    const replyMarkup = {
-      inline_keyboard: [[
-        { text: "✅ Tasdiqlash", callback_data: `c:${token}` },
-        { text: "❌ Bekor qilish", callback_data: `x:${token}` },
-      ]],
-    };
-
-    try {
-      await sendToChat(Number(student.telegram_id), confirmText, { reply_markup: replyMarkup });
-    } catch (e) {
-      logger.warn({ err: e }, "O'quvchiga tasdiqlash xabari yuborilmadi");
-      res.status(500).json({ error: "Xabar yuborilmadi. Botga /start yuboring va qayta urinib ko'ring." });
+    if (!cls) {
+      res.status(404).json({ error: "Sinf topilmadi" });
+      return;
+    }
+    const chats = await getClassChats(cls.id);
+    if (chats.length === 0) {
+      res.status(400).json({ error: "Sinf guruhi botga ulanmagan. Maktab ma'muriyatiga murojaat qiling." });
       return;
     }
 
-    res.json({ ok: true });
+    const token = randomBytes(16).toString("hex"); // 32 belgi, start payload chegarasi ichida
+
+    await query(
+      `INSERT INTO student_confirm_tokens (token, student_login, expected_tg) VALUES ($1, $2, $3)`,
+      [token, student.login, Number(student.telegram_id)]
+    );
+
+    const groupText =
+      `🎓 <b>${esc(student.full_name)}</b> (${esc(student.class_name)}) platformaga kirmoqchi.\n\n` +
+      `Tasdiqlash uchun quyidagi tugmani bosing. Kod faqat o'quvchining o'zining shaxsiy chatiga yuboriladi.`;
+
+    const replyMarkup = {
+      inline_keyboard: [[
+        { text: "🔐 Tasdiqlash", url: `https://t.me/${BOT_USERNAME}?start=confirm_${token}` },
+      ]],
+    };
+
+    let sent = 0;
+    for (const chat of chats) {
+      try {
+        await sendToChat(chat.chat_id, groupText, { reply_markup: replyMarkup });
+        sent++;
+      } catch (e) {
+        logger.warn({ err: e, chat: chat.chat_id }, "Sinf guruhiga xabar yuborilmadi");
+      }
+    }
+    if (sent === 0) {
+      res.status(500).json({ error: "Xabar yuborilmadi" });
+      return;
+    }
+    res.json({ ok: true, sent });
   } catch (err) {
     logger.error({ err }, "student/request-code");
     res.status(500).json({ error: (err as Error).message });
@@ -242,13 +264,12 @@ router.post("/auth/student/confirm", async (req, res): Promise<void> => {
       res.status(400).json({ error: "Havola muddati o'tgan. Platformada qaytadan so'rang." });
       return;
     }
-    // Tugmani faqat o'quvchining o'zi bosishi mumkin
     if (row.expected_tg == null || Number(telegram_id) !== Number(row.expected_tg)) {
       res.status(403).json({ error: "Bu tugma sizga tegishli emas" });
       return;
     }
 
-    // Atomik "claim": ikki so'rov bir vaqtda kelsa, faqat bittasi o'tadi
+    // Atomik claim: bir tokendan faqat bitta kod chiqadi
     const claimed = await queryOne<{ token: string }>(
       "UPDATE student_confirm_tokens SET used = TRUE WHERE token = $1 AND used = FALSE RETURNING token",
       [token]
