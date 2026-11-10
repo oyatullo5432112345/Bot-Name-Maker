@@ -1,23 +1,31 @@
-// Kirish IDlari — faqat O'QITUVCHILAR uchun 5 xonali ID.
-// O'quvchilar endi 4 xonali kod bilan kiradi (bot orqali) — bu sahifada ko'rinmaydi.
-// Admin: "Yangilash" tugmasi bilan barcha xodimlarga 5 xonali ID beradi.
+// Kirish IDlari — xodimlar (o'qituvchi va rahbariyat) uchun 5 xonali ID.
+// Ekranda chiroyli jadval, "Chop etish" esa rasmiy A4 varaqni chiqaradi.
 
-import { useEffect, useState } from "react";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { KeyRound, Printer, RefreshCw, Loader2, Users, Wand2, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  KeyRound, Printer, RefreshCw, Loader2, Users, Wand2, CheckCircle2, AlertCircle,
+} from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
+
 function authHeaders(): HeadersInit {
   const t = localStorage.getItem("talim_auth_token");
-  return t ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+  return t
+    ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" }
+    : { "Content-Type": "application/json" };
 }
+
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const r = await fetch(`${API_BASE}${path}`, { ...init, headers: { ...authHeaders(), ...(init.headers ?? {}) } });
+  const r = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: { ...authHeaders(), ...(init.headers ?? {}) },
+  });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((data as { error?: string }).error ?? `Xatolik (${r.status})`);
   return data as T;
@@ -29,6 +37,7 @@ interface StaffIdRow {
   login: string;
   role: string;
   login_id: string | null;
+  subjects?: string[] | null;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -41,6 +50,83 @@ const ROLE_LABELS: Record<string, string> = {
   boshlangich_oqituvchi: "Boshlang'ich o'qituvchi",
 };
 
+// Ro'yxatdagi tartib: avval rahbariyat, keyin o'qituvchilar
+const ROLE_ORDER = [
+  "director", "zam_direktor", "zavuch", "sinf_rahbari",
+  "teacher", "boshlangich_oqituvchi", "kutubxonachi",
+];
+
+const roleRank = (role: string) => {
+  const i = ROLE_ORDER.indexOf(role);
+  return i === -1 ? 99 : i;
+};
+
+// Lavozim matni: fan bor bo'lsa "Matematika o'qituvchisi" ko'rinishida
+function positionLabel(r: StaffIdRow): string {
+  const subjects = (r.subjects ?? []).filter(Boolean);
+  if (subjects.length > 0) {
+    if (r.role === "teacher") return `${subjects.join(", ")} o'qituvchisi`;
+    if (r.role === "sinf_rahbari") return `Sinf rahbari (${subjects.join(", ")} o'qituvchisi)`;
+  }
+  return ROLE_LABELS[r.role] ?? r.role;
+}
+
+function todayStr(): string {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
+
+// Jadval: ekran va chop etish uchun bir xil
+function StaffTable({
+  rows,
+  actions,
+}: {
+  rows: StaffIdRow[];
+  actions?: (r: StaffIdRow) => ReactNode;
+}) {
+  return (
+    <table className="w-full border-collapse text-sm text-slate-900 bg-white">
+      <thead>
+        <tr className="bg-[#1e2a5a] text-white">
+          <th className="px-3 py-2.5 text-left font-semibold w-10">№</th>
+          <th className="px-3 py-2.5 text-left font-semibold">F.I.O</th>
+          <th className="px-3 py-2.5 text-left font-semibold">Lavozim</th>
+          <th className="px-3 py-2.5 text-center font-semibold w-36">Kirish ID</th>
+          {actions && <th className="px-3 py-2.5 w-12 no-print" />}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => {
+          const hasId = !!r.login_id && r.login_id.length === 5;
+          return (
+            <tr
+              key={r.id}
+              className={`${i % 2 ? "bg-slate-50" : "bg-white"} border-b border-slate-200`}
+              style={{ pageBreakInside: "avoid" }}
+            >
+              <td className="px-3 py-2.5 text-slate-500 tabular-nums">{i + 1}</td>
+              <td className="px-3 py-2.5 font-semibold">{r.full_name}</td>
+              <td className="px-3 py-2.5">{positionLabel(r)}</td>
+              <td className="px-3 py-2.5 text-center">
+                {hasId ? (
+                  <span className="font-mono text-lg font-black tracking-[0.25em] text-[#1e2a5a]">
+                    {r.login_id}
+                  </span>
+                ) : (
+                  <span className="text-xs font-semibold text-rose-500">Berilmagan</span>
+                )}
+              </td>
+              {actions && <td className="px-3 py-2.5 text-right no-print">{actions(r)}</td>}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 export default function LoginIdsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -49,35 +135,43 @@ export default function LoginIdsPage() {
   const [regenerating, setRegenerating] = useState(false);
 
   const isAdmin = user?.role === "admin";
-  const canSeeAll = !!user && ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
+  const canSeeAll =
+    !!user && ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
 
-  // O'z ID sini ko'rish
   useEffect(() => {
-    api<{ login_id: string }>("/auth/my-id").then((d) => setMyId(d.login_id)).catch(() => {});
+    api<{ login_id: string }>("/auth/my-id")
+      .then((d) => setMyId(d.login_id))
+      .catch(() => {});
   }, []);
 
-  // Barcha xodimlar ro'yxati (5 xonali ID lar bilan)
   const staffList = useQuery<StaffIdRow[]>({
     queryKey: ["staff-ids-all"],
     queryFn: () => api<StaffIdRow[]>("/admin/staff-ids"),
     enabled: canSeeAll,
   });
 
-  // Statistika
-  const stats = (() => {
-    const rows = staffList.data ?? [];
-    const withId = rows.filter(r => r.login_id && r.login_id.length === 5).length;
-    const withoutId = rows.filter(r => !r.login_id || r.login_id.length !== 5).length;
-    return { total: rows.length, withId, withoutId };
-  })();
+  // Admin akkaunti ro'yxatga kirmaydi; qolganlari lavozim tartibida chiqadi
+  const rows = useMemo(() => {
+    return (staffList.data ?? [])
+      .filter((r) => r.role !== "admin")
+      .sort(
+        (a, b) =>
+          roleRank(a.role) - roleRank(b.role) ||
+          a.full_name.localeCompare(b.full_name, "uz")
+      );
+  }, [staffList.data]);
 
-  // Barcha ID larni yangilash (5 xonali formatda)
+  const stats = useMemo(() => {
+    const withId = rows.filter((r) => r.login_id && r.login_id.length === 5).length;
+    return { total: rows.length, withId, withoutId: rows.length - withId };
+  }, [rows]);
+
   const handleRegenerateAll = async () => {
-    if (!confirm("Barcha xodimlarga yangi 5 xonali ID berilsinmi?\n\nEski ID lar bekor qilinadi va yangilari beriladi. Bu amalni qaytarib bo'lmaydi.")) return;
+    if (!confirm("Barcha xodimlarga yangi 5 xonali ID berilsinmi?\n\nEski ID lar bekor qilinadi. Bu amalni qaytarib bo'lmaydi.")) return;
     setRegenerating(true);
     try {
       const r = await api<{ updated: number }>("/admin/staff-ids/regenerate-all", { method: "POST" });
-      toast({ title: "Yangilandi ✅", description: `${r.updated} ta xodimga yangi 5 xonali ID berildi` });
+      toast({ title: "Yangilandi ✅", description: `${r.updated} ta xodimga yangi ID berildi` });
       await qc.invalidateQueries({ queryKey: ["staff-ids-all"] });
     } catch (e) {
       toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
@@ -86,7 +180,6 @@ export default function LoginIdsPage() {
     }
   };
 
-  // Bitta ID ni yangilash
   const regenerateOne = async (staffId: string, fullName: string) => {
     if (!confirm(`${fullName} uchun yangi 5 xonali ID berilsinmi?`)) return;
     try {
@@ -104,39 +197,54 @@ export default function LoginIdsPage() {
   const print = () => window.print();
 
   return (
-    <div className="space-y-4 max-w-3xl">
-      <style>{`@media print { .no-print { display:none !important; } body * { visibility:hidden; } .print-area, .print-area * { visibility:visible; } .print-area { position:fixed; inset:0; padding:24px; } }`}</style>
+    <div className="space-y-4 max-w-4xl">
+      {/* Chop etish uchun uslublar */}
+      <style>{`
+        @page { size: A4; margin: 12mm; }
+        @media print {
+          .no-print { display: none !important; }
+          body * { visibility: hidden; }
+          #print-sheet, #print-sheet * { visibility: visible; }
+          #print-sheet {
+            position: absolute; left: 0; top: 0; width: 100%;
+            background: #fff; color: #0f172a;
+          }
+          #print-sheet thead { display: table-header-group; }
+          #print-sheet tr { page-break-inside: avoid; }
+          * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+      `}</style>
 
       {/* Sarlavha */}
       <div className="flex flex-wrap items-center gap-3 no-print">
         <div className="flex items-center gap-2">
           <KeyRound className="w-6 h-6 text-primary" />
           <h1 className="text-xl font-bold">Kirish ID lari</h1>
-          <Badge variant="outline" className="text-xs">O'qituvchilar uchun</Badge>
+          <Badge variant="outline" className="text-xs">Xodimlar uchun</Badge>
         </div>
         <div className="flex-1" />
         <Button variant="outline" size="sm" onClick={() => void staffList.refetch()}>
           <RefreshCw className="w-4 h-4 sm:mr-1.5" />
           <span className="hidden sm:inline">Yangilash</span>
         </Button>
-        <Button size="sm" onClick={print}>
+        <Button size="sm" onClick={print} disabled={rows.length === 0}>
           <Printer className="w-4 h-4 sm:mr-1.5" />
           <span className="hidden sm:inline">Chop etish</span>
         </Button>
       </div>
 
-      {/* Ogohlantirish — o'quvchilar endi bu sahifada yo'q */}
+      {/* Ogohlantirish */}
       <Card className="no-print border-amber-500/30 bg-amber-500/5">
         <CardContent className="pt-4 text-sm text-amber-700 dark:text-amber-300 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
           <div>
-            <b>Diqqat:</b> O'quvchilar endi <b>4 xonali kod</b> bilan kiradi (bot orqali). Bu sahifada faqat
-            <b> o'qituvchilar va xodimlar</b> uchun 5 xonali ID ko'rsatiladi.
+            <b>Diqqat:</b> O'quvchilar <b>4 xonali kod</b> bilan kiradi (bot orqali). Bu sahifada faqat{" "}
+            <b>xodimlar</b> uchun 5 xonali ID ko'rsatiladi.
           </div>
         </CardContent>
       </Card>
 
-      {/* O'z ID si */}
+      {/* Shaxsiy ID */}
       {myId && (
         <div className="no-print rounded-2xl border-2 border-primary/40 bg-gradient-to-br from-primary/10 to-primary/5 px-5 py-4 flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shrink-0 shadow-lg shadow-primary/30">
@@ -152,7 +260,7 @@ export default function LoginIdsPage() {
       {/* Statistika */}
       {canSeeAll && staffList.data && (
         <div className="no-print grid grid-cols-3 gap-2">
-          <Card className="border-border">
+          <Card>
             <CardContent className="py-3 text-center">
               <div className="text-xs text-muted-foreground font-bold uppercase">Jami</div>
               <div className="text-2xl font-black text-primary">{stats.total}</div>
@@ -177,17 +285,17 @@ export default function LoginIdsPage() {
         </div>
       )}
 
-      {/* Yangilash tugmasi (faqat admin) */}
+      {/* Hammasini yangilash (faqat admin) */}
       {isAdmin && stats.withoutId > 0 && (
         <Card className="no-print border-amber-500/40 bg-amber-500/10">
           <CardContent className="pt-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <div className="flex-1">
               <div className="font-bold text-amber-700 dark:text-amber-300 flex items-center gap-2">
                 <Wand2 className="w-5 h-5" />
-                {stats.withoutId} ta xodimga 5 xonali ID berilmagan
+                {stats.withoutId} ta xodimga ID berilmagan
               </div>
               <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                "Hammasini yangilash" tugmasi barcha xodimlarga yangi 5 xonali ID beradi.
+                "Hammasini yangilash" barcha xodimlarga yangi 5 xonali ID beradi.
               </div>
             </div>
             <Button
@@ -202,52 +310,37 @@ export default function LoginIdsPage() {
         </Card>
       )}
 
-      {staffList.isLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>}
-      {staffList.isError && <div className="text-destructive text-sm">{(staffList.error as Error).message}</div>}
+      {staffList.isLoading && (
+        <div className="flex justify-center py-8 no-print"><Loader2 className="w-6 h-6 animate-spin" /></div>
+      )}
+      {staffList.isError && (
+        <div className="text-destructive text-sm no-print">{(staffList.error as Error).message}</div>
+      )}
 
-      {/* Ro'yxat */}
-      {staffList.data && staffList.data.length > 0 && (
-        <div className="print-area">
-          <div className="text-lg font-bold mb-3 hidden print:block">
-            Xodimlar — 5 xonali kirish IDlari
+      {/* Ekrandagi jadval */}
+      {rows.length > 0 && (
+        <div className="no-print rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
+          <div className="overflow-x-auto">
+            <StaffTable
+              rows={rows}
+              actions={
+                isAdmin
+                  ? (r) => (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void regenerateOne(r.id, r.full_name)}
+                        title="Yangi ID berish"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
+                      </Button>
+                    )
+                  : undefined
+              }
+            />
           </div>
-          <div className="rounded-xl border divide-y overflow-hidden">
-            {staffList.data.map((r, i) => {
-              const hasId = r.login_id && r.login_id.length === 5;
-              return (
-                <div key={r.id} className="flex items-center gap-3 px-4 py-3 hover:bg-accent/30 transition-colors">
-                  <span className="w-7 text-right text-muted-foreground text-sm tabular-nums">{i + 1}.</span>
-                  <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">
-                    {r.full_name[0]?.toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{r.full_name}</div>
-                    <div className="text-xs text-muted-foreground">{ROLE_LABELS[r.role] ?? r.role}</div>
-                  </div>
-                  {hasId ? (
-                    <span className="font-mono font-bold text-lg tracking-widest text-primary w-24 text-right">
-                      {r.login_id}
-                    </span>
-                  ) : (
-                    <Badge variant="outline" className="text-xs border-rose-400 text-rose-500">Yo'q</Badge>
-                  )}
-                  {isAdmin && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="no-print"
-                      onClick={() => void regenerateOne(r.id, r.full_name)}
-                      title="Yangi ID berish"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-2 text-xs text-muted-foreground">
-            Jami: {staffList.data.length} ta xodim
+          <div className="px-4 py-2 text-xs text-muted-foreground bg-slate-50 border-t border-slate-200">
+            Jami: {rows.length} ta xodim
             {stats.withoutId > 0 && ` · ${stats.withoutId} tasiga ID berilmagan`}
           </div>
         </div>
@@ -262,6 +355,48 @@ export default function LoginIdsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Chop etish varag'i (faqat chop etishda ko'rinadi) */}
+      <div id="print-sheet" className="hidden print:block">
+        <div className="flex items-center justify-between gap-4 border-b-4 border-[#1e2a5a] pb-3 mb-4">
+          <img src="/tuman-logo.jpg" alt="" className="h-20 w-20 object-contain" />
+          <div className="text-center flex-1">
+            <div className="text-[11px] uppercase tracking-[0.25em] text-slate-500">Toshloq tumani</div>
+            <div className="text-lg font-black text-[#1e2a5a] leading-tight">
+              Maktabgacha va maktab ta'limi bo'limi
+            </div>
+            <div className="text-sm font-bold mt-1 text-slate-700">
+              TA'LIM PLATFORM — XODIMLAR KIRISH IDLARI
+            </div>
+          </div>
+          <img src="/kelajak-logo.jpg" alt="" className="h-20 w-20 object-contain rounded-lg" />
+        </div>
+
+        <div className="rounded-lg overflow-hidden border border-slate-300">
+          <StaffTable rows={rows} />
+        </div>
+
+        <div className="mt-3 text-xs text-slate-600 flex justify-between">
+          <span>Jami: <b>{rows.length}</b> ta xodim</span>
+          <span>Sana: <b>{todayStr()}</b></span>
+        </div>
+
+        <div className="mt-10 grid grid-cols-2 gap-16 text-sm">
+          <div>
+            <div className="border-b border-slate-700 h-8" />
+            <div className="mt-1 text-slate-600">Direktor (imzo)</div>
+          </div>
+          <div>
+            <div className="border-b border-slate-700 h-8" />
+            <div className="mt-1 text-slate-600">M.O.</div>
+          </div>
+        </div>
+
+        <div className="mt-8 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-[11px] text-rose-800">
+          <b>Diqqat:</b> ushbu kirish IDlari maxfiy. Har bir ID faqat tegishli xodimga beriladi
+          va uchinchi shaxslarga berilmaydi.
+        </div>
+      </div>
     </div>
   );
-                                               }
+  }
