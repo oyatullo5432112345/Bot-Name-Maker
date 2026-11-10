@@ -1,5 +1,6 @@
-// Face ID — bugungi keldi/ketdini qo'lda to'g'rilash (rahbariyat / sinf rahbari).
-// Ruxsat bilan erta ketgan, yoki Face ID ishlamagan holatlar uchun.
+// Face ID — bugungi davomat, qo'lda to'g'rilash.
+// Faol ro'yxat: Face ID bilan aniqlanmagan (yoki hali ishlov berilmagan) o'quvchilar.
+// Arxiv: Face ID bilan aniqlanganlar va qo'lda ishlov berilganlar. Tiklab, tuzatish mumkin.
 
 import { useEffect, useState, useMemo } from "react";
 import { Link } from "wouter";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { ClassChips } from "@/components/class-chips";
 import {
   ArrowLeft, Loader2, LogIn, DoorOpen, ShieldCheck, X, Clock, UserX, Download, Repeat, Palette,
-  Stethoscope, CheckCircle2, AlertTriangle,
+  Stethoscope, CheckCircle2, AlertTriangle, Archive, RotateCcw, ScanFace, CheckCheck,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
@@ -18,21 +19,41 @@ import { api, API_BASE, authHeaders } from "@/lib/face";
 
 interface ClassRow { class_name: string; total?: number; enrolled?: number }
 interface TodayRow {
-  login: string; full_name: string;
-  arrived: string | null; status: string | null;
-  left: string | null; early: boolean; excused: boolean;
+  login: string;
+  full_name: string;
+  arrived: string | null;
+  status: string | null;
+  left: string | null;
+  early: boolean;
+  excused: boolean;
   chronic: boolean;
+  face_seen: boolean;   // Face ID bilan aniqlangan
+  archived: boolean;    // arxivda
 }
+
+type Action = "in" | "out" | "out_excused" | "clear" | "absent_excused" | "club";
+type Tab = "active" | "archive";
+
+const ACTION_LABEL: Record<Action, string> = {
+  in: "keldi",
+  out: "ketdi",
+  out_excused: "ruxsat bilan ketdi",
+  absent_excused: "sababli (kelmadi)",
+  club: "to'garakda qoldi",
+  clear: "tozalandi",
+};
 
 export default function FaceTodayPage() {
   const qc = useQueryClient();
   const { user } = useAuth();
   const scoped = !!user && ["sinf_rahbari", "boshlangich_oqituvchi"].includes(user.role);
   const isManager = !!user && ["admin", "director", "zam_direktor", "zavuch"].includes(user.role);
+
   const [cls, setCls] = useState<string>(scoped ? (user?.class_name ?? "") : "");
   const [time, setTime] = useState("");
   const [busy, setBusy] = useState("");
   const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<Tab>("active");
   const [dl, setDl] = useState(false);
 
   const classes = useQuery<ClassRow[]>({
@@ -46,24 +67,23 @@ export default function FaceTodayPage() {
 
   const list = useQuery<TodayRow[]>({
     queryKey: ["faceid-today", cls],
-    queryFn: () => api<TodayRow[]>(`/faceid/today?class_name=${encodeURIComponent(cls)}`),
+    queryFn: () => api<TodayRow[]>(`/faceid/today-list?class_name=${encodeURIComponent(cls)}`),
     enabled: !!cls,
     refetchInterval: 30_000,
   });
 
-  // Sinf bo'yicha statistika (keldi / sababli / kelmagan / foiz)
+  const refresh = () => qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
+
+  // Statistika — butun sinf bo'yicha (faol + arxiv)
   const stats = useMemo(() => {
     const rows = list.data ?? [];
     const total = rows.length;
-    let arrived = 0;   // kelgan (keldi + kech keldi)
-    let excused = 0;   // sababli
-    let absent = 0;    // kelmagan (sababsiz)
+    let arrived = 0, excused = 0, absent = 0;
     for (const r of rows) {
       if (r.arrived) arrived++;
       else if (r.excused) excused++;
       else absent++;
     }
-    // Foiz: keldi + sababli (ular "yo'q" hisoblanmaydi) / jami
     const pct = total > 0 ? Math.round(((arrived + excused) / total) * 100) : 0;
     let color: "green" | "amber" | "red" = "green";
     if (absent > 0) color = "red";
@@ -71,7 +91,20 @@ export default function FaceTodayPage() {
     return { total, arrived, excused, absent, pct, color };
   }, [list.data]);
 
-  const act = (login: string, action: "in" | "out" | "out_excused" | "clear" | "absent_excused" | "club", name: string) => async () => {
+  const activeCount = (list.data ?? []).filter((r) => !r.archived).length;
+  const archiveCount = (list.data ?? []).filter((r) => r.archived).length;
+
+  const visible = (list.data ?? [])
+    .filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase()))
+    .filter((r) => (tab === "archive" ? r.archived : !r.archived));
+
+  const setArchive = (login: string, archived: boolean | null) =>
+    api("/faceid/today-archive", {
+      method: "POST",
+      body: JSON.stringify({ student_login: login, archived }),
+    });
+
+  const act = (login: string, action: Action, name: string) => async () => {
     let reason: string | undefined;
     if (action === "absent_excused") {
       const r = window.prompt(`${name} — bugun sababli (kela olmaydi).\nSababini yozing (guruhga shu matn chiqadi):`, "");
@@ -80,13 +113,46 @@ export default function FaceTodayPage() {
     }
     setBusy(`${login}:${action}`);
     try {
-      await api("/faceid/manual", { method: "POST", body: JSON.stringify({ student_login: login, action, time: time || undefined, reason }) });
-      const msg = action === "in" ? "keldi" : action === "out" ? "ketdi" : action === "out_excused" ? "ruxsat bilan ketdi" : action === "absent_excused" ? "sababli (kelmadi)" : action === "club" ? "to'garakda qoldi" : "tozalandi";
-      toast({ title: `${name}: ${msg}` });
-      void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
+      await api("/faceid/manual", {
+        method: "POST",
+        body: JSON.stringify({ student_login: login, action, time: time || undefined, reason }),
+      });
+      // Qo'lda ishlov berilgan o'quvchi faol ro'yxatdan chiqadi (arxivga);
+      // "tozalash" bo'lsa standart holatiga qaytadi.
+      await setArchive(login, action === "clear" ? null : true).catch(() => {});
+      toast({ title: `${name}: ${ACTION_LABEL[action]}` });
+      void refresh();
     } catch (e) {
       toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
-    } finally { setBusy(""); }
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const archiveOne = (login: string, name: string) => async () => {
+    setBusy(`${login}:archive`);
+    try {
+      await setArchive(login, true);
+      toast({ title: `${name}: arxivga o'tkazildi` });
+      void refresh();
+    } catch (e) {
+      toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const restoreOne = (login: string, name: string) => async () => {
+    setBusy(`${login}:restore`);
+    try {
+      await setArchive(login, false);
+      toast({ title: `${name}: faol ro'yxatga qaytarildi`, description: "Endi tuzatishingiz mumkin" });
+      void refresh();
+    } catch (e) {
+      toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
+    } finally {
+      setBusy("");
+    }
   };
 
   const toggleChronic = (login: string, name: string, on: boolean) => async () => {
@@ -100,10 +166,12 @@ export default function FaceTodayPage() {
     try {
       await api("/faceid/chronic", { method: "POST", body: JSON.stringify({ student_login: login, on, note }) });
       toast({ title: `${name}: ${on ? "muntazam deb belgilandi" : "muntazamdan chiqarildi"}` });
-      void qc.invalidateQueries({ queryKey: ["faceid-today", cls] });
+      void refresh();
     } catch (e) {
       toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
-    } finally { setBusy(""); }
+    } finally {
+      setBusy("");
+    }
   };
 
   const downloadArchive = async () => {
@@ -115,17 +183,19 @@ export default function FaceTodayPage() {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `davomat-${d}.doc`;
-      document.body.appendChild(a); a.click(); a.remove();
+      a.href = url;
+      a.download = `davomat-${d}.doc`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
       toast({ variant: "destructive", title: "Xatolik", description: (e as Error).message });
-    } finally { setDl(false); }
+    } finally {
+      setDl(false);
+    }
   };
 
-  const rows = (list.data ?? []).filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase()));
-
-  // Ranglar
   const statColor = {
     green: { bg: "bg-emerald-500/15", border: "border-emerald-500/40", text: "text-emerald-600 dark:text-emerald-400", icon: CheckCircle2 },
     amber: { bg: "bg-amber-500/15", border: "border-amber-500/40", text: "text-amber-600 dark:text-amber-400", icon: AlertTriangle },
@@ -135,21 +205,32 @@ export default function FaceTodayPage() {
   const SIcon = SC.icon;
 
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="space-y-4 max-w-3xl mx-auto">
+      {/* Sarlavha */}
       <div className="flex items-center gap-3">
-        {isManager && <Link href="/faceid"><Button variant="ghost" size="icon"><ArrowLeft className="w-5 h-5" /></Button></Link>}
-        <div className="flex-1">
-          <h1 className="text-xl font-bold flex items-center gap-2"><Clock className="w-5 h-5 text-primary" /> Bugungi davomat — qo'lda</h1>
-          <p className="text-sm text-muted-foreground">Ruxsat bilan erta ketgan yoki Face ID ishlamagan holatlarni to'g'rilash</p>
+        {isManager && (
+          <Link href="/faceid">
+            <Button variant="ghost" size="icon"><ArrowLeft className="w-5 h-5" /></Button>
+          </Link>
+        )}
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <Clock className="w-5 h-5 text-primary" /> Bugungi davomat
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Face ID aniqlamagan o'quvchilarni shu yerda to'g'rilang
+          </p>
         </div>
         {isManager && (
           <Button variant="outline" size="sm" onClick={() => void downloadArchive()} disabled={dl} className="shrink-0">
             {dl ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Download className="w-4 h-4 mr-1" />}
-            Kunlik hisobot (Word)
+            <span className="hidden sm:inline">Kunlik hisobot (Word)</span>
+            <span className="sm:hidden">Word</span>
           </Button>
         )}
       </div>
 
+      {/* Filtrlar */}
       <Card>
         <CardContent className="pt-4 space-y-3">
           {!scoped && (
@@ -159,18 +240,28 @@ export default function FaceTodayPage() {
             </div>
           )}
           <div className="flex flex-col sm:flex-row gap-2">
-            <Input placeholder="Ism bo'yicha qidirish…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input
+              placeholder="Ism bo'yicha qidirish…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-sm text-muted-foreground whitespace-nowrap">Vaqt:</span>
               <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-28" />
-              {time && <button onClick={() => setTime("")} className="text-muted-foreground hover:text-foreground" title="Tozalash"><X className="w-4 h-4" /></button>}
+              {time && (
+                <button onClick={() => setTime("")} className="text-muted-foreground hover:text-foreground" title="Tozalash">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">Vaqt bo'sh bo'lsa — hozirgi vaqt ishlatiladi. To'ldirsangiz — o'sha vaqt yoziladi.</p>
+          <p className="text-xs text-muted-foreground">
+            Vaqt bo'sh bo'lsa — hozirgi vaqt yoziladi. Qo'lda belgilangan o'quvchi arxivga o'tadi.
+          </p>
         </CardContent>
       </Card>
 
-      {/* Sinfning umumiy holati — rangli karta */}
+      {/* Sinf holati */}
       {cls && !list.isLoading && stats.total > 0 && (
         <Card className={`border-2 ${SC.border} ${SC.bg} overflow-hidden`}>
           <CardContent className="pt-4">
@@ -199,7 +290,9 @@ export default function FaceTodayPage() {
             </div>
             <div className="mt-3 h-2 rounded-full bg-background/60 overflow-hidden">
               <div
-                className={`h-full transition-all duration-500 ${stats.color === "green" ? "bg-emerald-500" : stats.color === "amber" ? "bg-amber-500" : "bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500"}`}
+                className={`h-full transition-all duration-500 ${
+                  stats.color === "green" ? "bg-emerald-500" : stats.color === "amber" ? "bg-amber-500" : "bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500"
+                }`}
                 style={{ width: `${stats.pct}%` }}
               />
             </div>
@@ -210,16 +303,53 @@ export default function FaceTodayPage() {
         </Card>
       )}
 
+      {/* Tablar: Faol / Arxiv */}
+      {cls && (
+        <div className="inline-flex w-full sm:w-auto rounded-xl bg-muted p-1">
+          {([
+            { k: "active" as const, label: "Faol ro'yxat", count: activeCount, icon: ShieldCheck },
+            { k: "archive" as const, label: "Arxiv", count: archiveCount, icon: Archive },
+          ]).map((t) => {
+            const on = tab === t.k;
+            const TIcon = t.icon;
+            return (
+              <button
+                key={t.k}
+                type="button"
+                onClick={() => setTab(t.k)}
+                className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${
+                  on ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <TIcon className="w-4 h-4" />
+                {t.label}
+                <span className={`tabular-nums rounded-full px-2 py-0.5 text-xs ${
+                  on ? "bg-primary/15 text-primary" : "bg-background/60 text-muted-foreground"
+                }`}>
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {tab === "archive" && cls && (
+        <p className="text-xs text-muted-foreground -mt-1">
+          Bu yerda Face ID bilan aniqlangan va qo'lda ishlov berilgan o'quvchilar turadi.
+          "Tiklash" bosilsa, o'quvchi faol ro'yxatga qaytadi va tuzatish mumkin bo'ladi.
+        </p>
+      )}
+
       {list.isLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>}
       {list.isError && <div className="text-destructive text-sm">{(list.error as Error).message}</div>}
 
+      {/* Ro'yxat */}
       <div className="space-y-2">
-        {rows.map((r) => {
+        {visible.map((r) => {
           const b = busy.startsWith(`${r.login}:`);
-          // Rang holati: kelgan (yashil), sababli (sariq), kelmagan (qizil)
           const isArrived = !!r.arrived;
           const isExcused = !r.arrived && r.excused;
-          const isAbsent = !r.arrived && !r.excused;
           const cardCls = isArrived
             ? "border-emerald-500/40 bg-emerald-500/5"
             : isExcused
@@ -228,20 +358,28 @@ export default function FaceTodayPage() {
           return (
             <div key={r.login} className={`rounded-xl border-2 ${cardCls} px-4 py-3 transition-colors`}>
               <div className="flex items-center gap-3">
-                {/* Chap holat indikatori */}
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                  isArrived ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" :
-                  isExcused ? "bg-amber-500/20 text-amber-600 dark:text-amber-400" :
-                  "bg-rose-500/20 text-rose-600 dark:text-rose-400"
+                  isArrived ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                  : isExcused ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                  : "bg-rose-500/20 text-rose-600 dark:text-rose-400"
                 }`}>
-                  {isArrived ? <CheckCircle2 className="w-5 h-5" /> :
-                   isExcused ? <Stethoscope className="w-5 h-5" /> :
-                   <UserX className="w-5 h-5" />}
+                  {isArrived ? <CheckCircle2 className="w-5 h-5" />
+                    : isExcused ? <Stethoscope className="w-5 h-5" />
+                    : <UserX className="w-5 h-5" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate flex items-center gap-2">
+                  <div className="font-medium truncate flex items-center gap-2 flex-wrap">
                     {r.full_name}
-                    {r.chronic && <span className="text-[10px] font-bold uppercase tracking-wide text-rose-600 bg-rose-500/10 border border-rose-500/30 rounded px-1.5 py-0.5">Muntazam</span>}
+                    {r.chronic && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-rose-600 bg-rose-500/10 border border-rose-500/30 rounded px-1.5 py-0.5">
+                        Muntazam
+                      </span>
+                    )}
+                    {tab === "archive" && (
+                      r.face_seen
+                        ? <span className="text-[10px] font-bold uppercase tracking-wide text-violet-600 bg-violet-500/10 border border-violet-500/30 rounded px-1.5 py-0.5 flex items-center gap-1"><ScanFace className="w-3 h-3" />Face ID</span>
+                        : <span className="text-[10px] font-bold uppercase tracking-wide text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5">Qo'lda</span>
+                    )}
                   </div>
                   <div className="text-xs mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
                     {r.arrived ? (
@@ -252,7 +390,9 @@ export default function FaceTodayPage() {
                       <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
                         <Stethoscope className="w-3 h-3" /> Sababli (kelmadi)
                       </span>
-                    ) : <span className="text-rose-600 dark:text-rose-400 font-semibold">Kelmagan</span>}
+                    ) : (
+                      <span className="text-rose-600 dark:text-rose-400 font-semibold">Kelmagan</span>
+                    )}
                     {r.left && (
                       <span className={r.excused ? "text-violet-500" : r.early ? "text-amber-500" : "text-sky-500"}>
                         {r.excused ? "Ruxsat bilan ketdi" : r.early ? "Erta ketdi" : "Ketdi"}: {r.left}
@@ -261,7 +401,17 @@ export default function FaceTodayPage() {
                   </div>
                 </div>
               </div>
+
               <div className="flex flex-wrap gap-1.5 mt-2.5">
+                {tab === "archive" ? (
+                  <Button size="sm" variant="default" disabled={b} onClick={restoreOne(r.login, r.full_name)}>
+                    <RotateCcw className="w-3.5 h-3.5 mr-1" /> Tiklash
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={b} onClick={archiveOne(r.login, r.full_name)}>
+                    <Archive className="w-3.5 h-3.5 mr-1" /> Arxivga
+                  </Button>
+                )}
                 {isManager && (
                   <>
                     <Button size="sm" variant="outline" className="text-emerald-600" disabled={b} onClick={act(r.login, "in", r.full_name)}>
@@ -293,8 +443,28 @@ export default function FaceTodayPage() {
             </div>
           );
         })}
-        {!list.isLoading && cls && rows.length === 0 && <div className="text-center text-sm text-muted-foreground py-8">Topilmadi</div>}
+
+        {cls && !list.isLoading && visible.length === 0 && (
+          <div className="flex flex-col items-center justify-center text-center py-12 text-muted-foreground">
+            {tab === "active" ? (
+              <>
+                <CheckCheck className="w-10 h-10 mb-3 text-emerald-500" />
+                <div className="font-semibold text-foreground">Faol ro'yxat bo'sh</div>
+                <div className="text-sm mt-1">Hamma o'quvchi Face ID bilan aniqlangan yoki ishlov berilgan.</div>
+              </>
+            ) : (
+              <>
+                <Archive className="w-10 h-10 mb-3 opacity-40" />
+                <div className="font-semibold text-foreground">Arxiv bo'sh</div>
+                <div className="text-sm mt-1">Bugun hali hech kim arxivga o'tkazilmagan.</div>
+              </>
+            )}
+          </div>
+        )}
+        {!cls && !list.isLoading && (
+          <div className="text-center text-sm text-muted-foreground py-8">Sinfni tanlang</div>
+        )}
       </div>
     </div>
   );
-        }
+    }
