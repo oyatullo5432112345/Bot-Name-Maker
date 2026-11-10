@@ -73,7 +73,6 @@ function StatCard({ icon: Icon, label, value, sub, accent, progress }: {
   );
 }
 
-// Sozlamalar guruhi — sarlavha + izoh + maydonlar
 function SettingsGroup({ icon: Icon, title, children }: { icon: typeof Clock; title: string; children: ReactNode }) {
   return (
     <section className="space-y-3">
@@ -123,13 +122,12 @@ export default function FaceIdPage() {
   const [summing, setSumming] = useState(false);
   const [resetting, setResetting] = useState(false);
 
-  // Maktab 2 smenali bo'lsa — smena tanlagich ko'rinadi
   useEffect(() => {
     void (async () => {
       try {
         const mine = await api<{ ikki_smena?: boolean }>("/maktablar/mine");
         setIsTwoShift(!!mine.ikki_smena);
-      } catch { /* 1 smenali / super-admin — jim o'tadi */ }
+      } catch { /* 1 smenali */ }
     })();
   }, []);
 
@@ -153,7 +151,7 @@ export default function FaceIdPage() {
         applySettings(s);
       } catch { /* ignore */ }
     })();
-  }, [isTwoShift, smenaSel]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isTwoShift, smenaSel]);
 
   const saveSettings = async () => {
     setSaving(true);
@@ -222,7 +220,6 @@ export default function FaceIdPage() {
 
   return (
     <div className="space-y-6">
-      {/* ═══ 1. Sarlavha va asosiy amallar ═══ */}
       <section className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-cyan-500/10 via-violet-500/5 to-transparent p-5 sm:p-7">
         <div className="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-violet-500/10 blur-3xl pointer-events-none" />
         <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
@@ -279,7 +276,6 @@ export default function FaceIdPage() {
 
       {d && (
         <>
-          {/* ═══ 2. Statistika ═══ */}
           <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <StatCard icon={UserCheck} label="Keldi" value={d.arrived} accent="emerald"
               sub={`${pct}% ro'yxatdagilardan`} progress={pct} />
@@ -291,7 +287,6 @@ export default function FaceIdPage() {
               sub={`${d.students} o'quvchidan`} />
           </section>
 
-          {/* ═══ 3. Boshlash yo'riqnomasi (ro'yxat bo'sh bo'lsa) ═══ */}
           {d.enrolled === 0 && (
             <Card className="border-primary/30 bg-primary/5">
               <CardContent className="pt-5">
@@ -301,9 +296,9 @@ export default function FaceIdPage() {
                 <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                   {[
                     { t: "Yuzlarni ro'yxatga oling", d: "Sinf rahbarlari har bir o'quvchini bir marta skanerlaydi (ota-ona roziligi bilan)." },
-                    { t: "Kamerani ishga tushiring", d: "Ertalab \"Bugungi Face ID\" ni bosing va telefonni kirish eshigi yoniga qo'ying." },
+                    { t: "Kamerani ishga tushiring", d: 'Ertalab "Bugungi Face ID" ni bosing va telefonni kirish eshigi yoniga qo\'ying.' },
                     { t: "Keldi yoziladi", d: "O'quvchi kameraga qaraydi, davomat belgilanadi va Telegramda xabar boradi." },
-                    { t: "Ketdi yoziladi", d: "Uyga ketayotganda yana qaraydi. Dars tugashidan oldin bo'lsa — \"erta ketdi\"." },
+                    { t: "Ketdi yoziladi", d: 'Uyga ketayotganda yana qaraydi. Dars tugashidan oldin bo\'lsa — "erta ketdi".' },
                   ].map((s, i) => (
                     <li key={s.t} className="rounded-xl bg-background/70 border p-3">
                       <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold mb-2">
@@ -318,7 +313,6 @@ export default function FaceIdPage() {
             </Card>
           )}
 
-          {/* ═══ 4. Sinflar va so'nggi harakatlar ═══ */}
           <div className="grid lg:grid-cols-3 gap-4">
             <Card className="lg:col-span-2">
               <CardHeader className="pb-3">
@@ -401,7 +395,6 @@ export default function FaceIdPage() {
             </Card>
           </div>
 
-          {/* ═══ 5. Sozlamalar va xabarnomalar ═══ */}
           <div className="grid lg:grid-cols-3 gap-4">
             <Card className="lg:col-span-2">
               <CardHeader className="pb-3">
@@ -433,10 +426,10 @@ export default function FaceIdPage() {
                 )}
 
                 <SettingsGroup icon={Clock} title="Vaqt">
-                  <Field label="Kech qolish vaqti" hint="Shu vaqtdan keyin kelgan \"kech\" hisoblanadi.">
+                  <Field label="Kech qolish vaqti" hint='Shu vaqtdan keyin kelgan "kech" hisoblanadi.'>
                     <Input type="time" value={lateAfter} onChange={(e) => setLateAfter(e.target.value)} />
                   </Field>
-                  <Field label="Darslar tugashi (standart)" hint="Jadval yo'q bo'lsa ishlatiladi. Undan oldin ketsa — \"erta\".">
+                  <Field label="Darslar tugashi (standart)" hint='Jadval yo\'q bo\'lsa ishlatiladi. Undan oldin ketsa — "erta".'>
                     <Input type="time" value={defaultEnd} onChange={(e) => setDefaultEnd(e.target.value)} />
                   </Field>
                   <Field label="Kamera ochilishi" hint="Shu vaqtdan kamera ishlaydi.">
@@ -546,4 +539,4 @@ export default function FaceIdPage() {
       )}
     </div>
   );
-   }
+}
