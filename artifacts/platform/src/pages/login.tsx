@@ -225,12 +225,12 @@ export default function Login() {
               <Users className="w-6 h-6" /> O'qituvchi / Xodim
             </button>
 
-            {/* Pastki qism: bo'lim va Kelajak logotiplari */}
-            <div className="pt-8 flex flex-col items-center justify-center gap-4">
+            {/* Pastki qism: bo'lim va Kelajak logotiplari (yonma-yon) */}
+            <div className="pt-8 flex flex-row flex-wrap items-center justify-center gap-3">
               <img
                 src="/tuman-logo.jpg"
                 alt="Toshloq tumani maktabgacha va maktab ta'limi bo'limi"
-                className="w-48 max-w-full h-auto rounded-2xl shadow-lg"
+                className="w-[46%] max-w-[200px] h-auto rounded-2xl shadow-lg"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
@@ -238,7 +238,7 @@ export default function Login() {
               <img
                 src="/kelajak-logo.jpg"
                 alt="Kelajak - Toshloq tumani"
-                className="w-44 max-w-full h-auto rounded-2xl shadow-lg"
+                className="w-[46%] max-w-[200px] h-auto rounded-2xl shadow-lg"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
@@ -368,7 +368,6 @@ export default function Login() {
             <div style={{ fontSize: 64, marginBottom: 12 }}>🔑</div>
             <h2 className="text-white text-2xl font-black mb-4">Kodni kiriting</h2>
 
-            {/* 🔴 TUSHUNTIRISH YOZUVI */}
             <div
               className="rounded-xl p-4 mb-6 text-left"
               style={{
@@ -497,4 +496,4 @@ export default function Login() {
       </div>
     </div>
   );
-    }
+          }
