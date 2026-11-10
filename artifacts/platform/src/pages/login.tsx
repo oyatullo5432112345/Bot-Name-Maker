@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import {
   Loader2, ArrowLeft, GraduationCap, Users, KeyRound, Eye, EyeOff,
-  RefreshCw, ShieldCheck, LogIn,
+  RefreshCw, LogIn, ShieldCheck,
 } from "lucide-react";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
@@ -60,10 +60,7 @@ export default function Login() {
     setLoading(true);
     try {
       const r = await fetch(`${API_BASE}/maktablar/public`);
-      if (r.ok) {
-        const data = await r.json();
-        setSchools(data);
-      }
+      if (r.ok) setSchools(await r.json());
     } catch { /* ignore */ }
     setLoading(false);
   };
@@ -91,7 +88,7 @@ export default function Login() {
     setLoading(false);
   };
 
-  // ── O'quvchi tanlandi → 4 xonali kod yaratish va kod ekraniga o'tish ──
+  // ── O'quvchi tanlandi → kod so'rash va kod ekraniga o'tish ──
   const handleSelectStudent = async (st: Student) => {
     if (!school || !className) return;
     setStudent(st);
@@ -114,7 +111,6 @@ export default function Login() {
         setTimeout(() => setShake(false), 500);
         return;
       }
-      // Kod guruhga yuborildi → to'g'ridan-to'g'ri kod kiritish ekraniga o'tamiz
       setScreen("student-code");
     } catch (e) {
       setError((e as Error).message);
@@ -123,7 +119,7 @@ export default function Login() {
     }
   };
 
-  // ── O'quvchi 4 xonali kodni kiritdi → kirish ──
+  // ── O'quvchi kodni kiritdi → kirish ──
   const handleVerifyCode = async () => {
     if (!student || code.length !== 4) return;
     setLoading(true);
@@ -204,12 +200,12 @@ export default function Login() {
 
         {/* EKRAN 1: Tanlash */}
         {screen === "choice" && (
-          <div className="w-full flex flex-col items-center" style={{ animation: "tt-fade-up 0.5s ease both" }}>
+          <div className="w-full flex flex-col items-center">
 
-            {/* 1. Tepa qism: Ta'lim Platform */}
-            <div className="text-center mb-10 mt-6 w-full">
+            {/* 1. Sarlavha: TA'LIM PLATFORM va tagida Toshloq tumani */}
+            <div className="text-center mb-8 mt-4 w-full">
               <h1
-                className="text-5xl font-black tracking-tighter mb-2"
+                className="text-5xl font-black tracking-tighter"
                 style={{
                   background: "linear-gradient(135deg, #22d3ee 0%, #3b82f6 50%, #d946ef 100%)",
                   WebkitBackgroundClip: "text",
@@ -218,12 +214,14 @@ export default function Login() {
                   fontFamily: "'Inter', sans-serif",
                 }}
               >
-                TA'LIM<br />
-                <span className="text-4xl">PLATFORM</span>
+                TA'LIM PLATFORM
               </h1>
+              <p className="text-white text-2xl font-black tracking-tight mt-2">
+                Toshloq tumani
+              </p>
             </div>
 
-            {/* 2. Tanlashga ishora qiluvchi ramka */}
+            {/* 2. Tanlashga ishora */}
             <div className="w-full px-2 mb-5">
               <div className="relative rounded-2xl border border-white/20 bg-white/5 backdrop-blur-md py-3 px-4 text-center overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-purple-500/10" />
@@ -237,7 +235,6 @@ export default function Login() {
 
             {/* 3. Tugmalar */}
             <div className="w-full space-y-4 px-2">
-              {/* O'quvchi */}
               <button
                 onClick={() => { setScreen("student-school"); loadSchools(); }}
                 className="w-full py-4 rounded-2xl text-white font-bold text-lg flex items-center justify-center gap-3 active:scale-95 transition-all shadow-lg shadow-pink-500/30"
@@ -249,7 +246,6 @@ export default function Login() {
                 <GraduationCap className="w-6 h-6" /> O'quvchi
               </button>
 
-              {/* O'qituvchi */}
               <button
                 onClick={() => setScreen("staff-id")}
                 className="w-full py-4 rounded-2xl text-white font-bold text-lg flex items-center justify-center gap-3 active:scale-95 transition-all shadow-lg shadow-purple-500/30"
@@ -262,13 +258,30 @@ export default function Login() {
               </button>
             </div>
 
-            {/* 4. Pastki qism: Hamkorlik haqidagi yozuv */}
-            <div className="mt-12 px-4 w-full text-center">
-              <div className="w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent mb-4" />
-              <p className="text-white/50 text-[10px] sm:text-xs leading-relaxed font-medium tracking-wide uppercase">
-                Toshloq tumani Maktabgacha va maktab ta'limi bo'limi<br />
-                va <span className="text-amber-400/90 font-bold">"Kelajak" markazi</span> hamkorligida
-              </p>
+            {/* 4. Pastki qism: logotiplar va sariq matnlar */}
+            <div className="mt-10 w-full flex flex-col items-center">
+              <div className="flex flex-row flex-wrap items-center justify-center gap-3">
+                <img
+                  src="/tuman-logo.jpg"
+                  alt="Toshloq tumani maktabgacha va maktab ta'limi bo'limi"
+                  className="w-[46%] max-w-[200px] h-auto rounded-2xl shadow-lg"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+                <img
+                  src="/kelajak-logo.jpg"
+                  alt="Kelajak - Toshloq tumani"
+                  className="w-[46%] max-w-[200px] h-auto rounded-2xl shadow-lg"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+              </div>
+
+              <div className="mt-6 px-4 w-full text-center">
+                <div className="w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent mb-4" />
+                <p className="text-amber-400 text-[11px] sm:text-xs leading-relaxed font-bold tracking-wide uppercase">
+                  Toshloq tumani Maktabgacha va maktab ta'limi bo'limi<br />
+                  va "Kelajak" markazi hamkorligida
+                </p>
+              </div>
             </div>
 
           </div>
@@ -397,22 +410,15 @@ export default function Login() {
 
             <div
               className="rounded-xl p-4 mb-6 text-left"
-              style={{
-                background: "rgba(99,102,241,0.15)",
-                border: "1px solid rgba(99,102,241,0.3)"
-              }}
+              style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)" }}
             >
-              <p className="text-white/90 text-sm font-semibold mb-2">
-                📱 Kodni qayerdan olasiz?
-              </p>
+              <p className="text-white/90 text-sm font-semibold mb-2">📱 Kodni qayerdan olasiz?</p>
               <p className="text-white/70 text-xs leading-relaxed">
                 <b className="text-white">{className}</b> sinfining Telegram guruhiga bot tomonidan
                 <b className="text-white"> 4 xonali kod</b> yuborildi.
                 Telegram'da sinf guruhingizni oching va shu kodni kiriting.
               </p>
-              <p className="text-white/50 text-xs mt-2">
-                ⏱ Kod 5 daqiqa amal qiladi
-              </p>
+              <p className="text-white/50 text-xs mt-2">⏱ Kod 5 daqiqa amal qiladi</p>
             </div>
 
             <div className="relative" style={{ animation: shake ? "tt-shake 0.3s ease-in-out" : "none" }}>
@@ -523,4 +529,4 @@ export default function Login() {
       </div>
     </div>
   );
-               }
+         }
