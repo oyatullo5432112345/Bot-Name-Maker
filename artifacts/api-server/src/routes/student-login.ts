@@ -245,4 +245,37 @@ router.get("/auth/student/check-code", async (req, res) => {
   }
 });
 
+// POST /api/auth/student/confirm
+router.post("/auth/student/confirm", async (req, res): Promise<void> => {
+  try {
+    const { token } = req.body as { token?: string };
+    if (!token) { res.status(400).json({ error: "Token kerak" }); return; }
+
+    const row = await queryOne<{ student_login: string; used: boolean }>(
+      "SELECT student_login, used FROM student_confirm_tokens WHERE token = $1",
+      [token]
+    );
+    if (!row || row.used) {
+      res.status(400).json({ error: "Havola yaroqsiz yoki allaqachon ishlatilgan" });
+      return;
+    }
+
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    await query(
+      `INSERT INTO student_login_codes (student_login, code, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '5 minutes')
+       ON CONFLICT (student_login) DO UPDATE SET code = $2, expires_at = NOW() + INTERVAL '5 minutes'`,
+      [row.student_login, code]
+    );
+    await query("UPDATE student_confirm_tokens SET used = TRUE WHERE token = $1", [token]);
+
+    const student = await queryOne<{ full_name: string; class_name: string }>(
+      "SELECT full_name, class_name FROM users WHERE login = $1",
+      [row.student_login]
+    );
+    res.json({ ok: true, code, name: student?.full_name, class_name: student?.class_name });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
 export default router;
