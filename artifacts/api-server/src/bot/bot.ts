@@ -1970,5 +1970,39 @@ export function createBot(): Bot {
     }
   }, 60 * 1000); // har 1 daqiqada tekshiriladi
 
+  // ═══════════════════════════════════════════════════════════════════════════
+//  O'QUVCHI KIRISH TASDIQLASH
+// ═══════════════════════════════════════════════════════════════════════════
+bot.callbackQuery(/^c:(.+)$/, async (ctx) => {
+  logger.info({ from: ctx.from.id }, "confirm_student bosildi");
+  const token = ctx.match[1];
+  if (!token) { await ctx.answerCallbackQuery("Xatolik"); return; }
+  try {
+    const res = await fetch(`${WEBSITE_URL}/api/auth/student/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json() as { ok?: boolean; code?: string; name?: string; class_name?: string; error?: string };
+    if (!res.ok || !data.ok) {
+      await ctx.answerCallbackQuery({ text: `❌ ${data.error || "Xatolik"}`, show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery({ text: "✅ Tasdiqlandi!" });
+    const esc = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+    await ctx.editMessageText(
+      `✅ *Tasdiqlandi!*\n\n👤 ${esc(data.name || "")}\n🏫 ${esc(data.class_name || "")}\n\n🔑 *Kirish kodi:* \`${data.code}\`\n\n⏱ Kod 5 daqiqa amal qiladi\\.\nPlatformaga qaytib, shu kodni kiriting\\.`,
+      { parse_mode: "MarkdownV2" }
+    );
+  } catch (err) {
+    logger.error({ err }, "confirm_student callback");
+    await ctx.answerCallbackQuery({ text: `❌ Xato: ${(err as Error).message.slice(0, 50)}`, show_alert: true });
+  }
+});
+
+bot.callbackQuery(/^x:(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery({ text: "❌ Bekor qilindi" });
+  await ctx.editMessageText("❌ Tasdiqlash bekor qilindi. Qaytadan urinib ko'ring.");
+});
   return bot;
 }
