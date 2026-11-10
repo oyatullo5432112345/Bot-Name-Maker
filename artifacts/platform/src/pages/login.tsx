@@ -209,21 +209,33 @@ export default function Login() {
             <h1 className="text-white text-3xl font-black tracking-tight">Toshloq tumani</h1>
             <p className="text-white/40 text-sm mb-8">Platformaga kirish</p>
 
-            <button
-              onClick={() => { setScreen("student-school"); loadSchools(); }}
-              className="w-full p-5 rounded-2xl text-white font-bold text-lg flex items-center justify-center gap-3 active:scale-95 transition shadow-xl"
-              style={{ background: "linear-gradient(135deg, #06b6d4, #7c3aed)", boxShadow: "0 8px 32px rgba(99,102,241,0.4)" }}
-            >
-              <GraduationCap className="w-6 h-6" /> O'quvchi
-            </button>
+            {/* Tugmalar */}
+            <div className="w-full space-y-4 px-2 mt-6">
 
-            <button
-              onClick={() => setScreen("staff-id")}
-              className="w-full p-5 rounded-2xl text-white font-bold text-lg flex items-center justify-center gap-3 active:scale-95 transition border border-white/20"
-              style={{ background: "rgba(255,255,255,0.07)" }}
-            >
-              <Users className="w-6 h-6" /> O'qituvchi / Xodim
-            </button>
+              {/* O'quvchi (Pushti-sariq gradient va yaltiroq ramka) */}
+              <button
+                onClick={() => { setScreen("student-school"); loadSchools(); }}
+                className="w-full py-4 rounded-2xl text-white font-bold text-lg flex items-center justify-center gap-3 active:scale-95 transition-all shadow-lg shadow-pink-500/30"
+                style={{
+                  background: "linear-gradient(135deg, #ff0080 0%, #ff8c00 100%)",
+                  border: "2px solid rgba(255, 255, 255, 0.2)",
+                }}
+              >
+                <GraduationCap className="w-6 h-6" /> O'quvchi
+              </button>
+
+              {/* O'qituvchi (Binafsha-ko'k gradient va yaltiroq ramka) */}
+              <button
+                onClick={() => setScreen("staff-id")}
+                className="w-full py-4 rounded-2xl text-white font-bold text-lg flex items-center justify-center gap-3 active:scale-95 transition-all shadow-lg shadow-purple-500/30"
+                style={{
+                  background: "linear-gradient(135deg, #8a2be2 0%, #00ffff 100%)",
+                  border: "2px solid rgba(255, 255, 255, 0.2)",
+                }}
+              >
+                <Users className="w-6 h-6" /> O'qituvchi / Xodim
+              </button>
+            </div>
 
             {/* Pastki qism: bo'lim va Kelajak logotiplari (yonma-yon) */}
             <div className="pt-8 flex flex-row flex-wrap items-center justify-center gap-3">
@@ -355,7 +367,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* ═══ EKRAN 5: Kod kiritish (Tushuntirish bilan) ═══ */}
+        {/* ═══ EKRAN 5: Kod kiritish ═══ */}
         {screen === "student-code" && (
           <div className="text-center">
             <button
