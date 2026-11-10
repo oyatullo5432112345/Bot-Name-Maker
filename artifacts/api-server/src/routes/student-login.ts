@@ -7,8 +7,6 @@ import { createToken } from "./auth.js";
 
 const router: IRouter = Router();
 
-const BOT_USERNAME = (process.env["BOT_USERNAME"] ?? "").replace(/^@/, "");
-
 // ─── Sxema ───
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS student_login_codes (
@@ -30,17 +28,14 @@ ALTER TABLE student_confirm_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP
 `;
 void query(SCHEMA).catch((e) => logger.error({ err: e }, "student-login schema"));
 
-// ─── 1. O'quvchi "Tasdiqlash" bosganda → sinf guruhiga HAVOLA ───
+// ─── 1. O'quvchi "Tasdiqlash" bosganda → sinf guruhiga tugmali xabar ───
+// expected_tg bog'langan o'quvchi uchun to'ldiriladi; bog'lanmagan bo'lsa NULL
+// (tugmani birinchi bosgan odam akkauntga bog'lanadi).
 router.post("/auth/student/request-code", async (req, res) => {
   try {
     const { student_login, class_name, maktab_id } = req.body;
     if (!student_login || !class_name || !maktab_id) {
       res.status(400).json({ error: "Ma'lumotlar to'liq emas" });
-      return;
-    }
-    if (!BOT_USERNAME) {
-      logger.error("BOT_USERNAME sozlanmagan");
-      res.status(500).json({ error: "Server sozlamasi noto'g'ri. Administratorga murojaat qiling." });
       return;
     }
 
@@ -55,13 +50,6 @@ router.post("/auth/student/request-code", async (req, res) => {
     );
     if (!student) {
       res.status(404).json({ error: "O'quvchi topilmadi" });
-      return;
-    }
-    // Tasdiqlash faqat bog'langan akkaunt uchun: kodni boshqa odam ololmasligi uchun
-    if (!student.telegram_id) {
-      res.status(400).json({
-        error: "Akkauntingiz Telegram botga bog'lanmagan. Botda o'quvchi sifatida bog'laning va qayta urinib ko'ring.",
-      });
       return;
     }
 
@@ -79,20 +67,22 @@ router.post("/auth/student/request-code", async (req, res) => {
       return;
     }
 
-    const token = randomBytes(16).toString("hex"); // 32 belgi, start payload chegarasi ichida
+    const token = randomBytes(16).toString("hex"); // 32 belgi, callback_data 64 baytdan kichik
+    const expectedTg = student.telegram_id ? Number(student.telegram_id) : null;
 
     await query(
       `INSERT INTO student_confirm_tokens (token, student_login, expected_tg) VALUES ($1, $2, $3)`,
-      [token, student.login, Number(student.telegram_id)]
+      [token, student.login, expectedTg]
     );
 
     const groupText =
       `🎓 <b>${esc(student.full_name)}</b> (${esc(student.class_name)}) platformaga kirmoqchi.\n\n` +
-      `Tasdiqlash uchun quyidagi tugmani bosing. Kod faqat o'quvchining o'zining shaxsiy chatiga yuboriladi.`;
+      `Faqat o'zingiz bo'lsangiz tasdiqlang. Kod faqat tugmani bosgan odamga ko'rinadi.`;
 
     const replyMarkup = {
       inline_keyboard: [[
-        { text: "🔐 Tasdiqlash", url: `https://t.me/${BOT_USERNAME}?start=confirm_${token}` },
+        { text: "✅ Tasdiqlash", callback_data: `c:${token}` },
+        { text: "❌ Bekor qilish", callback_data: `x:${token}` },
       ]],
     };
 
@@ -151,7 +141,10 @@ router.post("/auth/student/verify-code", async (req, res) => {
     }
     await query("DELETE FROM student_login_codes WHERE student_login = $1", [student_login]);
 
-    const student = await queryOne<{ id: string; login: string; full_name: string; role: string; class_name: string; maktab_id: number; telegram_id: number | null }>(
+    const student = await queryOne<{
+      id: string; login: string; full_name: string; role: string;
+      class_name: string; maktab_id: number; telegram_id: number | null;
+    }>(
       "SELECT id, login, full_name, role, class_name, maktab_id, telegram_id FROM users WHERE login = $1",
       [student_login]
     );
@@ -246,13 +239,16 @@ router.get("/auth/student/check-code", async (req, res) => {
   }
 });
 
-// ─── 5. Bot "Tasdiqlash" bosilganda → 4 xonali kod yaratish ───
+// ─── 5. Bot "Tasdiqlash" bosilganda → bog'lash (kerak bo'lsa) + 4 xonali kod ───
 router.post("/auth/student/confirm", async (req, res): Promise<void> => {
   try {
     const { token, telegram_id } = req.body as { token?: string; telegram_id?: number };
-    if (!token) { res.status(400).json({ error: "Token kerak" }); return; }
+    const tgId = Number(telegram_id);
+    if (!token || !tgId) { res.status(400).json({ error: "Ma'lumotlar to'liq emas" }); return; }
 
-    const row = await queryOne<{ student_login: string; expected_tg: string | number | null; used: boolean; expired: boolean }>(
+    const row = await queryOne<{
+      student_login: string; expected_tg: string | number | null; used: boolean; expired: boolean;
+    }>(
       "SELECT student_login, expected_tg, used, (expires_at < NOW()) AS expired FROM student_confirm_tokens WHERE token = $1",
       [token]
     );
@@ -264,7 +260,8 @@ router.post("/auth/student/confirm", async (req, res): Promise<void> => {
       res.status(400).json({ error: "Havola muddati o'tgan. Platformada qaytadan so'rang." });
       return;
     }
-    if (row.expected_tg == null || Number(telegram_id) !== Number(row.expected_tg)) {
+    // Bog'langan o'quvchi: faqat o'zi tasdiqlay oladi
+    if (row.expected_tg != null && Number(row.expected_tg) !== tgId) {
       res.status(403).json({ error: "Bu tugma sizga tegishli emas" });
       return;
     }
@@ -277,6 +274,19 @@ router.post("/auth/student/confirm", async (req, res): Promise<void> => {
     if (!claimed) {
       res.status(400).json({ error: "Havola allaqachon ishlatilgan" });
       return;
+    }
+
+    // Bog'lanmagan o'quvchi: shu odamning Telegram ID sini akkauntga yozamiz.
+    // Faqat telegram_id bo'sh bo'lsa yoziladi — boshqa odamning akkaunti o'zgarmaydi.
+    if (row.expected_tg == null) {
+      const bound = await queryOne<{ login: string }>(
+        "UPDATE users SET telegram_id = $1 WHERE login = $2 AND telegram_id IS NULL RETURNING login",
+        [tgId, row.student_login]
+      );
+      if (!bound) {
+        res.status(403).json({ error: "Bu akkaunt allaqachon boshqa Telegram ga bog'langan" });
+        return;
+      }
     }
 
     const code = String(randomInt(1000, 10000));
