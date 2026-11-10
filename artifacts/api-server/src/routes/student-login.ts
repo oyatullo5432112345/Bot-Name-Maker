@@ -1,12 +1,15 @@
 import { Router, type IRouter } from "express";
+import { randomBytes, randomInt } from "node:crypto";
 import { query, queryOne } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
-import { sendToChat, esc, getClassChats } from "../lib/tg-shared.js";
+import { sendToChat, esc } from "../lib/tg-shared.js";
 import { createToken } from "./auth.js";
 
 const router: IRouter = Router();
 
 // ─── Sxema ───
+// CREATE TABLE IF NOT EXISTS mavjud jadvalga ustun qo'shmaydi, shuning uchun
+// ALTER ... ADD COLUMN IF NOT EXISTS bilan eski bazani ham yangilaymiz.
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS student_login_codes (
   student_login TEXT PRIMARY KEY,
@@ -14,16 +17,21 @@ CREATE TABLE IF NOT EXISTS student_login_codes (
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE student_login_codes ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS student_confirm_tokens (
   token TEXT PRIMARY KEY,
   student_login TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   used BOOLEAN NOT NULL DEFAULT FALSE
 );
+ALTER TABLE student_confirm_tokens ADD COLUMN IF NOT EXISTS expected_tg BIGINT;
+ALTER TABLE student_confirm_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '10 minutes');
 `;
 void query(SCHEMA).catch(() => {});
 
-// ─── 1. O'quvchi "Tasdiqlash" bosganda → botga xabar ───
+// ─── 1. O'quvchi "Tasdiqlash" bosganda → o'quvchining SHAXSIY chatiga xabar ───
+// Guruhga yubormaymiz: guruhda boshqa a'zolar ham tugmani bosishi mumkin edi.
 router.post("/auth/student/request-code", async (req, res) => {
   try {
     const { student_login, class_name, maktab_id } = req.body;
@@ -31,41 +39,39 @@ router.post("/auth/student/request-code", async (req, res) => {
       res.status(400).json({ error: "Ma'lumotlar to'liq emas" });
       return;
     }
-    const student = await queryOne<{ login: string; full_name: string; class_name: string; maktab_id: number }>(
-      "SELECT login, full_name, class_name, maktab_id FROM users WHERE login = $1 AND class_name = $2 AND maktab_id = $3",
+    const student = await queryOne<{
+      login: string;
+      full_name: string;
+      class_name: string;
+      telegram_id: string | number | null;
+    }>(
+      "SELECT login, full_name, class_name, telegram_id FROM users WHERE login = $1 AND class_name = $2 AND maktab_id = $3",
       [student_login, class_name, maktab_id]
     );
     if (!student) {
       res.status(404).json({ error: "O'quvchi topilmadi" });
       return;
     }
-    const cls = await queryOne<{ id: string }>(
-      "SELECT id FROM classes WHERE name = $1 AND maktab_id = $2",
-      [class_name, maktab_id]
-    );
-    if (!cls) {
-      res.status(404).json({ error: "Sinf topilmadi" });
-      return;
-    }
-    const chats = await getClassChats(cls.id);
-    if (chats.length === 0) {
-      res.status(400).json({ error: "Sinf guruhi botga ulanmagan. Maktab ma'muriyatiga murojaat qiling." });
+    if (!student.telegram_id) {
+      res.status(400).json({
+        error: "Akkauntingiz Telegram botga bog'lanmagan. Botda /start yuboring va qayta urinib ko'ring.",
+      });
       return;
     }
 
-    // 🔴 TUZATILDI: token 8 belgi (callback_data 64 baytdan oshmasligi uchun)
-    const token = Math.random().toString(36).slice(2, 10);
+    // Kriptografik xavfsiz token (32 belgi → callback_data 64 baytdan kichik)
+    const token = randomBytes(16).toString("hex");
 
     await query(
-      `INSERT INTO student_confirm_tokens (token, student_login) VALUES ($1, $2)`,
-      [token, student.login]
+      `INSERT INTO student_confirm_tokens (token, student_login, expected_tg)
+       VALUES ($1, $2, $3)`,
+      [token, student.login, Number(student.telegram_id)]
     );
 
     const confirmText =
       `🎓 <b>${esc(student.full_name)}</b> (${esc(student.class_name)}) platformaga kirmoqchi.\n\n` +
-      `Agar bu siz bo'lsangiz — tasdiqlang.`;
-    
-    // 🔴 TUZATILDI: callback_data qisqartirildi (c: va x:)
+      `Agar bu siz bo'lsangiz — tasdiqlang. Bo'lmasa — bekor qiling.`;
+
     const replyMarkup = {
       inline_keyboard: [[
         { text: "✅ Tasdiqlash", callback_data: `c:${token}` },
@@ -73,20 +79,15 @@ router.post("/auth/student/request-code", async (req, res) => {
       ]],
     };
 
-    let sent = 0;
-    for (const chat of chats) {
-      try {
-        await sendToChat(chat.chat_id, confirmText, { reply_markup: replyMarkup });
-        sent++;
-      } catch (e) {
-        logger.warn({ err: e, chat: chat.chat_id }, "Bot xabar yuborishda xato");
-      }
-    }
-    if (sent === 0) {
-      res.status(500).json({ error: "Xabar yuborilmadi" });
+    try {
+      await sendToChat(Number(student.telegram_id), confirmText, { reply_markup: replyMarkup });
+    } catch (e) {
+      logger.warn({ err: e }, "O'quvchiga tasdiqlash xabari yuborilmadi");
+      res.status(500).json({ error: "Xabar yuborilmadi. Botga /start yuboring va qayta urinib ko'ring." });
       return;
     }
-    res.json({ ok: true, sent });
+
+    res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "student/request-code");
     res.status(500).json({ error: (err as Error).message });
@@ -94,6 +95,8 @@ router.post("/auth/student/request-code", async (req, res) => {
 });
 
 // ─── 2. O'quvchi 4 xonali kodni kiritganda → kirish ───
+const MAX_CODE_ATTEMPTS = 5;
+
 router.post("/auth/student/verify-code", async (req, res) => {
   try {
     const { student_login, code } = req.body;
@@ -101,16 +104,27 @@ router.post("/auth/student/verify-code", async (req, res) => {
       res.status(400).json({ error: "Ma'lumotlar to'liq emas" });
       return;
     }
-    const row = await queryOne<{ code: string; expires_at: string }>(
-      "SELECT code, expires_at::text FROM student_login_codes WHERE student_login = $1",
+    const row = await queryOne<{ code: string; expires_at: string; attempts: number }>(
+      "SELECT code, expires_at::text, attempts FROM student_login_codes WHERE student_login = $1",
       [student_login]
     );
-    if (!row || row.code !== code) {
+    if (!row) {
       res.status(401).json({ error: "Kod noto'g'ri" });
       return;
     }
     if (new Date(row.expires_at).getTime() < Date.now()) {
+      await query("DELETE FROM student_login_codes WHERE student_login = $1", [student_login]);
       res.status(401).json({ error: "Kod muddati o'tgan. Qaytadan tasdiqlang." });
+      return;
+    }
+    if (row.attempts >= MAX_CODE_ATTEMPTS) {
+      await query("DELETE FROM student_login_codes WHERE student_login = $1", [student_login]);
+      res.status(429).json({ error: "Juda ko'p noto'g'ri urinish. Qaytadan tasdiqlang." });
+      return;
+    }
+    if (row.code !== String(code)) {
+      await query("UPDATE student_login_codes SET attempts = attempts + 1 WHERE student_login = $1", [student_login]);
+      res.status(401).json({ error: "Kod noto'g'ri" });
       return;
     }
     await query("DELETE FROM student_login_codes WHERE student_login = $1", [student_login]);
@@ -213,26 +227,45 @@ router.get("/auth/student/check-code", async (req, res) => {
 // ─── 5. Bot "Tasdiqlash" bosilganda → 4 xonali kod yaratish ───
 router.post("/auth/student/confirm", async (req, res): Promise<void> => {
   try {
-    const { token } = req.body as { token?: string };
+    const { token, telegram_id } = req.body as { token?: string; telegram_id?: number };
     if (!token) { res.status(400).json({ error: "Token kerak" }); return; }
 
-    const row = await queryOne<{ student_login: string; used: boolean }>(
-      "SELECT student_login, used FROM student_confirm_tokens WHERE token = $1",
+    const row = await queryOne<{ student_login: string; expected_tg: string | number | null; used: boolean; expired: boolean }>(
+      "SELECT student_login, expected_tg, used, (expires_at < NOW()) AS expired FROM student_confirm_tokens WHERE token = $1",
       [token]
     );
     if (!row || row.used) {
       res.status(400).json({ error: "Havola yaroqsiz yoki allaqachon ishlatilgan" });
       return;
     }
+    if (row.expired) {
+      res.status(400).json({ error: "Havola muddati o'tgan. Platformada qaytadan so'rang." });
+      return;
+    }
+    // Tugmani faqat o'quvchining o'zi bosishi mumkin
+    if (row.expected_tg == null || Number(telegram_id) !== Number(row.expected_tg)) {
+      res.status(403).json({ error: "Bu tugma sizga tegishli emas" });
+      return;
+    }
 
-    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    // Atomik "claim": ikki so'rov bir vaqtda kelsa, faqat bittasi o'tadi
+    const claimed = await queryOne<{ token: string }>(
+      "UPDATE student_confirm_tokens SET used = TRUE WHERE token = $1 AND used = FALSE RETURNING token",
+      [token]
+    );
+    if (!claimed) {
+      res.status(400).json({ error: "Havola allaqachon ishlatilgan" });
+      return;
+    }
+
+    const code = String(randomInt(1000, 10000));
     await query(
-      `INSERT INTO student_login_codes (student_login, code, expires_at)
-       VALUES ($1, $2, NOW() + INTERVAL '5 minutes')
-       ON CONFLICT (student_login) DO UPDATE SET code = $2, expires_at = NOW() + INTERVAL '5 minutes'`,
+      `INSERT INTO student_login_codes (student_login, code, expires_at, attempts)
+       VALUES ($1, $2, NOW() + INTERVAL '5 minutes', 0)
+       ON CONFLICT (student_login) DO UPDATE
+         SET code = $2, expires_at = NOW() + INTERVAL '5 minutes', attempts = 0`,
       [row.student_login, code]
     );
-    await query("UPDATE student_confirm_tokens SET used = TRUE WHERE token = $1", [token]);
 
     const student = await queryOne<{ full_name: string; class_name: string }>(
       "SELECT full_name, class_name FROM users WHERE login = $1",
