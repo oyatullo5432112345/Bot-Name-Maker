@@ -202,17 +202,42 @@ export default function Login() {
 
       <div className="relative z-10 w-full max-w-md" style={{ animation: "tt-fade-up 0.5s ease both" }}>
 
-        {/* ═══ EKRAN 1: Tanlash ═══ */}
+        {/* EKRAN 1: Tanlash */}
         {screen === "choice" && (
-          <div className="space-y-5 text-center">
-            <div style={{ fontSize: 72, marginBottom: 8, animation: "tt-float 3.5s ease-in-out infinite" }}>🏫</div>
-            <h1 className="text-white text-3xl font-black tracking-tight">Toshloq tumani</h1>
-            <p className="text-white/40 text-sm mb-8">Platformaga kirish</p>
+          <div className="w-full flex flex-col items-center" style={{ animation: "tt-fade-up 0.5s ease both" }}>
 
-            {/* Tugmalar */}
-            <div className="w-full space-y-4 px-2 mt-6">
+            {/* 1. Tepa qism: Ta'lim Platform */}
+            <div className="text-center mb-10 mt-6 w-full">
+              <h1
+                className="text-5xl font-black tracking-tighter mb-2"
+                style={{
+                  background: "linear-gradient(135deg, #22d3ee 0%, #3b82f6 50%, #d946ef 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  filter: "drop-shadow(0px 4px 10px rgba(59,130,246,0.3))",
+                  fontFamily: "'Inter', sans-serif",
+                }}
+              >
+                TA'LIM<br />
+                <span className="text-4xl">PLATFORM</span>
+              </h1>
+            </div>
 
-              {/* O'quvchi (Pushti-sariq gradient va yaltiroq ramka) */}
+            {/* 2. Tanlashga ishora qiluvchi ramka */}
+            <div className="w-full px-2 mb-5">
+              <div className="relative rounded-2xl border border-white/20 bg-white/5 backdrop-blur-md py-3 px-4 text-center overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-purple-500/10" />
+                <p className="relative text-white/90 text-sm font-bold tracking-wide flex items-center justify-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                  Quyidagilardan birini tanlang
+                  <span className="w-2 h-2 rounded-full bg-fuchsia-400 animate-pulse" />
+                </p>
+              </div>
+            </div>
+
+            {/* 3. Tugmalar */}
+            <div className="w-full space-y-4 px-2">
+              {/* O'quvchi */}
               <button
                 onClick={() => { setScreen("student-school"); loadSchools(); }}
                 className="w-full py-4 rounded-2xl text-white font-bold text-lg flex items-center justify-center gap-3 active:scale-95 transition-all shadow-lg shadow-pink-500/30"
@@ -224,7 +249,7 @@ export default function Login() {
                 <GraduationCap className="w-6 h-6" /> O'quvchi
               </button>
 
-              {/* O'qituvchi (Binafsha-ko'k gradient va yaltiroq ramka) */}
+              {/* O'qituvchi */}
               <button
                 onClick={() => setScreen("staff-id")}
                 className="w-full py-4 rounded-2xl text-white font-bold text-lg flex items-center justify-center gap-3 active:scale-95 transition-all shadow-lg shadow-purple-500/30"
@@ -237,29 +262,19 @@ export default function Login() {
               </button>
             </div>
 
-            {/* Pastki qism: bo'lim va Kelajak logotiplari (yonma-yon) */}
-            <div className="pt-8 flex flex-row flex-wrap items-center justify-center gap-3">
-              <img
-                src="/tuman-logo.jpg"
-                alt="Toshloq tumani maktabgacha va maktab ta'limi bo'limi"
-                className="w-[46%] max-w-[200px] h-auto rounded-2xl shadow-lg"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
-              <img
-                src="/kelajak-logo.jpg"
-                alt="Kelajak - Toshloq tumani"
-                className="w-[46%] max-w-[200px] h-auto rounded-2xl shadow-lg"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
+            {/* 4. Pastki qism: Hamkorlik haqidagi yozuv */}
+            <div className="mt-12 px-4 w-full text-center">
+              <div className="w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent mb-4" />
+              <p className="text-white/50 text-[10px] sm:text-xs leading-relaxed font-medium tracking-wide uppercase">
+                Toshloq tumani Maktabgacha va maktab ta'limi bo'limi<br />
+                va <span className="text-amber-400/90 font-bold">"Kelajak" markazi</span> hamkorligida
+              </p>
             </div>
+
           </div>
         )}
 
-        {/* ═══ EKRAN 2: Maktab tanlash ═══ */}
+        {/* EKRAN 2: Maktab tanlash */}
         {screen === "student-school" && (
           <div>
             <button
@@ -293,7 +308,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* ═══ EKRAN 3: Sinf tanlash ═══ */}
+        {/* EKRAN 3: Sinf tanlash */}
         {screen === "student-class" && (
           <div>
             <button
@@ -326,7 +341,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* ═══ EKRAN 4: O'zini tanlash ═══ */}
+        {/* EKRAN 4: O'zini tanlash */}
         {screen === "student-name" && (
           <div>
             <button
@@ -367,7 +382,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* ═══ EKRAN 5: Kod kiritish ═══ */}
+        {/* EKRAN 5: Kod kiritish */}
         {screen === "student-code" && (
           <div className="text-center">
             <button
@@ -400,7 +415,7 @@ export default function Login() {
               </p>
             </div>
 
-            <div className={`relative ${shake ? "animate-[tt-shake_0.3s_ease-in-out]" : ""}`} style={{ animation: shake ? "tt-shake 0.3s ease-in-out" : "none" }}>
+            <div className="relative" style={{ animation: shake ? "tt-shake 0.3s ease-in-out" : "none" }}>
               <input
                 type={showCode ? "text" : "password"}
                 inputMode="numeric"
@@ -450,7 +465,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* ═══ EKRAN 6: O'qituvchi — 5 xonali ID ═══ */}
+        {/* EKRAN 6: O'qituvchi — 5 xonali ID */}
         {screen === "staff-id" && (
           <div className="text-center">
             <button
@@ -508,4 +523,4 @@ export default function Login() {
       </div>
     </div>
   );
-          }
+               }
