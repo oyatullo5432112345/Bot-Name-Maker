@@ -1,5 +1,4 @@
 import { Router, type IRouter } from "express";
-import crypto from "node:crypto";
 import { query, queryOne } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { sendToChat, esc, getClassChats } from "../lib/tg-shared.js";
@@ -54,7 +53,9 @@ router.post("/auth/student/request-code", async (req, res) => {
       return;
     }
 
-    const token = crypto.randomUUID();
+    // 🔴 TUZATILDI: token 8 belgi (callback_data 64 baytdan oshmasligi uchun)
+    const token = Math.random().toString(36).slice(2, 10);
+
     await query(
       `INSERT INTO student_confirm_tokens (token, student_login) VALUES ($1, $2)`,
       [token, student.login]
@@ -63,10 +64,12 @@ router.post("/auth/student/request-code", async (req, res) => {
     const confirmText =
       `🎓 <b>${esc(student.full_name)}</b> (${esc(student.class_name)}) platformaga kirmoqchi.\n\n` +
       `Agar bu siz bo'lsangiz — tasdiqlang.`;
+    
+    // 🔴 TUZATILDI: callback_data qisqartirildi (c: va x:)
     const replyMarkup = {
       inline_keyboard: [[
-        { text: "✅ Tasdiqlash", callback_data: `confirm_student:${token}` },
-        { text: "❌ Bekor qilish", callback_data: `cancel_student:${token}` },
+        { text: "✅ Tasdiqlash", callback_data: `c:${token}` },
+        { text: "❌ Bekor qilish", callback_data: `x:${token}` },
       ]],
     };
 
@@ -90,45 +93,7 @@ router.post("/auth/student/request-code", async (req, res) => {
   }
 });
 
-// ─── 2. Bot "Tasdiqlash" bosilganda → 4 xonali kod yaratish ───
-router.post("/auth/student/confirm", async (req, res) => {
-  try {
-    const { token } = req.body;
-    const row = await queryOne<{ student_login: string; used: boolean }>(
-      "SELECT student_login, used FROM student_confirm_tokens WHERE token = $1",
-      [token]
-    );
-    if (!row || row.used) {
-      res.status(400).json({ error: "Havola yaroqsiz yoki allaqachon ishlatilgan" });
-      return;
-    }
-
-    const code = Math.floor(1000 + Math.random() * 9000).toString();
-    await query(
-      `INSERT INTO student_login_codes (student_login, code, expires_at)
-       VALUES ($1, $2, NOW() + INTERVAL '5 minutes')
-       ON CONFLICT (student_login) DO UPDATE SET code = $2, expires_at = NOW() + INTERVAL '5 minutes'`,
-      [row.student_login, code]
-    );
-    await query("UPDATE student_confirm_tokens SET used = TRUE WHERE token = $1", [token]);
-
-    const student = await queryOne<{ full_name: string; class_name: string }>(
-      "SELECT full_name, class_name FROM users WHERE login = $1",
-      [row.student_login]
-    );
-    res.json({
-      ok: true,
-      code,
-      name: student?.full_name,
-      class_name: student?.class_name,
-    });
-  } catch (err) {
-    logger.error({ err }, "student/confirm");
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-// ─── 3. O'quvchi 4 xonali kodni kiritganda → kirish ───
+// ─── 2. O'quvchi 4 xonali kodni kiritganda → kirish ───
 router.post("/auth/student/verify-code", async (req, res) => {
   try {
     const { student_login, code } = req.body;
@@ -187,7 +152,7 @@ router.post("/auth/student/verify-code", async (req, res) => {
   }
 });
 
-// ─── 4. O'qituvchi 5 xonali ID bilan kirish ───
+// ─── 3. O'qituvchi 5 xonali ID bilan kirish ───
 router.post("/auth/staff/login", async (req, res) => {
   try {
     const { login_id } = req.body;
@@ -231,7 +196,7 @@ router.post("/auth/staff/login", async (req, res) => {
   }
 });
 
-// ─── 5. Tasdiqlash holatini tekshirish (polling) ───
+// ─── 4. Tasdiqlash holatini tekshirish (polling) ───
 router.get("/auth/student/check-code", async (req, res) => {
   try {
     const login = String(req.query.student_login ?? "");
@@ -245,7 +210,7 @@ router.get("/auth/student/check-code", async (req, res) => {
   }
 });
 
-// POST /api/auth/student/confirm
+// ─── 5. Bot "Tasdiqlash" bosilganda → 4 xonali kod yaratish ───
 router.post("/auth/student/confirm", async (req, res): Promise<void> => {
   try {
     const { token } = req.body as { token?: string };
@@ -275,7 +240,9 @@ router.post("/auth/student/confirm", async (req, res): Promise<void> => {
     );
     res.json({ ok: true, code, name: student?.full_name, class_name: student?.class_name });
   } catch (err) {
+    logger.error({ err }, "student/confirm");
     res.status(500).json({ error: (err as Error).message });
   }
 });
+
 export default router;
