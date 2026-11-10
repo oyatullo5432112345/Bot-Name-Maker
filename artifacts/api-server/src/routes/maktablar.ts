@@ -373,19 +373,20 @@ router.post("/maktablar/:id/subscription", async (req, res): Promise<void> => {
   }
 });
 
-// GET /api/admin/staff-ids — barcha xodimlar (5 xonali ID bilan)
+// GET /api/admin/staff-ids — barcha xodimlar (5 xonali ID va fanlari bilan)
 router.get("/admin/staff-ids", async (req, res): Promise<void> => {
   try {
     const u = admin(req);
     if (!u) { res.status(403).json({ error: "Faqat admin" }); return; }
     const mid = schoolOf(u);
+    const cols = "id, full_name, login, role, COALESCE(login_id, '') AS login_id, COALESCE(subjects, '{}') AS subjects";
     const rows = mid !== null
-      ? await query<{ id: string; full_name: string; login: string; role: string; login_id: string }>(
-          "SELECT id, full_name, login, role, COALESCE(login_id, '') AS login_id FROM staff WHERE maktab_id = $1 ORDER BY full_name",
-          [mid]
+      ? await query<{ id: string; full_name: string; login: string; role: string; login_id: string; subjects: string[] }>(
+          `SELECT ${cols} FROM staff WHERE maktab_id = $1 ORDER BY full_name`,
+          [mid],
         )
-      : await query<{ id: string; full_name: string; login: string; role: string; login_id: string }>(
-          "SELECT id, full_name, login, role, COALESCE(login_id, '') AS login_id FROM staff ORDER BY full_name"
+      : await query<{ id: string; full_name: string; login: string; role: string; login_id: string; subjects: string[] }>(
+          `SELECT ${cols} FROM staff ORDER BY full_name`,
         );
     res.json(rows);
   } catch (err) {
