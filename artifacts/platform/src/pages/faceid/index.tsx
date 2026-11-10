@@ -429,7 +429,7 @@ export default function FaceIdPage() {
                   <Field label="Kech qolish vaqti" hint='Shu vaqtdan keyin kelgan "kech" hisoblanadi.'>
                     <Input type="time" value={lateAfter} onChange={(e) => setLateAfter(e.target.value)} />
                   </Field>
-                  <Field label="Darslar tugashi (standart)" hint='Jadval yo\'q bo\'lsa ishlatiladi. Undan oldin ketsa — "erta".'>
+                  <Field label="Darslar tugashi (standart)" hint='Jadval yo'q bo\'lsa ishlatiladi. Undan oldin ketsa — "erta".'>
                     <Input type="time" value={defaultEnd} onChange={(e) => setDefaultEnd(e.target.value)} />
                   </Field>
                   <Field label="Kamera ochilishi" hint="Shu vaqtdan kamera ishlaydi.">
