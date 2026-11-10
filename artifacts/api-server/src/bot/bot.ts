@@ -1910,7 +1910,11 @@ export function createBot(): Bot {
       );
     } catch (err) {
       logger.error({ err }, "confirm_student callback");
-      await ctx.answerCallbackQuery({ text: "❌ Server bilan bog'lanib bo'lmadi", show_alert: true });
+      // Xatoni foydalanuvchiga ko'rsatish
+      await ctx.answerCallbackQuery({
+        text: `❌ Xato: ${(err as Error).message.slice(0, 60)}`,
+        show_alert: true,
+      });
     }
   });
 
