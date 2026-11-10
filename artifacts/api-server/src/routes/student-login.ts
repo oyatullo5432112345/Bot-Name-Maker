@@ -1,5 +1,4 @@
 import { Router, type IRouter } from "express";
-import { randomBytes, randomInt } from "node:crypto";
 import { query, queryOne } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { sendToChat, esc, getClassChats } from "../lib/tg-shared.js";
@@ -15,22 +14,17 @@ CREATE TABLE IF NOT EXISTS student_login_codes (
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-ALTER TABLE student_login_codes ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0;
-
 CREATE TABLE IF NOT EXISTS student_confirm_tokens (
   token TEXT PRIMARY KEY,
   student_login TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   used BOOLEAN NOT NULL DEFAULT FALSE
 );
-ALTER TABLE student_confirm_tokens ADD COLUMN IF NOT EXISTS expected_tg BIGINT;
-ALTER TABLE student_confirm_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '10 minutes');
 `;
-void query(SCHEMA).catch((e) => logger.error({ err: e }, "student-login schema"));
+void query(SCHEMA).catch(() => {});
 
-// ─── 1. O'quvchi "Tasdiqlash" bosganda → sinf guruhiga tugmali xabar ───
-// expected_tg bog'langan o'quvchi uchun to'ldiriladi; bog'lanmagan bo'lsa NULL
-// (tugmani birinchi bosgan odam akkauntga bog'lanadi).
+// ─── 1. O'quvchi "O'zini tanladi" → 4 xonali kod yaratish va guruhga yuborish ───
+// Hech qanday tasdiqlash tugmasi yo'q. Kod darhol guruhga ketadi.
 router.post("/auth/student/request-code", async (req, res) => {
   try {
     const { student_login, class_name, maktab_id } = req.body;
@@ -39,13 +33,9 @@ router.post("/auth/student/request-code", async (req, res) => {
       return;
     }
 
-    const student = await queryOne<{
-      login: string;
-      full_name: string;
-      class_name: string;
-      telegram_id: string | number | null;
-    }>(
-      "SELECT login, full_name, class_name, telegram_id FROM users WHERE login = $1 AND class_name = $2 AND maktab_id = $3",
+    // O'quvchi bazada bormi?
+    const student = await queryOne<{ login: string; full_name: string; class_name: string; maktab_id: number }>(
+      "SELECT login, full_name, class_name, maktab_id FROM users WHERE login = $1 AND class_name = $2 AND maktab_id = $3",
       [student_login, class_name, maktab_id]
     );
     if (!student) {
@@ -53,6 +43,7 @@ router.post("/auth/student/request-code", async (req, res) => {
       return;
     }
 
+    // Sinf guruhini topish
     const cls = await queryOne<{ id: string }>(
       "SELECT id FROM classes WHERE name = $1 AND maktab_id = $2",
       [class_name, maktab_id]
@@ -67,38 +58,37 @@ router.post("/auth/student/request-code", async (req, res) => {
       return;
     }
 
-    const token = randomBytes(16).toString("hex"); // 32 belgi, callback_data 64 baytdan kichik
-    const expectedTg = student.telegram_id ? Number(student.telegram_id) : null;
-
+    // 🔴 YANGI MANTIQ: 4 xonali kod yaratish
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    
+    // Kodni bazaga saqlash (5 daqiqa amal qiladi)
     await query(
-      `INSERT INTO student_confirm_tokens (token, student_login, expected_tg) VALUES ($1, $2, $3)`,
-      [token, student.login, expectedTg]
+      `INSERT INTO student_login_codes (student_login, code, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '5 minutes')
+       ON CONFLICT (student_login) DO UPDATE SET code = $2, expires_at = NOW() + INTERVAL '5 minutes'`,
+      [student.login, code]
     );
 
-    const groupText =
-      `🎓 <b>${esc(student.full_name)}</b> (${esc(student.class_name)}) platformaga kirmoqchi.\n\n` +
-      `Faqat o'zingiz bo'lsangiz tasdiqlang. Kod faqat tugmani bosgan odamga ko'rinadi.`;
-
-    const replyMarkup = {
-      inline_keyboard: [[
-        { text: "✅ Tasdiqlash", callback_data: `c:${token}` },
-        { text: "❌ Bekor qilish", callback_data: `x:${token}` },
-      ]],
-    };
+    // 🔴 Guruhga xabar yuborish (tugmasiz, faqat matn)
+    const text =
+      `🔑 <b>${esc(student.full_name)}</b> (${esc(student.class_name)}) uchun kirish kodi:\n\n` +
+      `<code>${code}</code>\n\n` +
+      `⏱ Kod 5 daqiqa amal qiladi. Platformaga kiriting.`;
 
     let sent = 0;
     for (const chat of chats) {
       try {
-        await sendToChat(chat.chat_id, groupText, { reply_markup: replyMarkup });
+        await sendToChat(chat.chat_id, text);
         sent++;
       } catch (e) {
-        logger.warn({ err: e, chat: chat.chat_id }, "Sinf guruhiga xabar yuborilmadi");
+        logger.warn({ err: e, chat: chat.chat_id }, "Bot xabar yuborishda xato");
       }
     }
     if (sent === 0) {
       res.status(500).json({ error: "Xabar yuborilmadi" });
       return;
     }
+
     res.json({ ok: true, sent });
   } catch (err) {
     logger.error({ err }, "student/request-code");
@@ -107,8 +97,6 @@ router.post("/auth/student/request-code", async (req, res) => {
 });
 
 // ─── 2. O'quvchi 4 xonali kodni kiritganda → kirish ───
-const MAX_CODE_ATTEMPTS = 5;
-
 router.post("/auth/student/verify-code", async (req, res) => {
   try {
     const { student_login, code } = req.body;
@@ -116,35 +104,21 @@ router.post("/auth/student/verify-code", async (req, res) => {
       res.status(400).json({ error: "Ma'lumotlar to'liq emas" });
       return;
     }
-    const row = await queryOne<{ code: string; expires_at: string; attempts: number }>(
-      "SELECT code, expires_at::text, attempts FROM student_login_codes WHERE student_login = $1",
+    const row = await queryOne<{ code: string; expires_at: string }>(
+      "SELECT code, expires_at::text FROM student_login_codes WHERE student_login = $1",
       [student_login]
     );
-    if (!row) {
+    if (!row || row.code !== code) {
       res.status(401).json({ error: "Kod noto'g'ri" });
       return;
     }
     if (new Date(row.expires_at).getTime() < Date.now()) {
-      await query("DELETE FROM student_login_codes WHERE student_login = $1", [student_login]);
       res.status(401).json({ error: "Kod muddati o'tgan. Qaytadan tasdiqlang." });
-      return;
-    }
-    if (row.attempts >= MAX_CODE_ATTEMPTS) {
-      await query("DELETE FROM student_login_codes WHERE student_login = $1", [student_login]);
-      res.status(429).json({ error: "Juda ko'p noto'g'ri urinish. Qaytadan tasdiqlang." });
-      return;
-    }
-    if (row.code !== String(code)) {
-      await query("UPDATE student_login_codes SET attempts = attempts + 1 WHERE student_login = $1", [student_login]);
-      res.status(401).json({ error: "Kod noto'g'ri" });
       return;
     }
     await query("DELETE FROM student_login_codes WHERE student_login = $1", [student_login]);
 
-    const student = await queryOne<{
-      id: string; login: string; full_name: string; role: string;
-      class_name: string; maktab_id: number; telegram_id: number | null;
-    }>(
+    const student = await queryOne<{ id: string; login: string; full_name: string; role: string; class_name: string; maktab_id: number; telegram_id: number | null }>(
       "SELECT id, login, full_name, role, class_name, maktab_id, telegram_id FROM users WHERE login = $1",
       [student_login]
     );
@@ -225,7 +199,7 @@ router.post("/auth/staff/login", async (req, res) => {
   }
 });
 
-// ─── 4. Tasdiqlash holatini tekshirish (polling) ───
+// ─── 4. Tasdiqlash holatini tekshirish (polling — endi kerak emas, lekin qoldirildi) ───
 router.get("/auth/student/check-code", async (req, res) => {
   try {
     const login = String(req.query.student_login ?? "");
@@ -235,76 +209,6 @@ router.get("/auth/student/check-code", async (req, res) => {
     );
     res.json({ ready: !!row });
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-// ─── 5. Bot "Tasdiqlash" bosilganda → bog'lash (kerak bo'lsa) + 4 xonali kod ───
-router.post("/auth/student/confirm", async (req, res): Promise<void> => {
-  try {
-    const { token, telegram_id } = req.body as { token?: string; telegram_id?: number };
-    const tgId = Number(telegram_id);
-    if (!token || !tgId) { res.status(400).json({ error: "Ma'lumotlar to'liq emas" }); return; }
-
-    const row = await queryOne<{
-      student_login: string; expected_tg: string | number | null; used: boolean; expired: boolean;
-    }>(
-      "SELECT student_login, expected_tg, used, (expires_at < NOW()) AS expired FROM student_confirm_tokens WHERE token = $1",
-      [token]
-    );
-    if (!row || row.used) {
-      res.status(400).json({ error: "Havola yaroqsiz yoki allaqachon ishlatilgan" });
-      return;
-    }
-    if (row.expired) {
-      res.status(400).json({ error: "Havola muddati o'tgan. Platformada qaytadan so'rang." });
-      return;
-    }
-    // Bog'langan o'quvchi: faqat o'zi tasdiqlay oladi
-    if (row.expected_tg != null && Number(row.expected_tg) !== tgId) {
-      res.status(403).json({ error: "Bu tugma sizga tegishli emas" });
-      return;
-    }
-
-    // Atomik claim: bir tokendan faqat bitta kod chiqadi
-    const claimed = await queryOne<{ token: string }>(
-      "UPDATE student_confirm_tokens SET used = TRUE WHERE token = $1 AND used = FALSE RETURNING token",
-      [token]
-    );
-    if (!claimed) {
-      res.status(400).json({ error: "Havola allaqachon ishlatilgan" });
-      return;
-    }
-
-    // Bog'lanmagan o'quvchi: shu odamning Telegram ID sini akkauntga yozamiz.
-    // Faqat telegram_id bo'sh bo'lsa yoziladi — boshqa odamning akkaunti o'zgarmaydi.
-    if (row.expected_tg == null) {
-      const bound = await queryOne<{ login: string }>(
-        "UPDATE users SET telegram_id = $1 WHERE login = $2 AND telegram_id IS NULL RETURNING login",
-        [tgId, row.student_login]
-      );
-      if (!bound) {
-        res.status(403).json({ error: "Bu akkaunt allaqachon boshqa Telegram ga bog'langan" });
-        return;
-      }
-    }
-
-    const code = String(randomInt(1000, 10000));
-    await query(
-      `INSERT INTO student_login_codes (student_login, code, expires_at, attempts)
-       VALUES ($1, $2, NOW() + INTERVAL '5 minutes', 0)
-       ON CONFLICT (student_login) DO UPDATE
-         SET code = $2, expires_at = NOW() + INTERVAL '5 minutes', attempts = 0`,
-      [row.student_login, code]
-    );
-
-    const student = await queryOne<{ full_name: string; class_name: string }>(
-      "SELECT full_name, class_name FROM users WHERE login = $1",
-      [row.student_login]
-    );
-    res.json({ ok: true, code, name: student?.full_name, class_name: student?.class_name });
-  } catch (err) {
-    logger.error({ err }, "student/confirm");
     res.status(500).json({ error: (err as Error).message });
   }
 });
