@@ -9,7 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ClassChips } from "@/components/class-chips";
-import { ArrowLeft, Camera, CheckCircle2, Image as ImageIcon, Loader2, ScanFace, ShieldCheck, SwitchCamera, Trash2, X } from "lucide-react";
+import {
+  ArrowLeft, Camera, CheckCircle2, Image as ImageIcon, Loader2, ScanFace, ShieldCheck,
+  SwitchCamera, Trash2, X, ChevronDown, ChevronUp, UserPlus,
+} from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
 import { api, beep, detectFaces, distance, hasSsd, loadFaceApi, startCamera, stopCamera, type FaceResult } from "@/lib/face";
@@ -358,6 +361,7 @@ export default function FaceEnrollPage() {
   const [cls, setCls] = useState<string>("");
   const [search, setSearch] = useState("");
   const [active, setActive] = useState<StudentRow | null>(null);
+  const [showDone, setShowDone] = useState(false); // ro'yxatga olinganlar bo'limi (yig'iladigan)
 
   const classes = useQuery<ClassRow[]>({
     queryKey: ["faceid-classes"],
@@ -390,9 +394,46 @@ export default function FaceEnrollPage() {
     }
   };
 
-  const list = (students.data ?? []).filter((s) => s.full_name.toLowerCase().includes(search.toLowerCase()));
-  const done = (students.data ?? []).filter((s) => s.enrolled).length;
-  const total = students.data?.length ?? 0;
+  const matches = (s: StudentRow) => s.full_name.toLowerCase().includes(search.toLowerCase());
+  const all = students.data ?? [];
+  const notEnrolled = all.filter((s) => !s.enrolled && matches(s));
+  const enrolled = all.filter((s) => s.enrolled && matches(s));
+  const done = all.filter((s) => s.enrolled).length;
+  const total = all.length;
+  const pendingTotal = total - done;
+
+  // Bitta o'quvchi qatori (ikkala bo'limda bir xil ko'rinadi)
+  const renderRow = (s: StudentRow) => (
+    <div key={s.login} className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+        s.enrolled ? "bg-emerald-500/15 text-emerald-500" : "bg-rose-500/10 text-rose-500"
+      }`}>
+        {s.enrolled ? <CheckCircle2 className="w-5 h-5" /> : <ScanFace className="w-5 h-5" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium truncate">{s.full_name}</div>
+        {s.enrolled ? (
+          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+            <Badge variant="secondary" className="text-[11px]">Ro'yxatda · {s.samples} namuna</Badge>
+            {s.samples < SAMPLES && (
+              <span className="text-[11px] text-amber-600 dark:text-amber-400">yon tomondan tanishi uchun qayta oling</span>
+            )}
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground">Ro'yxatga olinmagan</div>
+        )}
+      </div>
+      <Button size="sm" variant={s.enrolled ? "outline" : "default"} onClick={() => setActive(s)}>
+        {s.enrolled ? <Camera className="w-4 h-4 sm:mr-1.5" /> : <UserPlus className="w-4 h-4 sm:mr-1.5" />}
+        <span className="hidden sm:inline">{s.enrolled ? "Qayta olish" : "Yuzni olish"}</span>
+      </Button>
+      {s.enrolled && (
+        <Button size="icon" variant="ghost" className="text-muted-foreground" onClick={() => void remove(s)} title="O'chirish">
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -417,6 +458,9 @@ export default function FaceEnrollPage() {
               <div className="h-2 rounded-full bg-muted overflow-hidden">
                 <div className="h-full bg-primary transition-all" style={{ width: `${(done / total) * 100}%` }} />
               </div>
+              {pendingTotal > 0 && (
+                <div className="text-xs text-muted-foreground mt-1">Yana {pendingTotal} ta o'quvchi qoldi</div>
+              )}
             </div>
           )}
         </CardContent>
@@ -425,39 +469,59 @@ export default function FaceEnrollPage() {
       {(classes.isLoading || students.isLoading) && <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin" /></div>}
       {classes.isError && <div className="text-destructive text-sm">{(classes.error as Error).message}</div>}
 
-      <div className="space-y-2">
-        {list.map((s) => (
-          <div key={s.login} className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${s.enrolled ? "bg-emerald-500/15 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
-              {s.enrolled ? <CheckCircle2 className="w-5 h-5" /> : <ScanFace className="w-5 h-5" />}
+      {/* 1-bo'lim: ro'yxatga olinmagan — birinchi navbatda */}
+      {cls && !students.isLoading && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 font-semibold">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+              Ro'yxatga olinmagan
+              <Badge variant="outline" className="tabular-nums">{notEnrolled.length}</Badge>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{s.full_name}</div>
-              {s.enrolled ? (
-                <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                  <Badge variant="secondary" className="text-[11px]">Ro'yxatda · {s.samples} namuna</Badge>
-                  {s.samples < SAMPLES && (
-                    <span className="text-[11px] text-amber-600 dark:text-amber-400">yon tomondan tanishi uchun qayta oling</span>
-                  )}
-                </div>
-              ) : (
-                <div className="text-xs text-muted-foreground">Ro'yxatga olinmagan</div>
-              )}
-            </div>
-            <Button size="sm" variant={s.enrolled ? "outline" : "default"} onClick={() => setActive(s)}>
-              <Camera className="w-4 h-4 sm:mr-1.5" /><span className="hidden sm:inline">{s.enrolled ? "Qayta olish" : "Yuzni olish"}</span>
-            </Button>
-            {s.enrolled && (
-              <Button size="icon" variant="ghost" className="text-muted-foreground" onClick={() => void remove(s)} title="O'chirish">
-                <Trash2 className="w-4 h-4" />
-              </Button>
+          </div>
+          <div className="space-y-2">
+            {notEnrolled.map(renderRow)}
+            {notEnrolled.length === 0 && (
+              <div className="flex items-center gap-2 rounded-xl border border-dashed px-4 py-5 text-sm text-muted-foreground justify-center">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                {search ? "Qidiruv bo'yicha topilmadi" : "Hamma o'quvchi ro'yxatga olingan"}
+              </div>
             )}
           </div>
-        ))}
-        {!students.isLoading && cls && list.length === 0 && (
-          <div className="text-center text-sm text-muted-foreground py-8">O'quvchi topilmadi</div>
-        )}
-      </div>
+        </section>
+      )}
+
+      {/* 2-bo'lim: ro'yxatga olinganlar — yig'iladigan */}
+      {cls && !students.isLoading && (
+        <section className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setShowDone((v) => !v)}
+            className="w-full flex items-center justify-between rounded-xl px-1 py-1.5 hover:bg-muted/50 transition"
+          >
+            <div className="flex items-center gap-2 font-semibold">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              Ro'yxatga olinganlar
+              <Badge variant="outline" className="tabular-nums">{enrolled.length}</Badge>
+            </div>
+            {showDone ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </button>
+          {showDone && (
+            <div className="space-y-2">
+              {enrolled.map(renderRow)}
+              {enrolled.length === 0 && (
+                <div className="text-center text-sm text-muted-foreground py-6">
+                  {search ? "Qidiruv bo'yicha topilmadi" : "Hali hech kim ro'yxatga olinmagan"}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {!students.isLoading && cls && all.length === 0 && (
+        <div className="text-center text-sm text-muted-foreground py-8">O'quvchi topilmadi</div>
+      )}
 
       {active && (
         <CaptureDialog
@@ -468,4 +532,4 @@ export default function FaceEnrollPage() {
       )}
     </div>
   );
-}
+  }
