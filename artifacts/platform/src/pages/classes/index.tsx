@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { BulkImportSection } from "@/components/bulk-import-section";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const TOKEN_KEY = "talim_auth_token";
@@ -409,6 +410,8 @@ export default function ClassesList() {
         )}
       </div>
 
+      {isAdmin && <BulkImportSection />}
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px] max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -752,6 +755,6 @@ export default function ClassesList() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+  </div>
   );
 }
