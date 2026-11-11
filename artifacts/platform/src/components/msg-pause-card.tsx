@@ -16,12 +16,16 @@ interface PauseState { global: boolean; school: boolean; can_global: boolean; ha
 export function MsgPauseCard() {
   const [st, setSt] = useState<PauseState | null>(null);
   const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
 
   const load = async () => {
     try {
       const r = await fetch(`${API_BASE}/faceid/msg-pause`, { headers: authJson() });
-      if (r.ok) setSt(await r.json());
-    } catch { /* jim */ }
+      if (r.ok) { setSt(await r.json()); setErr(""); }
+      else if (r.status === 404) setErr("Server eski: /faceid/msg-pause topilmadi (404). API (faceid.ts) yangilanmagan yoki qayta ishga tushmagan.");
+      else if (r.status === 403) setErr("Ruxsat yo'q (403). Admin yoki direktor akkaunti bilan kiring.");
+      else setErr(`Server xatosi (${r.status}). Bazada face_msg_pause jadvali borligini tekshiring.`);
+    } catch (e) { setErr("Serverga ulanib bo'lmadi: " + (e as Error).message); }
   };
   useEffect(() => { void load(); }, []);
 
@@ -42,7 +46,20 @@ export function MsgPauseCard() {
     }
   };
 
-  if (!st) return null;
+  if (!st) {
+    return (
+      <Card className="mb-4 border-amber-500/40 bg-amber-500/5">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <BellOff className="w-5 h-5 text-amber-600" /> Davomat xabarlari
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm">
+          {err ? <span className="text-amber-700 dark:text-amber-300">{err}</span> : <Loader2 className="w-4 h-4 animate-spin" />}
+        </CardContent>
+      </Card>
+    );
+  }
   const anyPaused = st.global || st.school;
 
   return (
