@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { TimetableBulkSection } from "@/components/timetable-bulk-section";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -635,6 +636,7 @@ function AdminScheduleView() {
 
   return (
     <div className="space-y-6">
+      <TimetableBulkSection />
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dars jadvali</h1>
         <p className="text-muted-foreground mt-1">Sinflar bo'yicha haftalik dars jadvali</p>
