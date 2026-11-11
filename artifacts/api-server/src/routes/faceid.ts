@@ -100,6 +100,7 @@ void query(FACE_SCHEMA_SQL)
 
 export interface FaceSettings {
   late_after: string; // "08:00" — shundan keyin kelsa "kech qoldi"
+  paused?: boolean; // davomat xabarlari pauzada (global yoki shu maktab)
   notify: boolean; // o'quvchiga (ota-onasiga) shaxsiy Telegram xabar
   notify_group: boolean; // har bir o'quvchi kir/chiqishini O'Z SINF GURUHIGA darhol, alohida post qilish (vaqti bilan)
   threshold: number; // moslik chegarasi (kichik = qat'iyroq)
@@ -118,6 +119,20 @@ const DEFAULT_SETTINGS: FaceSettings = {
   open_from: "06:00", close_after: "14:30", late_until: "10:00", quarter_start: "", quarter_end: "", hour_limit: 36,
 };
 
+// ── Davomat xabarlarini pauza qilish: maktab_id=0 → barcha maktablar (global, faqat admin)
+void query(`CREATE TABLE IF NOT EXISTS face_msg_pause (
+  maktab_id  INT PRIMARY KEY,
+  paused     BOOLEAN NOT NULL DEFAULT FALSE,
+  by_name    TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`).catch(() => { /* migratsiya */ });
+
+export async function isMsgPaused(mid: number | null | undefined): Promise<boolean> {
+  const rows = await query<{ paused: boolean }>(
+    "SELECT paused FROM face_msg_pause WHERE maktab_id IN (0, $1)", [mid ?? -1]).catch(() => []);
+  return rows.some((r) => r.paused);
+}
+
 // Sozlamalar: DEFAULT → global(id=1) → maktab(smena=0) → maktab(smena).
 // maktabId berilmasa — faqat global (orqaga mos: eski chaqiruvlar o'zgarmaydi).
 async function getSettings(maktabId?: number | null, smena = 0): Promise<FaceSettings> {
@@ -133,6 +148,7 @@ async function getSettings(maktabId?: number | null, smena = 0): Promise<FaceSet
       if (schS?.data) merged = { ...merged, ...schS.data };
     }
   }
+  merged = { ...merged, paused: await isMsgPaused(maktabId ?? null) };
   return merged;
 }
 
@@ -165,6 +181,7 @@ function uzTime(): string {
  * xabar/post ketmaydi — guruhlar va ota-onalar bezovta bo'lmaydi.
  */
 function messagingAllowed(s: FaceSettings): boolean {
+  if (s.paused) return false;
   const day = uzDay(); // 0=Yakshanba ... 6=Shanba
   if (day === 0) return false; // Yakshanba — dam olish, xabar yo'q
   const hm = uzTime();
@@ -398,10 +415,52 @@ router.post("/faceid/settings", async (req, res): Promise<void> => {
 });
 
 // POST /api/faceid/notify-absent — kelmaganlar ro'yxatini sinf rahbarlariga (Telegram)
+// ── Davomat xabarlari pauzasi: holatini olish va o'zgartirish
+router.get("/faceid/msg-pause", async (req, res): Promise<void> => {
+  const au = authAs(req, MANAGE);
+  if (!au) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const a = au as Record<string, unknown>;
+  const mid = schoolOf(au);
+  const g = await queryOne<{ paused: boolean }>("SELECT paused FROM face_msg_pause WHERE maktab_id = 0", []).catch(() => null);
+  const sc = mid === null ? null : await queryOne<{ paused: boolean }>("SELECT paused FROM face_msg_pause WHERE maktab_id = $1", [mid]).catch(() => null);
+  res.json({ global: !!g?.paused, school: !!sc?.paused, can_global: a["role"] === "admin", has_school: mid !== null });
+});
+
+router.post("/faceid/msg-pause", async (req, res): Promise<void> => {
+  const au = authAs(req, MANAGE);
+  if (!au) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const a = au as Record<string, unknown>;
+  const { scope, paused } = req.body as { scope?: string; paused?: boolean };
+  if (typeof paused !== "boolean") { res.status(400).json({ error: "paused (true/false) kerak" }); return; }
+  const by = String(a["full_name"] ?? a["login"] ?? "");
+  try {
+    if (scope === "global") {
+      if (a["role"] !== "admin") { res.status(403).json({ error: "Umumiy pauzani faqat admin qila oladi" }); return; }
+      await query(
+        `INSERT INTO face_msg_pause (maktab_id, paused, by_name, updated_at) VALUES (0, $1, $2, NOW())
+         ON CONFLICT (maktab_id) DO UPDATE SET paused = EXCLUDED.paused, by_name = EXCLUDED.by_name, updated_at = NOW()`,
+        [paused, by]);
+    } else if (scope === "school") {
+      const mid = schoolOf(au);
+      if (mid === null) { res.status(400).json({ error: "Maktab tanlanmagan. Admin: avval maktabni 'ko'rish' rejimiga o'tkazing" }); return; }
+      await query(
+        `INSERT INTO face_msg_pause (maktab_id, paused, by_name, updated_at) VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (maktab_id) DO UPDATE SET paused = EXCLUDED.paused, by_name = EXCLUDED.by_name, updated_at = NOW()`,
+        [mid, paused, by]);
+    } else {
+      res.status(400).json({ error: "scope: 'global' yoki 'school' bo'lsin" }); return;
+    }
+    res.json({ ok: true, paused });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 router.post("/faceid/notify-absent", async (req, res): Promise<void> => {
   const u = authAs(req, MANAGE);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const mid = schoolOf(u);
+  if (await isMsgPaused(mid)) { res.status(409).json({ error: "Davomat xabarlari pauzada" }); return; }
   try {
     const today = uzDateStr();
     const rows = mid !== null
@@ -1277,6 +1336,7 @@ async function dailyAttendanceChats(mid: number | null) {
 //  08:00 — MAKTAB GURUHIGA: shu paytgacha kelganlar soni (qisqa snapshot)
 // ═══════════════════════════════════════════════════════════════════════════
 export async function faceidArrivedCount(mid: number): Promise<{ sent: number; arrived: number; total: number }> {
+  if (await isMsgPaused(mid)) return { sent: 0, arrived: 0, total: 0 };
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
   const agg = await queryOne<{ total: number; arrived: number; late: number }>(
@@ -1307,6 +1367,7 @@ export async function faceidArrivedCount(mid: number): Promise<{ sent: number; a
 //  Har bir o'quvchiga (ota-onasiga) alohida xabar handleScan ichida darhol boradi.
 // ═══════════════════════════════════════════════════════════════════════════
 export async function faceidGroupSummary(mid: number): Promise<{ classes: number; sent: number }> {
+  if (await isMsgPaused(mid)) return { classes: 0, sent: 0 };
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
   const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' AND maktab_id = $1 ORDER BY name", [mid]);
@@ -1379,6 +1440,7 @@ export async function faceidGroupSummary(mid: number): Promise<{ classes: number
 //  10:00 — "MUNTAZAM KELMAYDIGAN" o'quvchilar har kuni sinf guruhiga eslatiladi
 // ═══════════════════════════════════════════════════════════════════════════
 export async function faceidChronicNotify(mid: number): Promise<{ classes: number; sent: number }> {
+  if (await isMsgPaused(mid)) return { classes: 0, sent: 0 };
   const today = uzDateStr();
   const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' AND maktab_id = $1 ORDER BY name", [mid]);
   let sent = 0, done = 0;
@@ -1425,6 +1487,7 @@ router.post("/faceid/group-summary", async (req, res): Promise<void> => {
 //   • Shundan so'ng kunlik faoliyat yopiladi (14:30 dan keyin Face ID ishlamaydi).
 // ═══════════════════════════════════════════════════════════════════════════
 export async function faceidDepartureSummary(mid: number): Promise<{ classes: number; sent: number; truants: number }> {
+  if (await isMsgPaused(mid)) return { classes: 0, sent: 0, truants: 0 };
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
 
@@ -1573,6 +1636,7 @@ async function mgmtRecipients(mid: number): Promise<number[]> {
 }
 
 export async function faceidUnexcusedNotify(mid: number): Promise<{ classes: number; recipients: number }> {
+  if (await isMsgPaused(mid)) return { classes: 0, recipients: 0 };
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
   const classes = await query<{ name: string }>(
@@ -1857,6 +1921,7 @@ router.get("/faceid/archive", async (req, res): Promise<void> => {
 
 /** 14:30 da — kunlik arxivni Telegramga (maktab guruhi + rahbariyat) hujjat sifatida yuboradi. */
 export async function faceidArchiveToTelegram(mid: number, date = uzDateStr()): Promise<{ sent: number }> {
+  if (await isMsgPaused(mid)) return { sent: 0 };
   const data = await collectArchive(date, mid);
   const buf = Buffer.from(renderArchiveDoc(data), "utf-8");
   const fname = `davomat-${date}.doc`;
@@ -1904,6 +1969,7 @@ async function quarterOffenders(mid: number, quarterStart: string, quarterEnd: s
 }
 
 export async function checkHourLimits(mid: number): Promise<{ newly: number }> {
+  if (await isMsgPaused(mid)) return { newly: 0 };
   const settings = await getSettings(mid);
   const today = uzDateStr();
   const quarterStart = autoQuarterStart(today, settings.quarter_start);
