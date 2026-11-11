@@ -67,7 +67,7 @@ const B = {
   tMessage: "✉️ Sinfga xabar",
   tClass: "👥 Sinfim",
   mToday: "📊 Maktab bugun",
-  mPost: "📣 Kanalga e'lon",
+  mPost: "📣 E'lon yuborish",
   mChats: "🔗 Guruh va kanallar",
   game: "🎮 Sinf o'yini",
   gameProfile: "🎮 O'yin profilim",
@@ -883,52 +883,280 @@ function registerPrivate(priv: Composer<Context>): void {
     await ctx.reply(text, { parse_mode: "HTML" });
   });
 
-  // ── Rahbar: kanalga e'lon ──────────────────────────────────────────────────
-  priv.hears(B.mPost, async (ctx) => {
-    const who = await whoIs(ctx.from!.id);
-    if (!isManagement(who)) { await ctx.reply("Bu bo'lim faqat maktab rahbariyati uchun."); return; }
-    const [schools, classes, teachers] = await Promise.all([
-      getChatsByPurpose("school"), getChatsByPurpose("class"), getChatsByPurpose("teachers"),
-    ]);
-    if (schools.length + classes.length + teachers.length === 0) {
-      await ctx.reply(
-        "Hali birorta kanal yoki guruh ulanmagan.\n\n" +
-          "• Kanal: botni kanalga admin qiling yoki /kanal @kanal_nomi yuboring\n" +
-          "• Sinf guruhi: botni guruhga qo'shib, u yerda /boglash yozing"
-      );
-      return;
+  // ══════════════════════════════════════════════════════════════════════════
+  //  E'LON YUBORISH — faqat GURUHLARGA (sinf va ustozlar guruhi) yoki bitta o'quvchiga.
+  //  Kanal (purpose='school') ga yubormaydi.
+  //   • Admin: barcha maktablarning barcha guruhlari, bitta maktab, maktab sinfi, o'quvchi
+  //   • Rahbariyat (direktor/zavuch/MMTB): o'z maktabi — barcha guruhlar, sinf yoki o'quvchi
+  //   • O'qituvchi/sinf rahbari: o'z sinflari — sinf guruhi yoki o'quvchi
+  // ══════════════════════════════════════════════════════════════════════════
+  type AnnActor = { who: Who; admin: boolean; mgmt: boolean; mid: number | null };
+  type AnnTarget =
+    | { kind: "all" }
+    | { kind: "school"; maktabId: number }
+    | { kind: "class"; classId: string; className: string }
+    | { kind: "student"; tgId: number; name: string; className: string };
+  type AnnState =
+    | { step: "idle" }
+    | { step: "await_msg"; target: AnnTarget }
+    | { step: "confirm"; target: AnnTarget; messageId: number };
+
+  const annStates = createSessionStore<AnnState>("bot_announce", { step: "idle" });
+  void annStates.loadAll();
+  const getA = (id: number): AnnState => annStates.get(id) ?? { step: "idle" };
+  const setA = (id: number, s: AnnState): void => annStates.set(id, s);
+
+  async function annActor(tgId: number): Promise<AnnActor | null> {
+    const who = await whoIs(tgId);
+    if (!who || who.kind === "student") return null;
+    if (who.kind === "admin") return { who, admin: true, mgmt: true, mid: null };
+    const row = await queryOne<{ maktab_id: number | null }>("SELECT maktab_id FROM staff WHERE id = $1", [who.id]);
+    return { who, admin: false, mgmt: isManagement(who), mid: row?.maktab_id ?? 3 };
+  }
+
+  async function annClasses(a: AnnActor, mid: number | null): Promise<{ id: string; name: string }[]> {
+    if (!a.mgmt) return classesFor(a.who);
+    const m = a.admin ? mid : a.mid;
+    if (m === null) return query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' ORDER BY name");
+    return query<{ id: string; name: string }>(
+      "SELECT id, name FROM classes WHERE name <> '' AND maktab_id = $1 ORDER BY name", [m]);
+  }
+
+  async function annCanClass(a: AnnActor, classId: string): Promise<boolean> {
+    if (a.admin) return true;
+    if (!a.mgmt) return canUseClass(a.who, classId);
+    const r = await queryOne<{ maktab_id: number | null }>("SELECT maktab_id FROM classes WHERE id = $1", [classId]);
+    return r?.maktab_id === a.mid;
+  }
+
+  async function annCanStudent(a: AnnActor, tgId: number): Promise<boolean> {
+    if (a.admin) return true;
+    const u = await queryOne<{ class_name: string; maktab_id: number | null }>(
+      "SELECT class_name, maktab_id FROM users WHERE telegram_id = $1", [tgId]);
+    if (!u) return false;
+    const c = await queryOne<{ id: string }>(
+      "SELECT id FROM classes WHERE name = $1 AND maktab_id IS NOT DISTINCT FROM $2", [u.class_name, u.maktab_id]);
+    if (!c) return false;
+    return annCanClass(a, c.id);
+  }
+
+  async function annCanTarget(a: AnnActor, t: AnnTarget): Promise<boolean> {
+    if (t.kind === "all") return a.admin;
+    if (t.kind === "school") return a.admin || (a.mgmt && t.maktabId === a.mid);
+    if (t.kind === "class") return annCanClass(a, t.classId);
+    return annCanStudent(a, t.tgId);
+  }
+
+  async function annRecipients(t: AnnTarget): Promise<{ chats: number[]; students: number[] }> {
+    if (t.kind === "student") return { chats: [], students: [t.tgId] };
+    if (t.kind === "class") {
+      const r = await query<{ chat_id: number }>("SELECT chat_id FROM tg_chats WHERE purpose = 'class' AND class_id = $1", [t.classId]);
+      return { chats: r.map((x) => Number(x.chat_id)), students: [] };
     }
-    setF(ctx.from!.id, { type: "cpost" });
-    await ctx.reply(
-      `📣 <b>E'lon yuborish</b>\n\nE'lonni shu yerga yuboring — matn, rasm, video, fayl yoki ovozli xabar bo'lishi mumkin.\n\n` +
-        `Ulangan: 🏫 kanal ${schools.length} · 👥 sinf guruhi ${classes.length} · 👨‍🏫 ustozlar guruhi ${teachers.length}`,
-      { parse_mode: "HTML", reply_markup: new InlineKeyboard().text("❌ Bekor qilish", "f:cancel") }
-    );
+    if (t.kind === "school") {
+      const r = await query<{ chat_id: number }>(
+        "SELECT chat_id FROM tg_chats WHERE purpose IN ('class','teachers') AND maktab_id = $1", [t.maktabId]);
+      return { chats: r.map((x) => Number(x.chat_id)), students: [] };
+    }
+    const r = await query<{ chat_id: number }>("SELECT chat_id FROM tg_chats WHERE purpose IN ('class','teachers')");
+    return { chats: r.map((x) => Number(x.chat_id)), students: [] };
+  }
+
+  async function annLabel(t: AnnTarget): Promise<string> {
+    if (t.kind === "all") return "🌐 Barcha maktablarning barcha guruhlari";
+    if (t.kind === "school") {
+      const m = await queryOne<{ nom: string }>("SELECT nom FROM maktablar WHERE id = $1", [t.maktabId]);
+      return `🏫 ${esc(m?.nom ?? `${t.maktabId}-maktab`)} — barcha guruhlari`;
+    }
+    if (t.kind === "class") return `👥 ${esc(t.className)} sinf guruhi`;
+    return `👤 ${esc(t.name)} (${esc(t.className)}) — shaxsiy xabar`;
+  }
+
+  async function annSummary(t: AnnTarget): Promise<string> {
+    const r = await annRecipients(t);
+    return `📣 <b>E'lon tayyor</b>\n\nKimga: ${await annLabel(t)}\n` +
+      `Qabul qiluvchilar: ${r.chats.length} ta guruh` + (r.students.length ? `, ${r.students.length} ta o'quvchi` : "") +
+      `\n\nYuboramizmi?`;
+  }
+
+  const annConfirmKb = () => new InlineKeyboard().text("✅ Yuborish", "an:go").row().text("❌ Bekor qilish", "an:x");
+
+  priv.hears(B.mPost, async (ctx) => {
+    const a = await annActor(ctx.from!.id);
+    if (!a) { await ctx.reply("Bu bo'lim faqat rahbariyat va o'qituvchilar uchun."); return; }
+    setA(ctx.from!.id, { step: "idle" });
+    const kb = new InlineKeyboard();
+    if (a.admin) {
+      kb.text("🌐 Barcha maktablar — barcha guruhlar", "an:all").row()
+        .text("🏫 Maktabni tanlash", "an:ps").row();
+    } else if (a.mgmt) {
+      kb.text("🏫 Maktabimning barcha guruhlari", `an:sa:${a.mid}`).row()
+        .text("👥 Bitta sinf guruhi", `an:cl:${a.mid}:g`).row()
+        .text("👤 Bitta o'quvchi", `an:cl:${a.mid}:s`).row();
+    } else {
+      kb.text("👥 Mening sinflarim — guruh", "an:cl:x:g").row()
+        .text("👤 Bitta o'quvchi", "an:cl:x:s").row();
+    }
+    kb.text("❌ Bekor qilish", "an:x");
+    await ctx.reply("📣 <b>E'lon yuborish</b>\n\nE'lon kimga yuborilsin?", { parse_mode: "HTML", reply_markup: kb });
   });
 
-  priv.callbackQuery(/^f:cp:(school|all|teachers)$/, async (ctx) => {
-    const s = getF(ctx.from.id);
-    if (s.type !== "cpost_confirm") { await ctx.answerCallbackQuery("Sessiya tugagan."); return; }
-    const who = await whoIs(ctx.from.id);
-    if (!isManagement(who)) { await ctx.answerCallbackQuery("⛔"); return; }
-    setF(ctx.from.id, { type: "idle" });
+  // Maktab tanlash (admin)
+  priv.callbackQuery("an:ps", async (ctx) => {
+    const a = await annActor(ctx.from.id);
+    if (!a?.admin) { await ctx.answerCallbackQuery("⛔"); return; }
+    await ctx.answerCallbackQuery();
+    const schools = await query<{ id: number; nom: string }>("SELECT id, nom FROM maktablar WHERE deleted_at IS NULL ORDER BY id");
+    const kb = new InlineKeyboard();
+    for (const s of schools) kb.text(`🏫 ${s.nom}`.slice(0, 60), `an:sm:${s.id}`).row();
+    kb.text("❌ Bekor", "an:x");
+    await ctx.editMessageText("🏫 <b>Maktabni tanlang</b>", { parse_mode: "HTML", reply_markup: kb }).catch(() => {});
+  });
+
+  // Maktab bo'yicha menyu (admin)
+  priv.callbackQuery(/^an:sm:(\d+)$/, async (ctx) => {
+    const a = await annActor(ctx.from.id);
+    if (!a?.admin) { await ctx.answerCallbackQuery("⛔"); return; }
+    await ctx.answerCallbackQuery();
+    const mid = Number(ctx.match[1]);
+    const m = await queryOne<{ nom: string }>("SELECT nom FROM maktablar WHERE id = $1", [mid]);
+    const kb = new InlineKeyboard()
+      .text("🏫 Maktabning barcha guruhlari", `an:sa:${mid}`).row()
+      .text("👥 Bitta sinf guruhi", `an:cl:${mid}:g`).row()
+      .text("👤 Bitta o'quvchi", `an:cl:${mid}:s`).row()
+      .text("🔙 Orqaga", "an:ps").text("❌ Bekor", "an:x");
+    await ctx.editMessageText(`🏫 <b>${esc(m?.nom ?? `${mid}-maktab`)}</b>\n\nKimga yuboramiz?`, { parse_mode: "HTML", reply_markup: kb }).catch(() => {});
+  });
+
+  // Sinflar ro'yxati: g = guruh, s = o'quvchi
+  priv.callbackQuery(/^an:cl:(x|\d+):(g|s)$/, async (ctx) => {
+    const a = await annActor(ctx.from.id);
+    if (!a) { await ctx.answerCallbackQuery("⛔"); return; }
+    await ctx.answerCallbackQuery();
+    const mid = ctx.match[1] === "x" ? null : Number(ctx.match[1]);
+    const mode = ctx.match[2];
+    const classes = await annClasses(a, mid);
+    if (classes.length === 0) { await ctx.reply("Sinf topilmadi."); return; }
+    const kb = new InlineKeyboard();
+    let inRow = 0;
+    for (const c of classes.slice(0, 60)) {
+      kb.text(c.name, mode === "g" ? `an:cg:${c.id}` : `an:sl:${c.id}`);
+      if (++inRow === 4) { kb.row(); inRow = 0; }
+    }
+    if (inRow) kb.row();
+    kb.text("🔙 Orqaga", a.admin && mid !== null ? `an:sm:${mid}` : "an:x").text("❌ Bekor", "an:x");
+    await ctx.editMessageText(mode === "g" ? "👥 <b>Qaysi sinf guruhiga?</b>" : "👤 <b>Qaysi sinf o'quvchisiga?</b>",
+      { parse_mode: "HTML", reply_markup: kb }).catch(() => {});
+  });
+
+  // Sinfdagi botga ulangan o'quvchilar
+  priv.callbackQuery(/^an:sl:(.+)$/, async (ctx) => {
+    const a = await annActor(ctx.from.id);
+    if (!a || !(await annCanClass(a, ctx.match[1]!))) { await ctx.answerCallbackQuery("⛔"); return; }
+    await ctx.answerCallbackQuery();
+    const c = await queryOne<{ name: string; maktab_id: number | null }>("SELECT name, maktab_id FROM classes WHERE id = $1", [ctx.match[1]!]);
+    const students = await query<{ full_name: string; telegram_id: number }>(
+      "SELECT full_name, telegram_id FROM users WHERE class_name = $1 AND maktab_id IS NOT DISTINCT FROM $2 ORDER BY full_name",
+      [c?.name ?? "", c?.maktab_id ?? null]);
+    const linked = students.filter((s) => isRealTelegramId(s.telegram_id));
+    const kb = new InlineKeyboard();
+    for (const s of linked.slice(0, 60)) kb.text(s.full_name.slice(0, 40), `an:st:${s.telegram_id}`).row();
+    kb.text("❌ Bekor", "an:x");
+    const note = linked.length ? "" : "\n\n⚠️ Bu sinfda botga ulangan o'quvchi yo'q.";
+    await ctx.editMessageText(`👤 <b>${esc(c?.name ?? "")}</b> — botga ulangan o'quvchilar: ${linked.length} / ${students.length}${note}`,
+      { parse_mode: "HTML", reply_markup: kb }).catch(() => {});
+  });
+
+  // Maqsad tanlandi → endi matn/rasm/fayl so'raladi
+  async function annSetTarget(ctx: Context, t: AnnTarget): Promise<void> {
+    setA(ctx.from!.id, { step: "await_msg", target: t });
+    const text = `✍️ <b>E'lon matnini yuboring</b>\n\nKimga: ${await annLabel(t)}\n\n` +
+      "Matn, rasm, video, fayl yoki ovozli xabar bo'lishi mumkin.";
+    const kb = new InlineKeyboard().text("❌ Bekor qilish", "an:x");
+    await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: kb }).catch(() => ctx.reply(text, { parse_mode: "HTML", reply_markup: kb }));
+  }
+
+  priv.callbackQuery("an:all", async (ctx) => {
+    const a = await annActor(ctx.from.id);
+    if (!a?.admin) { await ctx.answerCallbackQuery("⛔"); return; }
+    await ctx.answerCallbackQuery();
+    await annSetTarget(ctx, { kind: "all" });
+  });
+
+  priv.callbackQuery(/^an:sa:(\d+)$/, async (ctx) => {
+    const a = await annActor(ctx.from.id);
+    const mid = Number(ctx.match[1]);
+    if (!a || !(await annCanTarget(a, { kind: "school", maktabId: mid }))) { await ctx.answerCallbackQuery("⛔"); return; }
+    await ctx.answerCallbackQuery();
+    await annSetTarget(ctx, { kind: "school", maktabId: mid });
+  });
+
+  priv.callbackQuery(/^an:cg:(.+)$/, async (ctx) => {
+    const a = await annActor(ctx.from.id);
+    const classId = ctx.match[1]!;
+    if (!a || !(await annCanClass(a, classId))) { await ctx.answerCallbackQuery("⛔"); return; }
+    await ctx.answerCallbackQuery();
+    const c = await queryOne<{ name: string }>("SELECT name FROM classes WHERE id = $1", [classId]);
+    await annSetTarget(ctx, { kind: "class", classId, className: c?.name ?? "" });
+  });
+
+  priv.callbackQuery(/^an:st:(\d+)$/, async (ctx) => {
+    const a = await annActor(ctx.from.id);
+    const tgId = Number(ctx.match[1]);
+    if (!a || !(await annCanStudent(a, tgId))) { await ctx.answerCallbackQuery("⛔"); return; }
+    await ctx.answerCallbackQuery();
+    const u = await queryOne<{ full_name: string; class_name: string }>("SELECT full_name, class_name FROM users WHERE telegram_id = $1", [tgId]);
+    await annSetTarget(ctx, { kind: "student", tgId, name: u?.full_name ?? "", className: u?.class_name ?? "" });
+  });
+
+  priv.callbackQuery("an:x", async (ctx) => {
+    setA(ctx.from.id, { step: "idle" });
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText("❌ E'lon bekor qilindi.").catch(() => {});
+  });
+
+  // E'lon matnini qabul qilish (faqat shu holatda, qolgan xabarlar keyingi handlerga)
+  priv.on("message", async (ctx, next) => {
+    const st = getA(ctx.from.id);
+    if (st.step !== "await_msg" && st.step !== "confirm") { await next(); return; }
+    const text = ctx.message.text ?? "";
+    if (text.startsWith("/") || ALL_BUTTONS.has(text)) { await next(); return; }
+    const target = st.target;
+    const a = await annActor(ctx.from.id);
+    if (!a || !(await annCanTarget(a, target))) {
+      setA(ctx.from.id, { step: "idle" });
+      await ctx.reply("⛔ Bu manzilga e'lon yuborishga ruxsatingiz yo'q.");
+      return;
+    }
+    setA(ctx.from.id, { step: "confirm", target, messageId: ctx.message.message_id });
+    await ctx.reply(await annSummary(target), {
+      parse_mode: "HTML",
+      reply_parameters: { message_id: ctx.message.message_id },
+      reply_markup: annConfirmKb(),
+    });
+  });
+
+  priv.callbackQuery("an:go", async (ctx) => {
+    const st = getA(ctx.from.id);
+    if (st.step !== "confirm") { await ctx.answerCallbackQuery("Sessiya tugagan."); return; }
+    const a = await annActor(ctx.from.id);
+    if (!a || !(await annCanTarget(a, st.target))) { await ctx.answerCallbackQuery("⛔"); return; }
+    setA(ctx.from.id, { step: "idle" });
     await ctx.answerCallbackQuery("Yuborilmoqda...");
-    const mode = ctx.match[1]!;
-    const targets: LinkedChat[] = [];
-    if (mode === "school" || mode === "all") targets.push(...(await getChatsByPurpose("school")));
-    if (mode === "all") targets.push(...(await getChatsByPurpose("class")));
-    if (mode === "teachers" || mode === "all") targets.push(...(await getChatsByPurpose("teachers")));
+    const r = await annRecipients(st.target);
     let ok = 0;
-    for (const t of targets) {
-      try {
-        await ctx.api.copyMessage(t.chat_id, ctx.from.id, s.messageId);
-        ok++;
-      } catch (err) {
-        logger.warn({ err, chat: t.chat_id }, "E'lon yuborilmadi");
-      }
+    for (const chatId of r.chats) {
+      try { await ctx.api.copyMessage(chatId, ctx.from.id, st.messageId); ok++; }
+      catch (err) { logger.warn({ err, chat: chatId }, "E'lon guruhga yuborilmadi"); }
       await sleep(60);
     }
-    await ctx.editMessageText(`✅ E'lon ${ok} / ${targets.length} ta chatga yuborildi.`).catch(() => {});
+    for (const tgId of r.students) {
+      try { await ctx.api.copyMessage(tgId, ctx.from.id, st.messageId); ok++; }
+      catch (err) { logger.warn({ err, tg: tgId }, "E'lon o'quvchiga yuborilmadi"); }
+      await sleep(60);
+    }
+    const total = r.chats.length + r.students.length;
+    await ctx.editMessageText(`✅ E'lon ${ok} / ${total} ta qabul qiluvchiga yuborildi.`).catch(() => {});
   });
 
   // ── Rahbar: guruh va kanallar ro'yxati ─────────────────────────────────────

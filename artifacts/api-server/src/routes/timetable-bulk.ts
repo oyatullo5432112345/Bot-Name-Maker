@@ -131,7 +131,8 @@ router.post("/timetable/bulk/preview", async (req, res): Promise<void> => {
   const rows = readRows(req.body);
   if (!rows) { res.status(400).json({ error: `Qatorlar bo'sh yoki ${MAX_ROWS} tadan oshmasin` }); return; }
   try {
-    const mid = schoolOf(u) ?? 3;
+    const mid = schoolOf(u);
+    if (mid === null) { res.status(400).json({ error: "Maktab tanlanmagan. Admin: avval Maktablar bo'limida maktabni 'ko'rish' rejimiga o'tkazing" }); return; }
     const { rows: out } = await analyze(rows, mid);
     res.json({ rows: out, counts: countOf(out) });
   } catch (err) {
@@ -146,7 +147,8 @@ router.post("/timetable/bulk/commit", async (req, res): Promise<void> => {
   const rows = readRows(req.body);
   if (!rows) { res.status(400).json({ error: `Qatorlar bo'sh yoki ${MAX_ROWS} tadan oshmasin` }); return; }
   try {
-    const mid = schoolOf(u) ?? 3;
+    const mid = schoolOf(u);
+    if (mid === null) { res.status(400).json({ error: "Maktab tanlanmagan. Admin: avval Maktablar bo'limida maktabni 'ko'rish' rejimiga o'tkazing" }); return; }
     const { rows: analyzed, classByName, staffByName } = await analyze(rows, mid);
     const ok = analyzed.filter((a) => a.status !== "rejected");
 

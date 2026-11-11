@@ -1,5 +1,6 @@
 // Ommaviy qo'shish: tahlil (preview) va yaratish (commit).
 // Faqat 5–11 sinflar. Mavjud sinf va o'quvchilar takror qo'shilmaydi.
+// Maktab aniq tanlangan bo'lishi shart (fallback yo'q) — boshqa maktabga aralashmasin.
 
 import { Router, type IRouter, type Request } from "express";
 import { query, queryOne } from "../lib/db.js";
@@ -12,6 +13,7 @@ const MANAGE = ["admin", "director", "zam_direktor", "zavuch"];
 const MIN_GRADE = 5;
 const MAX_GRADE = 11;
 const MAX_ROWS = 1000;
+const MAKTAB_REQUIRED = "Maktab tanlanmagan. Admin: avval Maktablar bo'limida maktabni 'ko'rish' rejimiga o'tkazing";
 
 interface InRow {
   class_name?: unknown;
@@ -129,7 +131,8 @@ router.post("/bulk/preview", async (req, res): Promise<void> => {
   const rows = readRows(req.body);
   if (!rows) { res.status(400).json({ error: `Qatorlar bo'sh yoki ${MAX_ROWS} tadan oshmasin` }); return; }
   try {
-    const mid = schoolOf(u) ?? 3;
+    const mid = schoolOf(u);
+    if (mid === null) { res.status(400).json({ error: MAKTAB_REQUIRED }); return; }
     const { rows: out, newClasses } = await analyze(rows, mid);
     res.json({ rows: out, new_classes: newClasses, counts: countOf(out) });
   } catch (err) {
@@ -144,7 +147,8 @@ router.post("/bulk/commit", async (req, res): Promise<void> => {
   const rows = readRows(req.body);
   if (!rows) { res.status(400).json({ error: `Qatorlar bo'sh yoki ${MAX_ROWS} tadan oshmasin` }); return; }
   try {
-    const mid = schoolOf(u) ?? 3;
+    const mid = schoolOf(u);
+    if (mid === null) { res.status(400).json({ error: MAKTAB_REQUIRED }); return; }
     const { rows: analyzed } = await analyze(rows, mid);
     const toCreate = analyzed.filter((a) => a.status === "new");
 

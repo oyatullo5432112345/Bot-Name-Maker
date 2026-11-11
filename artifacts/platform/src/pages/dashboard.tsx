@@ -12,7 +12,7 @@ import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, U
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
-import { ConfirmCard, ConfirmPluses } from "@/components/confirm-card";
+import { ConfirmPluses } from "@/components/confirm-card";
 
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
@@ -317,8 +317,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Kunlik tasdiqlash — "o'zimman" */}
-      <ConfirmCard />
       {isAdminOrDir && <ConfirmPluses />}
 
       {/* Tezkor tugmalar — Face ID va Bek va Lola o'yini */}

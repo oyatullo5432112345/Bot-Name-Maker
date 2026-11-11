@@ -16,6 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { TimetableBulkSection } from "@/components/timetable-bulk-section";
+import { PeriodsSettingsCard } from "@/components/periods-settings-card";
+import { usePeriodTimes } from "@/lib/use-period-times";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -152,6 +154,7 @@ function matchTeacher(raw: string, staff: StaffItem[]): string | null {
 
 // ── TEACHER VIEW ─────────────────────────────────────────────────────────────
 function TeacherView({ userId }: { userId: string }) {
+  const PERIOD_TIMES = usePeriodTimes();
   // ── TUZATILDI #4: yakshanba (0) → dushanba (1), shanba (6) saqlanadi
   const todayDow = new Date().getDay();
   const initDay = todayDow === 0 ? 1 : todayDow;
@@ -330,6 +333,7 @@ export default function DarsJadvaliPage() {
 
 // ─── ADMIN/MUHARRIR KO'RINISHI ─────────────────────────────────────────────────
 function AdminScheduleView() {
+  const PERIOD_TIMES = usePeriodTimes();
   const { user } = useAuth();
   const { toast } = useToast();
   const isEditor = ["admin", "director", "zam_direktor", "zavuch"].includes(user?.role ?? "");
@@ -637,6 +641,7 @@ function AdminScheduleView() {
   return (
     <div className="space-y-6">
       <TimetableBulkSection />
+      <PeriodsSettingsCard />
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dars jadvali</h1>
         <p className="text-muted-foreground mt-1">Sinflar bo'yicha haftalik dars jadvali</p>

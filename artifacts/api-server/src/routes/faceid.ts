@@ -867,6 +867,13 @@ async function postClassGroupClub(
   }
 }
 
+// 2 smena: ketish faqat smena tugashiga yaqin yoziladi (daqiqa)
+const OUT_LEAD_MIN = 15;
+function hmToMin(hm: string): number {
+  const [h, m] = String(hm ?? "00:00").split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
 async function handleScan(
   login: string,
   mode: ScanMode,
@@ -898,9 +905,22 @@ async function handleScan(
   // tasodifiy darhol qayta skanni "ketdi" deb hisoblamaslik uchun qisqa (1 daqiqa) himoya.
   const RESCAN_GUARD_MS = 60_000;
 
+  // Maktab 2 smenali bo'lsa — ikki smena bir vaqtda almashsa ham har kim o'z smenasi bo'yicha yoziladi
+  const schoolRow = mid === null
+    ? null
+    : await queryOne<{ ikki: boolean }>("SELECT COALESCE(ikki_smena, false) AS ikki FROM maktablar WHERE id = $1", [mid]).catch(() => null);
+  const twoShift = !!schoolRow?.ikki;
+
   // ── Qaror: keldi yoki ketdi
   let action: "in" | "out";
-  if (mode === "in") {
+  if (twoShift) {
+    if (!row?.arrived) action = "in";
+    else if (row.left) return { ...base, event: "already_out", time: row.left };
+    else if (row.arrived_ms && Date.now() - row.arrived_ms < RESCAN_GUARD_MS) {
+      return { ...base, event: "already_in", time: row.arrived, status: row.status };
+    } else if (hmToMin(time) >= hmToMin(String(settings.default_end ?? "13:30")) - OUT_LEAD_MIN) action = "out";
+    else return { ...base, event: "already_in", time: row.arrived, status: row.status };
+  } else if (mode === "in") {
     if (row?.arrived) return { ...base, event: "already_in", time: row.arrived, status: row.status };
     action = "in";
   } else if (mode === "out") {
