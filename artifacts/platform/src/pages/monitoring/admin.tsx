@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Trash2, Lock, Unlock, Users, Loader2, BarChart3,
-  ListChecks, PenLine, CalendarClock, X, FileText, Sparkles, Edit,
+  ListChecks, PenLine, CalendarClock, X, FileText, Sparkles, Edit, EyeOff, ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -167,6 +167,15 @@ export default function MonitoringAdminPage() {
     },
   });
 
+  const { data: optStats } = useQuery<{ total: number; questions: Array<{ id: string; question: string; options: string[]; counts: number[] }> }>({
+    queryKey: ["monitoring-option-stats", resultsFor],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/monitoring/tests/${resultsFor}/option-stats`, { headers: authH() });
+      if (!r.ok) throw new Error("Xatolik");
+      return r.json();
+    },
+    enabled: !!resultsFor,
+  });
   const { data: results = [] } = useQuery<Array<{ student_name: string; class_name: string; score: number; total: number; percentage: number }>>({
     queryKey: ["monitoring-results", resultsFor],
     queryFn: async () => {
@@ -320,20 +329,32 @@ export default function MonitoringAdminPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Chorak Monitoring</h1>
-          <p className="text-muted-foreground mt-1 text-sm">Sinf va fan bo'yicha test yarating, matndan yuklang, tahrirlang va natijalarni kuzating</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href="/monitoring/analytics">
-            <Button variant="outline" className="gap-2">
-              <BarChart3 className="w-4 h-4" /> Tahlil va reyting
+      <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-primary/15 via-violet-500/10 to-card p-5">
+        <div className="absolute -right-10 -top-10 w-40 h-40 rounded-full bg-primary/10 blur-2xl" />
+        <div className="relative flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-violet-500 flex items-center justify-center shrink-0 shadow-lg shadow-primary/20">
+              <ClipboardCheck className="w-7 h-7 text-primary-foreground" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold tracking-tight">Chorak Monitoring</h1>
+              <p className="text-muted-foreground mt-0.5 text-sm">Test va so'rovnomalar yarating, natijalarni kuzating</p>
+              <div className="flex gap-2 mt-2 text-xs">
+                <span className="rounded-full bg-background/70 border px-2.5 py-1">{tests.length} ta test</span>
+                <span className="rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2.5 py-1">{tests.filter(t => t.status === "open").length} ta ochiq</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/monitoring/analytics">
+              <Button variant="outline" className="gap-2 bg-background/70">
+                <BarChart3 className="w-4 h-4" /> Tahlil va reyting
+              </Button>
+            </Link>
+            <Button onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-2">
+              <Plus className="w-4 h-4" /> Yangi test
             </Button>
-          </Link>
-          <Button onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-2">
-            <Plus className="w-4 h-4" /> Yangi test
-          </Button>
+          </div>
         </div>
       </div>
 
@@ -351,7 +372,7 @@ export default function MonitoringAdminPage() {
             const isOpen = t.status === "open";
             const isScheduled = t.status === "draft" && !!t.scheduled_open_at;
             return (
-              <Card key={t.id} className="overflow-hidden">
+              <Card key={t.id} className={`overflow-hidden transition-shadow hover:shadow-md border-l-4 ${isOpen ? "border-l-emerald-500" : isScheduled ? "border-l-amber-500" : "border-l-border"}`}>
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -363,6 +384,9 @@ export default function MonitoringAdminPage() {
                           {t.has_options ? <ListChecks className="w-3 h-3" /> : <PenLine className="w-3 h-3" />}
                           {t.has_options ? "Variantli" : "Variantsiz"}
                         </span>
+                        {t.is_anonymous && (
+                          <span className="text-xs font-medium bg-muted rounded-full px-2 py-0.5 flex items-center gap-1"><EyeOff className="w-3 h-3" /> Anonim</span>
+                        )}
                       </div>
                       <h3 className="font-bold mt-1.5 truncate">{t.subject}</h3>
                       <p className="text-muted-foreground text-sm truncate">{t.title}</p>
@@ -371,7 +395,7 @@ export default function MonitoringAdminPage() {
                     <button
                       onClick={() => toggleLock(t)}
                       className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                        isOpen ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                        isOpen ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25" : "bg-muted text-muted-foreground hover:bg-accent"
                       }`}
                       title={isOpen ? "Yopish (qulflash)" : "Ochish (qulfdan chiqarish)"}
                     >
@@ -380,7 +404,7 @@ export default function MonitoringAdminPage() {
                   </div>
 
                   {isScheduled && (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-2.5 py-1.5">
+                    <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-lg px-2.5 py-1.5">
                       <CalendarClock className="w-3.5 h-3.5" />
                       Avto-ochiladi: {new Date(t.scheduled_open_at!).toLocaleString("uz-UZ", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                     </div>
@@ -400,6 +424,32 @@ export default function MonitoringAdminPage() {
                       </button>
                     </div>
                   </div>
+
+                  {resultsFor === t.id && t.has_options && optStats && optStats.total > 0 && (
+                    <div className="rounded-xl border bg-muted/30 p-3 space-y-4">
+                      <p className="text-xs font-semibold flex items-center gap-1.5"><BarChart3 className="w-3.5 h-3.5 text-primary" /> Fikrlar statistikasi · {optStats.total} ta javob</p>
+                      {optStats.questions.map((q, qi) => (
+                        <div key={q.id} className="space-y-1.5">
+                          <p className="text-xs font-medium leading-snug">{qi + 1}. {q.question}</p>
+                          {q.options.map((o, oi) => {
+                            const c = q.counts[oi] ?? 0;
+                            const p = optStats.total ? Math.round((c / optStats.total) * 100) : 0;
+                            return (
+                              <div key={oi} className="space-y-0.5">
+                                <div className="flex justify-between gap-2 text-[11px]">
+                                  <span className="truncate">{o}</span>
+                                  <span className="tabular-nums text-muted-foreground shrink-0">{c} · {p}%</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${p}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {resultsFor === t.id && (
                     <div className="rounded-lg bg-muted/40 divide-y -mx-1">

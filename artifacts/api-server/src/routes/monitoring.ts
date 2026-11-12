@@ -206,6 +206,39 @@ router.get("/monitoring/tests/:id/results", async (req, res): Promise<void> => {
   res.json(rows.map(r => ({ ...r, percentage: pct(r.score, r.total) })));
 });
 
+// GET /api/monitoring/tests/:id/option-stats — so'rovnoma uchun: har savolda har bir variantni nechta o'quvchi tanlagani
+router.get("/monitoring/tests/:id/option-stats", async (req, res): Promise<void> => {
+  const user = requireStaff(req.headers.authorization);
+  if (!user) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+
+  const questions = await query<{ id: string; question: string; options: string[] }>(
+    "SELECT id, question, options FROM monitoring_questions WHERE test_id = $1 ORDER BY order_index",
+    [req.params["id"]]
+  );
+  const attempts = await query<{ answers: unknown }>(
+    "SELECT answers FROM monitoring_attempts WHERE test_id = $1",
+    [req.params["id"]]
+  );
+
+  const counts = new Map<string, number[]>();
+  for (const q of questions) counts.set(q.id, (q.options ?? []).map(() => 0));
+  for (const a of attempts) {
+    let list: unknown = a.answers;
+    if (typeof list === "string") { try { list = JSON.parse(list); } catch { list = []; } }
+    if (!Array.isArray(list)) continue;
+    for (const ans of list as Array<{ question_id?: string; chosen_index?: number }>) {
+      const arr = ans.question_id ? counts.get(ans.question_id) : undefined;
+      if (arr && typeof ans.chosen_index === "number" && ans.chosen_index >= 0 && ans.chosen_index < arr.length) {
+        arr[ans.chosen_index] = (arr[ans.chosen_index] ?? 0) + 1;
+      }
+    }
+  }
+  res.json({
+    total: attempts.length,
+    questions: questions.map((q) => ({ id: q.id, question: q.question, options: q.options ?? [], counts: counts.get(q.id) ?? [] })),
+  });
+});
+
 // ─────────────────────────────────────────────────────────────
 // TAHLIL / REYTING — admin, direktor, zavuch, zam.direktor uchun
 // ─────────────────────────────────────────────────────────────
