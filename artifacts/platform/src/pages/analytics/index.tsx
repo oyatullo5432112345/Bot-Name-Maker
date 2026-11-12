@@ -5,6 +5,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/face";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmPluses } from "@/components/confirm-card";
 import { Loader2, Activity, ChevronRight, Users, School, MapPin, Clock, User } from "lucide-react";
 
 interface Person {
@@ -134,6 +135,9 @@ export default function AnalyticsPage() {
           {isAdmin ? " — tuman bo'yicha" : " — maktabingiz bo'yicha"}.
         </p>
       </div>
+
+      {/* Bu oylik "Tasdiqlash" natijalari (maktablar kesimida) */}
+      <ConfirmPluses />
 
       {/* Breadcrumb */}
       {(tuman || maktab != null || cls != null) && (

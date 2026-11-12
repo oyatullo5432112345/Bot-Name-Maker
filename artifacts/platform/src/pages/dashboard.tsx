@@ -12,7 +12,7 @@ import { Users, School, GraduationCap, CalendarDays, Loader2, Clock, BookOpen, U
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
-import { ConfirmPluses } from "@/components/confirm-card";
+import { ConfirmCard } from "@/components/confirm-card";
 
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
@@ -317,7 +317,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {isAdminOrDir && <ConfirmPluses />}
+      {/* Oylik "o'zimman" tasdiqlash — bosilgach yo'qoladi (faollik natijalari "Faollik" sahifasida) */}
+      <ConfirmCard />
 
       {/* Tezkor tugmalar — Face ID va Bek va Lola o'yini */}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -374,14 +375,6 @@ function AdminDashboard() {
     </div>
   );
 
-  // Summer progress: June 10 → Sept 2, 2026
-  const summerStart = new Date("2026-06-10").getTime();
-  const summerEnd   = new Date("2026-09-02").getTime();
-  const nowMs       = Date.now();
-  const summerProgress = Math.min(100, Math.max(0, Math.round(((nowMs - summerStart) / (summerEnd - summerStart)) * 100)));
-  const daysTotal   = Math.round((summerEnd - summerStart) / 86400000);
-  void summerProgress; void daysTotal; // eski yozgi-ta'til kartasi olib tashlandi
-
   const holiday = nextHoliday();
   const holidayDays = Math.max(0, Math.ceil((holiday.date.getTime() - Date.now()) / 86400000));
 
@@ -389,61 +382,47 @@ function AdminDashboard() {
     {
       title: "Jami O'quvchilar", value: stats.total_students,
       icon: GraduationCap, color: "text-blue-400", bg: "bg-blue-400/10",
-      trend: "Ro'yxatda", trendUp: null,
+      trend: "Ro'yxatda", trendUp: null, href: "/classes",
     },
     {
       title: "Jami Sinflar", value: stats.total_classes,
       icon: School, color: "text-indigo-400", bg: "bg-indigo-400/10",
-      trend: "Faol sinflar", trendUp: null,
+      trend: "Ro'yxatda", trendUp: null, href: "/classes",
     },
     {
       title: "Xodimlar", value: stats.total_staff,
       icon: Users, color: "text-purple-400", bg: "bg-purple-400/10",
-      trend: "Ro'yxatga olingan", trendUp: null,
+      trend: "Ro'yxatga olingan", trendUp: null, href: "/staff",
     },
     {
       title: "Keyingi bayram",
       value: holidayDays <= 0 ? "Bugun! 🎉" : `${holidayDays} kun`,
       icon: CalendarDays, color: "text-emerald-400", bg: "bg-emerald-400/10",
-      trend: `${holiday.emoji} ${holiday.name}`, trendUp: null,
+      trend: `${holiday.emoji} ${holiday.name}`, trendUp: null, href: null as string | null,
     },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 grid-cols-2">
-        {statCards.map(({ title, value, icon: Icon, color, bg, trend, trendUp, progress, daysTotal: dt }) => (
-          <Card key={title} className="relative overflow-hidden hover-lift">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground leading-tight">{title}</CardTitle>
-              <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
-                <Icon className={`h-4 w-4 ${color}`} />
-              </div>
-            </CardHeader>
-            <CardContent className="px-4 pb-4 pt-1">
-              <div className={`text-2xl sm:text-3xl font-bold ${color} tabular-nums`}>{value}</div>
-              {progress !== undefined ? (
-                <div className="mt-2 space-y-1">
-                  <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-emerald-400 transition-all duration-1000"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    Yozgi ta'tilning {progress}% o'tdi ({dt} kundan)
-                  </p>
+      <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
+        {statCards.map(({ title, value, icon: Icon, color, bg, trend, href }) => {
+          const card = (
+            <Card className={`h-full relative overflow-hidden hover-lift ${href ? "cursor-pointer" : ""}`}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                <CardTitle className="text-xs font-medium text-muted-foreground leading-tight">{title}</CardTitle>
+                <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
+                  <Icon className={`h-4 w-4 ${color}`} />
                 </div>
-              ) : trend ? (
-                <p className={`text-[11px] mt-1 font-medium ${trendUp === true ? "text-emerald-500" : trendUp === false ? "text-red-400" : "text-muted-foreground"}`}>
-                  {trendUp === true ? "↑ " : trendUp === false ? "↓ " : ""}{trend}
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
-        ))}
+              </CardHeader>
+              <CardContent className="px-4 pb-4 pt-1">
+                <div className={`text-2xl sm:text-3xl font-bold ${color} tabular-nums`}>{value}</div>
+                <p className="text-[11px] mt-1 font-medium text-muted-foreground truncate">{trend}</p>
+              </CardContent>
+            </Card>
+          );
+          return href ? <Link key={title} href={href} className="block">{card}</Link> : <div key={title}>{card}</div>;
+        })}
       </div>
-
     </div>
   );
 }

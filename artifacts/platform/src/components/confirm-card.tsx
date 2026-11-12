@@ -1,8 +1,9 @@
-// Bosh sahifa: oylik "Tasdiqlash" kartasi (hamma uchun) va maktab faolligi "+" ko'rinishi (rahbariyat uchun).
+// Bosh sahifa: oylik "Tasdiqlash" kartasi (hamma uchun; tasdiqlangach butunlay yashiriladi).
+// Maktab faolligi "+" ko'rinishi (rahbariyat) — endi faqat "Faollik" sahifasida.
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle2, ShieldCheck, Activity } from "lucide-react";
+import { Loader2, ShieldCheck, Activity } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
@@ -39,28 +40,28 @@ export function ConfirmCard() {
     },
   });
 
-  if (!user) return null;
+  // Yuklanguncha, tasdiqlangan bo'lsa yoki hozir tasdiqlangan bo'lsa — kartani umuman ko'rsatmaymiz
+  if (!user || status.isLoading) return null;
   const done = status.data?.confirmed || confirm.isSuccess;
+  if (done) return null;
 
   return (
-    <Card className={done ? "border-emerald-500/40" : "border-primary/40"}>
+    <Card className="border-primary/40">
       <CardContent className="py-4 flex items-center gap-3 flex-wrap">
-        <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${done ? "bg-emerald-500/15 text-emerald-600" : "bg-primary/15 text-primary"}`}>
-          {done ? <CheckCircle2 className="w-6 h-6" /> : <ShieldCheck className="w-6 h-6" />}
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 bg-primary/15 text-primary">
+          <ShieldCheck className="w-6 h-6" />
         </div>
         <div className="flex-1 min-w-[180px]">
-          <div className="font-semibold">{done ? "Bu oy tasdiqlandi ✅" : "Siz o'zingizmisiz?"}</div>
+          <div className="font-semibold">Siz o'zingizmisiz?</div>
           <div className="text-xs text-muted-foreground">
-            {done ? "Bu oylik faollik qayd etildi" : "Oyiga bir marta tasdiqlang — maktab faolligiga +1 qo'shiladi"}
+            Oyiga bir marta tasdiqlang — maktab faolligiga +1 qo'shiladi
           </div>
           {confirm.isError && <div className="text-xs text-destructive mt-1">{(confirm.error as Error).message}</div>}
         </div>
-        {!done && (
-          <Button onClick={() => confirm.mutate()} disabled={confirm.isPending || status.isLoading}>
-            {confirm.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
-            Tasdiqlash
-          </Button>
-        )}
+        <Button onClick={() => confirm.mutate()} disabled={confirm.isPending}>
+          {confirm.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
+          Tasdiqlash
+        </Button>
       </CardContent>
     </Card>
   );

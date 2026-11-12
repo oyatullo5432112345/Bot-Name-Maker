@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Loader2, Play, ScanFace, Send, ShieldCheck, UserCheck, Clock, Users, Settings2,
+  Loader2, ScanFace, Send, ShieldCheck, UserCheck, Clock, Users, Settings2,
   DoorOpen, ArrowDownLeft, ArrowUpRight, Trash2, GraduationCap, Bell, ListChecks,
   CalendarRange, Sparkles, ChevronRight,
 } from "lucide-react";
@@ -270,7 +270,7 @@ export default function FaceIdPage() {
             </Link>
             <Link href="/faceid/kiosk">
               <Button className="bg-gradient-to-r from-cyan-500 to-violet-500 text-white hover:opacity-90">
-                <Play className="w-4 h-4 mr-2" />Kamerani boshlash
+                <ScanFace className="w-4 h-4 mr-2" />Face ID ni boshlash
               </Button>
             </Link>
           </div>
@@ -297,7 +297,7 @@ export default function FaceIdPage() {
                 <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 text-sm">
                   {[
                     { t: "Yuzlarni ro'yxatga oling", x: "Har bir o'quvchi bir marta, ota-ona roziligi bilan." },
-                    { t: "Kamerani ishga tushiring", x: "\"Kamerani boshlash\" ni bosing, telefonni kirish yoniga qo'ying." },
+                    { t: "Face ID ni ishga tushiring", x: "\"Face ID ni boshlash\" ni bosing, telefonni kirish yoniga qo'ying." },
                     { t: "Keldi yoziladi", x: "O'quvchi kameraga qaraydi, Telegramda xabar boradi." },
                     { t: "Ketdi yoziladi", x: "Smena tugaganda yana qaraydi." },
                   ].map((s, i) => (
