@@ -661,6 +661,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Mobile drawer panel */}
       <aside
+        onClickCapture={(e) => {
+          // Har qanday havolani bosganda menyu yopiladi (joriy sahifa bo'lsa ham — qora qatlam qolmasin)
+          if ((e.target as HTMLElement).closest("a")) setDrawerOpen(false);
+        }}
         className={`fixed inset-y-0 left-0 z-50 w-72 bg-background border-r shadow-xl flex flex-col transition-transform duration-300 lg:hidden ${
           drawerOpen ? "translate-x-0" : "-translate-x-full"
         }`}
@@ -682,11 +686,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       />
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 pt-14 lg:pt-0">
         {/* Mobile header */}
-        <header className="h-14 flex items-center px-3 border-b bg-background lg:hidden sticky top-0 z-30">
+        <header className="h-14 flex items-center gap-1 px-3 border-b bg-background lg:hidden fixed top-0 inset-x-0 z-40 shrink-0">
           <MenuButton onClick={() => setQuickSheetOpen(true)} />
-          <div className="ml-3 flex-1">
+          <div className="ml-3 flex-1 min-w-0 overflow-hidden">
             <TalimTvLogo size="small" />
           </div>
           <Link href="/dashboard">
