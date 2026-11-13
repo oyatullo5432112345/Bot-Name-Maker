@@ -87,12 +87,72 @@ export function Snowfall() {
   return <canvas ref={canvasRef} aria-hidden className="fixed inset-0 z-30 pointer-events-none" />;
 }
 
-/** Sahifa tepasidagi yonib-o'chadigan chiroqlar */
+type OrnamentKind = "ball" | "star" | "drop";
+interface Ornament { left: number; len: number; kind: OrnamentKind; color: string; delay: number }
+
+// Archa o'yinchoqlari: joylashuvi (% chapdan), ip uzunligi (px), turi, rangi
+const ORNAMENTS: Ornament[] = [
+  { left: 4,  len: 12, kind: "ball", color: "#ef4444", delay: 0 },
+  { left: 13, len: 22, kind: "star", color: "#facc15", delay: 0.6 },
+  { left: 22, len: 14, kind: "drop", color: "#38bdf8", delay: 1.2 },
+  { left: 31, len: 26, kind: "ball", color: "#a855f7", delay: 0.3 },
+  { left: 40, len: 12, kind: "star", color: "#f97316", delay: 0.9 },
+  { left: 50, len: 20, kind: "ball", color: "#22c55e", delay: 1.5 },
+  { left: 59, len: 14, kind: "drop", color: "#ec4899", delay: 0.2 },
+  { left: 68, len: 24, kind: "star", color: "#facc15", delay: 1.0 },
+  { left: 77, len: 12, kind: "ball", color: "#3b82f6", delay: 0.7 },
+  { left: 86, len: 22, kind: "drop", color: "#ef4444", delay: 1.4 },
+  { left: 95, len: 14, kind: "ball", color: "#f59e0b", delay: 0.5 },
+];
+
+function OrnamentSvg({ kind, color }: { kind: OrnamentKind; color: string }) {
+  if (kind === "star") {
+    return (
+      <svg width="20" height="20" viewBox="0 0 20 20">
+        <polygon points="10,1 12.6,7.4 19.5,7.9 14.2,12.3 15.9,19 10,15.3 4.1,19 5.8,12.3 0.5,7.9 7.4,7.4" fill={color} stroke="#fff" strokeOpacity=".55" strokeWidth=".8" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (kind === "drop") {
+    return (
+      <svg width="16" height="22" viewBox="0 0 18 24">
+        <rect x="6.5" y="0" width="5" height="3.5" rx="1" fill="#d4af37" />
+        <path d="M9 4 C9 4 2 12 2 16.5 a7 7 0 0 0 14 0 C16 12 9 4 9 4Z" fill={color} />
+        <ellipse cx="6.2" cy="14" rx="1.6" ry="3" fill="#fff" opacity=".45" transform="rotate(-20 6.2 14)" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="18" height="22" viewBox="0 0 18 22">
+      <rect x="6.5" y="0" width="5" height="3.5" rx="1" fill="#d4af37" />
+      <circle cx="9" cy="13" r="8.5" fill={color} />
+      <path d="M1 13 Q9 17.5 17 13" stroke="#fff" strokeOpacity=".5" strokeWidth="1.2" fill="none" />
+      <ellipse cx="6.3" cy="9.6" rx="2.2" ry="3.1" fill="#fff" opacity=".45" transform="rotate(-30 6.3 9.6)" />
+    </svg>
+  );
+}
+
+/** Tepadagi archa shoxli guirlanda: yonib-o'chadigan chiroqlar va osilgan o'yinchoqlar */
 export function WinterLights() {
   const { winter } = useSeason();
   const hidden = useHideDecor();
   if (!winter || hidden) return null;
-  return <div aria-hidden className="winter-lights" />;
+  return (
+    <>
+      <div aria-hidden className="winter-lights" />
+      {ORNAMENTS.map((o, i) => (
+        <div
+          key={i}
+          aria-hidden
+          className={`winter-orn${i % 2 ? " winter-orn-alt" : ""}`}
+          style={{ left: `${o.left}%`, animationDelay: `${o.delay}s`, ["--len" as string]: `${o.len}px` }}
+        >
+          <span className="winter-orn-string" />
+          <OrnamentSvg kind={o.kind} color={o.color} />
+        </div>
+      ))}
+    </>
+  );
 }
 
 /** Yoqish / o'chirish tugmasi (sarlavhada) */
