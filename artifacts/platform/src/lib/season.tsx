@@ -1,7 +1,9 @@
-// Mavsumiy mavzu (hozircha: qish). Nov–Fev oylarida o'zi yoqiladi, foydalanuvchi o'chirib/yoqib qo'ya oladi.
+// Qish mavsumi: noyabr–fevral oylarida o'zi yoqiladi (kompyuter va telefonda bir xil).
+// Foydalanuvchi o'chirib/yoqib qo'ya oladi. Tanlov brauzerda saqlanadi.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-const STORAGE_KEY = "talim_winter";
+// Kalit o'zgargan: eski brauzerlarda qolgan "off" qiymati qish mavzusini o'chirib qo'ymasligi uchun
+const STORAGE_KEY = "talim_winter_v2";
 
 /** Qish mavsumi: noyabrdan fevralgacha */
 export function isWinterSeason(d = new Date()): boolean {
