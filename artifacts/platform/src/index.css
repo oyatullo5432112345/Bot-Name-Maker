@@ -511,66 +511,38 @@ html[data-season="winter"].dark body {
   background-image: linear-gradient(180deg, hsl(205 90% 60% / 0.14), transparent 300px);
 }
 
-/* Tepadagi archa shoxli guirlanda + yonib-o'chadigan chiroqlar */
-.winter-lights {
+/* Burchaklardagi realistik archa guirlandasi (components/winter-garland.tsx) */
+.winter-corner {
   position: fixed;
   top: env(safe-area-inset-top, 0px);
-  left: 0;
-  right: 0;
-  height: 16px;
+  width: 300px;
+  max-width: 42vw;
+  height: auto;
   z-index: 35;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 50% 50%, #f43f5e 0 2.5px, transparent 3.5px) 0 6px / 64px 16px repeat-x,
-    radial-gradient(circle at 50% 50%, #facc15 0 2.5px, transparent 3.5px) 16px 8px / 64px 16px repeat-x,
-    radial-gradient(circle at 50% 50%, #22c55e 0 2.5px, transparent 3.5px) 32px 6px / 64px 16px repeat-x,
-    radial-gradient(circle at 50% 50%, #38bdf8 0 2.5px, transparent 3.5px) 48px 8px / 64px 16px repeat-x,
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='16' viewBox='0 0 40 16'%3E%3Cpath d='M0 0H40V6L36 13 32 6 28 13 24 6 20 13 16 6 12 13 8 6 4 13 0 6Z' fill='%2314532d'/%3E%3Cpath d='M0 0H40V4L38 9 34 4 30 9 26 4 22 9 18 4 14 9 10 4 6 9 2 4 0 5Z' fill='%2316a34a'/%3E%3C/svg%3E") 0 0 / 40px 16px repeat-x;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.35));
 }
-.winter-lights::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: inherit;
-  mix-blend-mode: screen;
-  animation: winter-twinkle 1.8s ease-in-out infinite alternate;
-}
-@keyframes winter-twinkle {
-  from { opacity: 0; }
-  to   { opacity: 0.55; }
-}
-
-/* Guirlandadan osilgan archa o'yinchoqlari */
-.winter-orn {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 12px);
-  z-index: 35;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  transform-origin: top center;
-  animation: winter-sway 3.6s ease-in-out infinite alternate;
-  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.3));
-}
-.winter-orn-string {
-  display: block;
-  width: 1px;
-  height: var(--len, 16px);
-  background: rgba(100, 116, 139, 0.75);
-}
-@keyframes winter-sway {
-  from { transform: translateX(-50%) rotate(-5deg); }
-  to   { transform: translateX(-50%) rotate(5deg); }
-}
+.winter-corner-l { left: 0; }
+.winter-corner-r { right: 0; transform: scaleX(-1); }
 @media (max-width: 640px) {
-  .winter-orn-alt { display: none; }
+  .winter-corner { width: 190px; }
+}
+.winter-swing {
+  transform-box: view-box;
+  animation: winter-swing 4.2s ease-in-out infinite alternate;
+}
+@keyframes winter-swing {
+  from { transform: rotate(-3.5deg); }
+  to   { transform: rotate(3.5deg); }
+}
+.winter-bulb { animation: winter-bulb 1.7s ease-in-out infinite alternate; }
+@keyframes winter-bulb {
+  from { opacity: 0.4; }
+  to   { opacity: 1; }
 }
 .winter-spin { animation: winter-rotate 14s linear infinite; }
 @keyframes winter-rotate { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .winter-lights::after, .winter-orn, .winter-spin { animation: none; }
-  .winter-orn { transform: translateX(-50%); }
+  .winter-swing, .winter-bulb, .winter-spin { animation: none; }
 }
