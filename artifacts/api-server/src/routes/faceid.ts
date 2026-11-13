@@ -18,6 +18,7 @@ import { getAuthUser, schoolOf } from "./auth.js";
 import { schoolActive } from "./maktablar.js";
 import { notifyUser } from "../lib/notify.js";
 import { isRealTelegramId, uzDateStr, uzHourMin, uzDay, sendToChat, sendDocumentToChat, esc, PERIOD_TIMES, getClassChats, getChatsByPurpose, sleep, sendTrackedMessage, clearTrackedMessages } from "../lib/tg-shared.js";
+import { hasFaceConsent } from "./consent.js";
 
 const router: IRouter = Router();
 
@@ -643,8 +644,8 @@ router.post("/faceid/enroll", async (req, res): Promise<void> => {
     student_login?: string; descriptors?: unknown; consent?: boolean; force?: boolean;
   };
   if (!student_login) { res.status(400).json({ error: "student_login kerak" }); return; }
-  if (consent !== true) {
-    res.status(400).json({ error: "Ota-ona roziligi belgilanmagan — yuz ma'lumoti saqlanmaydi" });
+  if (consent !== true || !(await hasFaceConsent(student_login))) {
+    res.status(403).json({ error: "Ota-ona roziligi rasmiylashtirilmagan. Avval \"Rozilik va qoidalar\" bo'limida roziligini imzolang" });
     return;
   }
   if (!Array.isArray(descriptors) || descriptors.length < 1 || descriptors.length > 8 || !descriptors.every(isDescriptor)) {
@@ -769,7 +770,7 @@ router.get("/faceid/descriptors", async (req, res): Promise<void> => {
            LEFT JOIN users u ON u.login = fp.student_login
            LEFT JOIN staff s ON s.login = fp.student_login
            LEFT JOIN face_checkins fc ON fc.student_login = fp.student_login AND fc.date = $1::date
-          WHERE fp.consent AND (u.login IS NOT NULL OR s.login IS NOT NULL) AND fp.maktab_id = $2`,
+          WHERE fp.consent AND face_consent_ok(fp.student_login) AND (u.login IS NOT NULL OR s.login IS NOT NULL) AND fp.maktab_id = $2`,
         [today, mid]
       )
     : await query<{
@@ -787,7 +788,7 @@ router.get("/faceid/descriptors", async (req, res): Promise<void> => {
            LEFT JOIN users u ON u.login = fp.student_login
            LEFT JOIN staff s ON s.login = fp.student_login
            LEFT JOIN face_checkins fc ON fc.student_login = fp.student_login AND fc.date = $1::date
-          WHERE fp.consent AND (u.login IS NOT NULL OR s.login IS NOT NULL)`,
+          WHERE fp.consent AND face_consent_ok(fp.student_login) AND (u.login IS NOT NULL OR s.login IS NOT NULL)`,
         [today]
       );
   const [settings, starts] = await Promise.all([getSettings(mid), classStarts()]);

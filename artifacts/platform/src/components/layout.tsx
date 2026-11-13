@@ -1,17 +1,12 @@
 import { useState, useEffect } from "react";
+import { ConsentGate } from "@/components/consent-gate";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useTheme } from "@/lib/theme";
-import { WinterToggle } from "@/components/winter";
 import { useLogout } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LayoutDashboard, Users, GraduationCap, School, LogOut, Home,
-  Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays,
-  MessageSquare, Library, Award,
-  KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard,
-  Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace, Monitor, Compass, Building2, Lock,
-  Activity,
+  LayoutDashboard, Users, GraduationCap, School, LogOut, Home, Gamepad2, Trophy, BookOpen, ClipboardList, ClipboardCheck, CalendarDays, MessageSquare, Library, Award, KeyRound, Megaphone, Sun, Moon, CalendarCheck, X, CreditCard, Wallet, ChevronRight, Settings, Sparkles, AlertTriangle, ScanFace, Monitor, Compass, Building2, Lock, Activity, ScrollText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -532,7 +527,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <TalimTvLogo />
         <div className="flex items-center gap-1">
-          <WinterToggle className="w-8 h-8" />
           <button
             onClick={toggleTheme}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -553,6 +547,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <NavSection>
           {!isMudir && <NavLink href="/dashboard" icon={LayoutDashboard} label="Bosh sahifa" active={isActive("/dashboard")} />}
           <NavLink href="/monitoring" icon={ClipboardCheck} label="Monitoring" active={isActive("/monitoring")} />
+          <NavLink href="/rozilik" icon={ScrollText} label="Rozilik va qoidalar" active={isActive("/rozilik")} />
           {canSeeAnalytics && <NavLink href="/analytics" icon={Activity} label="Faollik" active={isActive("/analytics")} />}
           {/* O'quvchilar ro'yxati — faqat sinf rahbari/boshlang'ich o'qituvchiga. Rahbariyat Sinflar → sinf ichidan topadi. */}
           {["sinf_rahbari","boshlangich_oqituvchi"].includes(user.role) && <NavLink href="/students" icon={GraduationCap} label="O'quvchilar" active={isActive("/students")} />}
@@ -701,7 +696,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <Home className="w-4 h-4" />
             </button>
           </Link>
-          <WinterToggle className="w-9 h-9" />
           <button
             onClick={toggleTheme}
             className="w-9 h-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -712,6 +706,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-36 lg:pb-20">
+          <ConsentGate />
           <div className="mx-auto max-w-6xl">
             {faceLockedForMgmt ? (
               <div className="mb-4 rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 flex items-start gap-2.5">
