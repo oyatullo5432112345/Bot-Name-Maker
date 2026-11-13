@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
+import { SeasonProvider } from "@/lib/season";
+import { Snowfall, WinterLights } from "@/components/winter";
 import { BirthdayBanner } from "@/components/birthday-banner";
 import { PwaUpdatePrompt } from "@/components/pwa-update-prompt";
 import { useAuth } from "@/lib/use-auth";
@@ -198,16 +200,20 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <SeasonProvider>
         <AuthProvider>
           <TooltipProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />
               <BirthdayBanner />
+              <Snowfall />
+              <WinterLights />
               <PwaUpdatePrompt />
             </WouterRouter>
             <Toaster />
           </TooltipProvider>
         </AuthProvider>
+        </SeasonProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

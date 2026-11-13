@@ -491,3 +491,50 @@
   .page-fade, .pop-in { animation: none; }
   .hover-lift { transition: none; }
 }
+
+/* ── QISHKI MAVSUM ───────────────────────────────────────────────────────────
+   <html data-season="winter"> bo'lganda yoqiladi (lib/season.tsx).
+   Asosiy rang sovuqroq (muzdek ko'k) bo'ladi, tepaga yengil qirov nuri tushadi. */
+html[data-season="winter"] {
+  --primary: 208 86% 48%;
+  --ring: 208 86% 48%;
+}
+html[data-season="winter"].dark {
+  --primary: 200 90% 60%;
+  --ring: 200 90% 60%;
+}
+html[data-season="winter"] body {
+  background-image: linear-gradient(180deg, hsl(205 85% 60% / 0.12), transparent 280px);
+  background-repeat: no-repeat;
+}
+html[data-season="winter"].dark body {
+  background-image: linear-gradient(180deg, hsl(205 90% 60% / 0.14), transparent 300px);
+}
+
+/* Tepadagi chiroqlar guirlandasi */
+.winter-lights {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  left: 0;
+  right: 0;
+  height: 12px;
+  z-index: 35;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 50%, #f43f5e 0 2.5px, transparent 3.5px) 0 3px / 64px 12px repeat-x,
+    radial-gradient(circle at 50% 50%, #facc15 0 2.5px, transparent 3.5px) 16px 5px / 64px 12px repeat-x,
+    radial-gradient(circle at 50% 50%, #22c55e 0 2.5px, transparent 3.5px) 32px 3px / 64px 12px repeat-x,
+    radial-gradient(circle at 50% 50%, #38bdf8 0 2.5px, transparent 3.5px) 48px 5px / 64px 12px repeat-x;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.55));
+  animation: winter-twinkle 1.8s ease-in-out infinite alternate;
+}
+@keyframes winter-twinkle {
+  from { opacity: 0.55; }
+  to   { opacity: 1; }
+}
+.winter-spin { animation: winter-rotate 14s linear infinite; }
+@keyframes winter-rotate { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .winter-lights, .winter-spin { animation: none; }
+}

@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { ConfirmCard } from "@/components/confirm-card";
+import { WinterBanner } from "@/components/winter";
 
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
@@ -318,6 +319,7 @@ export default function Dashboard() {
       </div>
 
       {/* Oylik "o'zimman" tasdiqlash — bosilgach yo'qoladi (faollik natijalari "Faollik" sahifasida) */}
+      <WinterBanner />
       <ConfirmCard />
 
       {/* Tezkor tugmalar — Face ID va Bek va Lola o'yini */}
