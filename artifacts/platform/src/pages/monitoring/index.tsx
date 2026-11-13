@@ -1,72 +1,60 @@
+// Monitoring — o'quvchi bosh sahifasi: testlar, so'rovnomalar, natijalar arxivi
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ClipboardCheck, Clock, ChevronRight, CalendarClock, CheckCircle2,
-  Archive, Sparkles, GraduationCap, Play, EyeOff, Hourglass, Trophy,
+  ClipboardCheck, Clock, ChevronRight, CalendarClock, CheckCircle2, Archive, Sparkles, GraduationCap,
+  Play, EyeOff, Hourglass, Trophy, MessageSquareText, HeartHandshake,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/lib/use-auth";
-
-const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
-const getToken = () => localStorage.getItem("talim_auth_token");
-const authH = (): HeadersInit => {
-  const t = getToken();
-  return t ? { Authorization: `Bearer ${t}` } : {};
-};
-
-interface PendingTest {
-  id: string; title: string; subject: string; quarter: number;
-  duration_minutes: number; is_anonymous: boolean; question_count: number; status: "open";
-}
-interface UpcomingTest {
-  id: string; title: string; subject: string; quarter: number;
-  duration_minutes: number; scheduled_open_at: string; status: "scheduled";
-}
-interface ArchiveItem {
-  test_id: string; title: string; subject: string; quarter: number;
-  score: number; total: number; percentage: number; submitted_at: string;
-}
-interface StudentHome {
-  student_name: string; class_name: string;
-  next: (PendingTest | UpcomingTest) | null;
-  pending: PendingTest[];
-  upcoming: UpcomingTest[];
-  archive: ArchiveItem[];
-}
+import { mApi, fmtDateTime, scoreTone, type StudentHome, type StudentItem } from "./api";
 
 function useCountdown(target: string | null) {
-  const [remaining, setRemaining] = useState("");
+  const [text, setText] = useState("");
   useEffect(() => {
     if (!target) return;
     const tick = () => {
       const diff = new Date(target).getTime() - Date.now();
-      if (diff <= 0) { setRemaining("Hozir ochiladi..."); return; }
+      if (diff <= 0) { setText("Hozir ochiladi…"); return; }
       const h = Math.floor(diff / 3_600_000);
       const m = Math.floor((diff % 3_600_000) / 60_000);
       const s = Math.floor((diff % 60_000) / 1000);
-      setRemaining(h > 0 ? `${h}s ${m}d ${s}son` : `${m}d ${s}son`);
+      setText(h > 0 ? `${h}s ${m}d ${s}son` : `${m}d ${s}son`);
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [target]);
-  return remaining;
+  return text;
 }
 
-const scoreTone = (p: number) =>
-  p >= 85 ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
-  : p >= 60 ? "text-sky-600 dark:text-sky-400 bg-sky-500/10"
-  : p >= 40 ? "text-amber-600 dark:text-amber-400 bg-amber-500/10"
-  : "text-rose-600 dark:text-rose-400 bg-rose-500/10";
-
-function SectionTitle({ icon: Icon, children, count }: { icon: typeof Archive; children: React.ReactNode; count?: number }) {
+function SectionTitle({ icon: Icon, count, children }: { icon: typeof Archive; count?: number; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 px-1">
       <Icon className="w-4 h-4 text-muted-foreground" />
       <h2 className="text-sm font-semibold text-foreground/80">{children}</h2>
       {count !== undefined && <span className="text-[11px] font-medium rounded-full bg-muted text-muted-foreground px-2 py-0.5">{count}</span>}
     </div>
+  );
+}
+
+function ItemRow({ item, tone }: { item: StudentItem; tone: "test" | "survey" }) {
+  const survey = tone === "survey";
+  return (
+    <Link href={`/monitoring/${item.id}`}>
+      <div className="flex items-center gap-3 rounded-2xl border bg-card p-3.5 hover:border-primary/40 hover:shadow-md transition-all cursor-pointer">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${survey ? "bg-violet-500/10 text-violet-600 dark:text-violet-400" : "bg-primary/10 text-primary"}`}>
+          {survey ? <MessageSquareText className="w-5 h-5" /> : <ClipboardCheck className="w-5 h-5" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm truncate">{survey ? item.title : item.subject}</p>
+          <p className="text-xs text-muted-foreground truncate">{survey ? `${item.question_count} savol` : item.title}</p>
+        </div>
+        {!survey && <span className="text-xs text-muted-foreground shrink-0">{item.duration_minutes} daq</span>}
+        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+      </div>
+    </Link>
   );
 }
 
@@ -80,33 +68,31 @@ export default function MonitoringPage() {
 
   const { data, isLoading } = useQuery<StudentHome>({
     queryKey: ["monitoring-student-home"],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/monitoring/student-home`, { headers: authH() });
-      if (!r.ok) throw new Error("Xatolik");
-      return r.json();
-    },
+    queryFn: () => mApi<StudentHome>("/student-home"),
     staleTime: 15_000,
     refetchInterval: 30_000,
     enabled: user?.role === "student",
   });
 
-  const nextIsScheduled = data?.next && data.next.status === "scheduled";
-  const countdown = useCountdown(nextIsScheduled ? (data!.next as UpcomingTest).scheduled_open_at : null);
+  const nextUp = data?.tests.upcoming.find((u) => u.kind === "test") ?? null;
+  const featured = data?.tests.open[0] ?? null;
+  const countdown = useCountdown(!featured && nextUp ? nextUp.scheduled_open_at : null);
 
-  if (isLoading) {
+  if (isLoading || !data) {
     return (
       <div className="max-w-2xl mx-auto space-y-4 animate-pulse">
-        <div className="h-20 rounded-2xl bg-muted" />
-        <div className="h-44 rounded-2xl bg-muted" />
+        <div className="h-20 rounded-3xl bg-muted" />
+        <div className="h-44 rounded-3xl bg-muted" />
         <div className="h-16 rounded-2xl bg-muted" />
       </div>
     );
   }
 
-  const avg = data && data.archive.length
-    ? Math.round(data.archive.reduce((a, b) => a + b.percentage, 0) / data.archive.length)
-    : null;
-  const nothing = data && !data.next && data.pending.length === 0 && data.upcoming.length === 0 && data.archive.length === 0;
+  const { tests, surveys } = data;
+  const avg = tests.archive.length ? Math.round(tests.archive.reduce((a, b) => a + b.percentage, 0) / tests.archive.length) : null;
+  const moreTests = tests.open.slice(1);
+  const otherUpcoming = tests.upcoming.filter((u) => u.id !== (!featured ? nextUp?.id : undefined));
+  const empty = !featured && !nextUp && !moreTests.length && !surveys.open.length && !surveys.done.length && !tests.archive.length && !otherUpcoming.length;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -118,9 +104,9 @@ export default function MonitoringPage() {
             <GraduationCap className="w-7 h-7 text-primary-foreground" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-muted-foreground">Chorak monitoring</p>
-            <h1 className="text-xl font-bold tracking-tight truncate">{data?.student_name ?? "O'quvchi"}</h1>
-            <p className="text-sm text-muted-foreground">{data?.class_name ? `${data.class_name} sinfi` : ""}</p>
+            <p className="text-xs font-medium text-muted-foreground">Monitoring</p>
+            <h1 className="text-xl font-bold tracking-tight truncate">{data.student_name || "O'quvchi"}</h1>
+            <p className="text-sm text-muted-foreground">{data.class_name ? `${data.class_name} sinfi` : ""}</p>
           </div>
           {avg !== null && (
             <div className="text-right shrink-0">
@@ -131,49 +117,23 @@ export default function MonitoringPage() {
         </div>
       </div>
 
-      {/* ── Eng yaqin test ── */}
-      {!data?.next ? (
-        !nothing && (
-          <Card className="border-dashed">
-            <CardContent className="py-8 text-center">
-              <div className="w-12 h-12 mx-auto rounded-2xl bg-muted flex items-center justify-center mb-3">
-                <ClipboardCheck className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <p className="font-semibold">Hozircha faol test yo'q</p>
-              <p className="text-muted-foreground text-sm mt-1">Test ochilganda shu yerda ko'rinadi</p>
-            </CardContent>
-          </Card>
-        )
-      ) : nextIsScheduled ? (
-        <div className="rounded-3xl border border-amber-500/30 bg-gradient-to-br from-amber-500/15 to-orange-500/5 p-5">
-          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-xs font-semibold">
-            <CalendarClock className="w-4 h-4" /> Tez orada ochiladi
-          </div>
-          <h3 className="font-bold text-xl mt-2">{data.next.subject}</h3>
-          <p className="text-muted-foreground text-sm">{data.next.title}</p>
-          <div className="mt-4 rounded-2xl bg-background/60 border px-4 py-4 text-center">
-            <p className="text-3xl font-black text-amber-600 dark:text-amber-400 tabular-nums">{countdown}</p>
-            <p className="text-xs text-muted-foreground mt-1 flex items-center justify-center gap-1"><Hourglass className="w-3 h-3" /> qolgan vaqt</p>
-          </div>
-        </div>
-      ) : (
-        <Link href={`/monitoring/${data.next.id}`}>
+      {/* ── Asosiy test ── */}
+      {featured ? (
+        <Link href={`/monitoring/${featured.id}`}>
           <div className="group relative overflow-hidden rounded-3xl border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-card p-5 cursor-pointer hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 transition-all">
             <div className="absolute -right-10 -bottom-10 w-40 h-40 rounded-full bg-primary/10 blur-2xl" />
             <div className="relative">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/15 rounded-full px-2.5 py-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> {data.next.quarter}-chorak · Hozir ochiq
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-primary bg-primary/15 rounded-full px-2.5 py-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> {featured.quarter}-chorak · Hozir ochiq
                 </span>
-                {(data.next as PendingTest).is_anonymous && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-muted rounded-full px-2.5 py-1"><EyeOff className="w-3 h-3" /> Anonim</span>
-                )}
+                {featured.is_anonymous && <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-muted rounded-full px-2.5 py-1"><EyeOff className="w-3 h-3" /> Anonim</span>}
               </div>
-              <h3 className="font-bold text-2xl mt-3 leading-tight">{data.next.subject}</h3>
-              <p className="text-muted-foreground text-sm mt-0.5">{data.next.title}</p>
+              <h3 className="font-bold text-2xl mt-3 leading-tight">{featured.subject}</h3>
+              <p className="text-muted-foreground text-sm mt-0.5">{featured.title}</p>
               <div className="flex items-center gap-2 mt-4 text-xs">
-                <span className="inline-flex items-center gap-1 rounded-lg bg-background/60 border px-2.5 py-1.5"><Clock className="w-3.5 h-3.5 text-muted-foreground" /> {data.next.duration_minutes} daqiqa</span>
-                <span className="inline-flex items-center gap-1 rounded-lg bg-background/60 border px-2.5 py-1.5"><ClipboardCheck className="w-3.5 h-3.5 text-muted-foreground" /> {(data.next as PendingTest).question_count} savol</span>
+                <span className="inline-flex items-center gap-1 rounded-lg bg-background/60 border px-2.5 py-1.5"><Clock className="w-3.5 h-3.5 text-muted-foreground" /> {featured.duration_minutes} daqiqa</span>
+                <span className="inline-flex items-center gap-1 rounded-lg bg-background/60 border px-2.5 py-1.5"><ClipboardCheck className="w-3.5 h-3.5 text-muted-foreground" /> {featured.question_count} savol</span>
               </div>
               <div className="mt-5 flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-primary text-primary-foreground font-semibold shadow-md group-hover:gap-3 transition-all">
                 <Play className="w-4 h-4" /> Testni boshlash
@@ -181,51 +141,79 @@ export default function MonitoringPage() {
             </div>
           </div>
         </Link>
+      ) : nextUp ? (
+        <div className="rounded-3xl border border-amber-500/30 bg-gradient-to-br from-amber-500/15 to-orange-500/5 p-5">
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-xs font-semibold"><CalendarClock className="w-4 h-4" /> Tez orada ochiladi</div>
+          <h3 className="font-bold text-xl mt-2">{nextUp.subject}</h3>
+          <p className="text-muted-foreground text-sm">{nextUp.title}</p>
+          <div className="mt-4 rounded-2xl bg-background/60 border px-4 py-4 text-center">
+            <p className="text-3xl font-black text-amber-600 dark:text-amber-400 tabular-nums">{countdown}</p>
+            <p className="text-xs text-muted-foreground mt-1 flex items-center justify-center gap-1"><Hourglass className="w-3 h-3" /> qolgan vaqt</p>
+          </div>
+        </div>
+      ) : !empty && (
+        <Card className="border-dashed">
+          <CardContent className="py-8 text-center">
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-muted flex items-center justify-center mb-3"><ClipboardCheck className="w-6 h-6 text-muted-foreground" /></div>
+            <p className="font-semibold">Hozircha ochiq test yo'q</p>
+            <p className="text-muted-foreground text-sm mt-1">Test ochilganda shu yerda ko'rinadi</p>
+          </CardContent>
+        </Card>
       )}
 
-      {/* ── Boshqa testlar ── */}
-      {(data?.pending.length ?? 0) > 0 && (
+      {/* ── So'rovnomalar ── */}
+      {surveys.open.length > 0 && (
         <div className="space-y-2">
-          <SectionTitle icon={ClipboardCheck} count={data!.pending.length}>Yana yechilishi kerak</SectionTitle>
-          {data!.pending.map((t) => (
-            <Link key={t.id} href={`/monitoring/${t.id}`}>
-              <div className="flex items-center gap-3 rounded-2xl border bg-card p-3.5 hover:border-primary/40 hover:shadow-md transition-all cursor-pointer">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0"><ClipboardCheck className="w-5 h-5" /></div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm truncate">{t.subject}</p>
-                  <p className="text-xs text-muted-foreground truncate">{t.title}</p>
+          <SectionTitle icon={MessageSquareText} count={surveys.open.length}>Fikringizni bildiring</SectionTitle>
+          {surveys.open.map((s) => (
+            <Link key={s.id} href={`/monitoring/${s.id}`}>
+              <div className="group relative overflow-hidden rounded-2xl border border-violet-500/30 bg-gradient-to-br from-violet-500/10 to-card p-4 cursor-pointer hover:shadow-lg hover:shadow-violet-500/10 hover:-translate-y-0.5 transition-all">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0"><MessageSquareText className="w-5 h-5" /></div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate">{s.title}</p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+                      <span>{s.question_count} savol</span><span>·</span><span>to'g'ri javob yo'q</span>
+                      {s.is_anonymous && <span className="inline-flex items-center gap-1"><EyeOff className="w-3 h-3" /> anonim</span>}
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-violet-500 shrink-0 group-hover:translate-x-0.5 transition-transform" />
                 </div>
-                <span className="text-xs text-muted-foreground shrink-0">{t.duration_minutes} daq</span>
-                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
               </div>
             </Link>
           ))}
         </div>
       )}
 
-      {(data?.upcoming.length ?? 0) > 0 && (
+      {/* ── Boshqa testlar ── */}
+      {moreTests.length > 0 && (
         <div className="space-y-2">
-          <SectionTitle icon={CalendarClock} count={data!.upcoming.length}>Tez orada ochiladigan</SectionTitle>
-          {data!.upcoming.map((t) => (
+          <SectionTitle icon={ClipboardCheck} count={moreTests.length}>Yana yechilishi kerak</SectionTitle>
+          {moreTests.map((t) => <ItemRow key={t.id} item={t} tone="test" />)}
+        </div>
+      )}
+
+      {otherUpcoming.length > 0 && (
+        <div className="space-y-2">
+          <SectionTitle icon={CalendarClock} count={otherUpcoming.length}>Tez orada ochiladigan</SectionTitle>
+          {otherUpcoming.map((t) => (
             <div key={t.id} className="flex items-center gap-3 rounded-2xl border border-dashed p-3.5">
               <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0"><CalendarClock className="w-5 h-5" /></div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm truncate">{t.subject}</p>
-                <p className="text-xs text-muted-foreground truncate">{t.title}</p>
+                <p className="font-semibold text-sm truncate">{t.kind === "survey" ? t.title : t.subject}</p>
+                <p className="text-xs text-muted-foreground truncate">{t.kind === "survey" ? "So'rovnoma" : t.title}</p>
               </div>
-              <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
-                {new Date(t.scheduled_open_at).toLocaleString("uz-UZ", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-              </span>
+              <span className="text-xs text-muted-foreground shrink-0 tabular-nums">{fmtDateTime(t.scheduled_open_at)}</span>
             </div>
           ))}
         </div>
       )}
 
       {/* ── Arxiv ── */}
-      {(data?.archive.length ?? 0) > 0 && (
+      {tests.archive.length > 0 && (
         <div className="space-y-2">
-          <SectionTitle icon={Archive} count={data!.archive.length}>Yechilgan testlar</SectionTitle>
-          {data!.archive.map((a) => (
+          <SectionTitle icon={Archive} count={tests.archive.length}>Yechilgan testlar</SectionTitle>
+          {tests.archive.map((a) => (
             <div key={a.test_id} className="flex items-center gap-3 rounded-2xl border bg-card p-3.5">
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0"><CheckCircle2 className="w-5 h-5" /></div>
               <div className="flex-1 min-w-0">
@@ -241,11 +229,24 @@ export default function MonitoringPage() {
         </div>
       )}
 
-      {nothing && (
+      {surveys.done.length > 0 && (
+        <div className="space-y-2">
+          <SectionTitle icon={HeartHandshake} count={surveys.done.length}>Javob bergan so'rovnomalar</SectionTitle>
+          <div className="flex flex-wrap gap-2">
+            {surveys.done.map((s) => (
+              <span key={s.id} className="inline-flex items-center gap-1.5 rounded-full border bg-violet-500/5 px-3 py-1.5 text-xs">
+                <CheckCircle2 className="w-3.5 h-3.5 text-violet-500" /> {s.title}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {empty && (
         <Card className="border-dashed">
           <CardContent className="py-12 text-center text-muted-foreground text-sm">
             <Sparkles className="w-9 h-9 mx-auto mb-3" />
-            Hozircha hech qanday monitoring testi yo'q
+            Hozircha test yoki so'rovnoma yo'q
           </CardContent>
         </Card>
       )}

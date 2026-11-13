@@ -1,733 +1,288 @@
-import { useState } from "react";
+// Monitoring boshqaruvi (xodimlar uchun): testlar va so'rovnomalar
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Plus, Trash2, Lock, Unlock, Users, Loader2, BarChart3,
-  ListChecks, PenLine, CalendarClock, X, FileText, Sparkles, Edit, EyeOff, ClipboardCheck,
+  Plus, Trash2, Lock, Unlock, Users, Loader2, BarChart3, CalendarClock, Edit, EyeOff, ListChecks,
+  PenLine, ClipboardCheck, MessageSquareText, Sparkles, ChartColumn, Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useListClasses } from "@workspace/api-client-react";
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/use-auth";
+import { mApi, fmtDateTime, type Kind, type TestRow, type Status } from "./api";
+import { TestBuilder } from "./builder";
+import { ResultsDialog } from "./results";
+import { PLATFORM_FEEDBACK, type SurveyTemplate } from "./survey-templates";
 
-const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
+const ANALYTICS_ROLES = ["admin", "director", "zam_direktor", "zavuch"];
 
-const getToken = () => 
-  localStorage.getItem("talim_auth_token") || 
-  localStorage.getItem("token") || 
-  localStorage.getItem("auth_token") || 
-  "";
-
-const authH = (): HeadersInit => {
-  const t = getToken();
-  const base: Record<string, string> = { "Content-Type": "application/json" };
-  return t ? { ...base, Authorization: `Bearer ${t}` } : base;
-};
-
-interface TestRow {
-  id: string; title: string; subject: string; class_name: string | null;
-  quarter: number; academic_year: string; status: string; has_options: boolean;
-  is_anonymous: boolean; attempts_count: number; scheduled_open_at: string | null;
-  duration_minutes: number; timed: boolean; pause_seconds: number;
+function statusMeta(t: TestRow): { label: string; cls: string; dot: string } {
+  const st: Status = t.status;
+  if (st === "open") return { label: "Ochiq", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500 animate-pulse" };
+  if (st === "closed") return { label: "Yopiq", cls: "bg-rose-500/10 text-rose-600 dark:text-rose-400", dot: "bg-rose-500" };
+  if (t.scheduled_open_at) return { label: "Rejalashtirilgan", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400", dot: "bg-amber-500" };
+  return { label: "Qoralama", cls: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/60" };
 }
 
-interface DraftQuestion {
-  question: string;
-  options: string[];
-  correct_index: number;
-  correct_text: string;
-  difficulty: "oson" | "orta" | "qiyin";
-  customTime: boolean;
-  time_seconds: number;
+function TestCard({ t, onEdit, onResults, onToggle, onDelete, busy }: {
+  t: TestRow; busy: boolean;
+  onEdit: () => void; onResults: () => void; onToggle: () => void; onDelete: () => void;
+}) {
+  const meta = statusMeta(t);
+  const isOpen = t.status === "open";
+  const isSurvey = t.kind === "survey";
+  return (
+    <Card className="overflow-hidden hover-lift">
+      <CardContent className="p-4 space-y-3.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${meta.cls}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}
+          </span>
+          {!isSurvey && <span className="rounded-full bg-primary/10 text-primary px-2.5 py-1 text-[11px] font-semibold">{t.quarter}-chorak</span>}
+          {!isSurvey && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium">
+              {t.has_options ? <ListChecks className="w-3 h-3" /> : <PenLine className="w-3 h-3" />}
+              {t.has_options ? "Variantli" : "Yozma"}
+            </span>
+          )}
+          {t.is_anonymous && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium"><EyeOff className="w-3 h-3" /> Anonim</span>
+          )}
+        </div>
+
+        <div className="min-w-0">
+          <h3 className="font-bold leading-snug line-clamp-2">{t.title}</h3>
+          <p className="text-sm text-muted-foreground mt-0.5 truncate">
+            {isSurvey ? "" : `${t.subject} · `}{t.class_name ? `${t.class_name} sinf` : "Barcha sinflar"}
+          </p>
+        </div>
+
+        {t.status === "draft" && t.scheduled_open_at && (
+          <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-lg px-2.5 py-1.5">
+            <CalendarClock className="w-3.5 h-3.5" /> Avto-ochiladi: {fmtDateTime(t.scheduled_open_at)}
+          </div>
+        )}
+
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1"><ClipboardCheck className="w-3.5 h-3.5" /> {t.question_count} savol</span>
+          <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {t.attempts_count} ta javob</span>
+        </div>
+
+        <div className="flex items-center gap-2 pt-1 border-t -mx-4 px-4 pt-3">
+          {t.can_edit ? (
+            <>
+              <Button size="sm" variant={isOpen ? "outline" : "default"} className="gap-1.5" onClick={onToggle} disabled={busy}>
+                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isOpen ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                {isOpen ? "Yopish" : "Ochish"}
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={onResults}>
+                <ChartColumn className="w-3.5 h-3.5" /> Natijalar
+              </Button>
+              <div className="ml-auto flex items-center gap-0.5">
+                <button onClick={onEdit} className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent" aria-label="Tahrirlash"><Edit className="w-4 h-4" /></button>
+                <button onClick={onDelete} className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10" aria-label="O'chirish"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">Boshqa xodim yaratgan — faqat ko'rish</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
-const DIFFICULTY_TIME: Record<DraftQuestion["difficulty"], number> = { oson: 20, orta: 40, qiyin: 60 };
-const EMPTY_QUESTION = (): DraftQuestion => ({
-  question: "", options: ["", "", "", ""], correct_index: 0, correct_text: "",
-  difficulty: "orta", customTime: false, time_seconds: DIFFICULTY_TIME.orta,
-});
-
-function sortClassNames(list: { name: string }[]): string[] {
-  return [...list.map(c => c.name)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-}
-
-function parseRawTextToQuestions(text: string, isVariant: boolean): DraftQuestion[] {
-  const blocks = text.trim().split(/\n\s*\n|\n(?=\d+[\.\)])/g).filter(b => b.trim().length > 0);
-  const parsed: DraftQuestion[] = [];
-
-  for (const block of blocks) {
-    const lines = block.split("\n").map(l => l.trim()).filter(Boolean);
-    if (lines.length === 0) continue;
-
-    let questionText = lines[0].replace(/^\d+[\.\)]\s*/, "").trim();
-    const options: string[] = [];
-    let correctIndex = 0;
-    let correctText = "";
-
-    if (isVariant) {
-      lines.slice(1).forEach(line => {
-        const answerMatch = line.match(/^(?:javob|javobi|ans|correct|correct answer):\s*([a-d1-4])\b/i);
-        if (answerMatch) {
-          const val = answerMatch[1].toLowerCase();
-          if (val === 'a' || val === '1') correctIndex = 0;
-          else if (val === 'b' || val === '2') correctIndex = 1;
-          else if (val === 'c' || val === '3') correctIndex = 2;
-          else if (val === 'd' || val === '4') correctIndex = 3;
-          return;
-        }
-
-        const optMatch = line.match(/^([a-d1-4])[\.\)]\s*(.*)/i);
-        if (optMatch) {
-          options.push(optMatch[2].trim());
-        } else if (!line.toLowerCase().startsWith("javob")) {
-          questionText += " " + line;
-        }
-      });
-
-      if (options.length === 0) options.push("", "", "", "");
-      while (options.length < 2) options.push("");
-
-      parsed.push({
-        question: questionText,
-        options,
-        correct_index: Math.min(correctIndex, options.length - 1),
-        correct_text: "",
-        difficulty: "orta",
-        customTime: false,
-        time_seconds: DIFFICULTY_TIME.orta,
-      });
-    } else {
-      lines.slice(1).forEach(line => {
-        const ansMatch = line.match(/^(?:javob|javobi|ans|correct):\s*(.*)/i);
-        if (ansMatch) {
-          correctText = ansMatch[1].trim();
-        } else {
-          questionText += " " + line;
-        }
-      });
-
-      parsed.push({
-        question: questionText,
-        options: ["", ""],
-        correct_index: 0,
-        correct_text: correctText,
-        difficulty: "orta",
-        customTime: false,
-        time_seconds: DIFFICULTY_TIME.orta,
-      });
-    }
-  }
-
-  return parsed.length > 0 ? parsed : [EMPTY_QUESTION()];
+function EmptyState({ kind, onCreate }: { kind: Kind; onCreate: () => void }) {
+  const survey = kind === "survey";
+  return (
+    <Card className="border-dashed">
+      <CardContent className="py-14 text-center">
+        <div className={`w-14 h-14 mx-auto rounded-2xl flex items-center justify-center mb-3 ${survey ? "bg-violet-500/10 text-violet-600 dark:text-violet-400" : "bg-primary/10 text-primary"}`}>
+          {survey ? <MessageSquareText className="w-7 h-7" /> : <ClipboardCheck className="w-7 h-7" />}
+        </div>
+        <p className="font-semibold">{survey ? "Hali so'rovnoma yo'q" : "Hali test yaratilmagan"}</p>
+        <p className="text-sm text-muted-foreground mt-1 mb-4">
+          {survey ? "O'quvchilar fikrini bilish uchun birinchi so'rovnomani yarating" : "Birinchi monitoring testini yarating"}
+        </p>
+        <Button onClick={onCreate} className="gap-2"><Plus className="w-4 h-4" /> {survey ? "Yangi so'rovnoma" : "Yangi test"}</Button>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function MonitoringAdminPage() {
+  const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: classesData } = useListClasses({ query: { queryKey: ["classes", "list"] } });
-  const classNames = sortClassNames((classesData as { name: string }[] | undefined) ?? []);
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingTestId, setEditingTestId] = useState<string | null>(null);
+  const [tab, setTab] = useState<Kind>("test");
+  const [builder, setBuilder] = useState<{ kind: Kind; editId: string | null; template: SurveyTemplate | null } | null>(null);
+  const [resultsFor, setResultsFor] = useState<TestRow | null>(null);
+  const [toDelete, setToDelete] = useState<TestRow | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [hasOptions, setHasOptions] = useState(true);
-  const [title, setTitle] = useState("");
-  const [subject, setSubject] = useState("");
-  const [className, setClassName] = useState<string>("__all__");
-  const [quarter, setQuarter] = useState(1);
-  const [academicYear, setAcademicYear] = useState("2025-2026");
-  const [duration, setDuration] = useState(30);
-  const [isAnonymous, setIsAnonymous] = useState(false);
-  const [timed, setTimed] = useState(true);
-  const [pauseEnabled, setPauseEnabled] = useState(false);
-  const [scheduleEnabled, setScheduleEnabled] = useState(false);
-  const [scheduledAt, setScheduledAt] = useState("");
-  const [questions, setQuestions] = useState<DraftQuestion[]>([EMPTY_QUESTION()]);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [resultsFor, setResultsFor] = useState<string | null>(null);
-
-  const [importMode, setImportMode] = useState(false);
-  const [rawText, setRawText] = useState("");
-
-  const { data: tests = [], isLoading } = useQuery<TestRow[]>({
-    queryKey: ["monitoring-tests-admin"],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/monitoring/tests`, { headers: authH() });
-      if (!r.ok) return [];
-      return r.json() as Promise<TestRow[]>;
-    },
+  const { data: all = [], isLoading } = useQuery<TestRow[]>({
+    queryKey: ["monitoring-tests"],
+    queryFn: () => mApi<TestRow[]>("/tests"),
   });
 
-  const { data: optStats } = useQuery<{ total: number; questions: Array<{ id: string; question: string; options: string[]; counts: number[] }> }>({
-    queryKey: ["monitoring-option-stats", resultsFor],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/monitoring/tests/${resultsFor}/option-stats`, { headers: authH() });
-      if (!r.ok) throw new Error("Xatolik");
-      return r.json();
-    },
-    enabled: !!resultsFor,
-  });
-  const { data: results = [] } = useQuery<Array<{ student_name: string; class_name: string; score: number; total: number; percentage: number }>>({
-    queryKey: ["monitoring-results", resultsFor],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/monitoring/tests/${resultsFor}/results`, { headers: authH() });
-      if (!r.ok) return [];
-      return r.json();
-    },
-    enabled: !!resultsFor,
-  });
+  const tests = useMemo(() => all.filter((t) => t.kind === "test"), [all]);
+  const surveys = useMemo(() => all.filter((t) => t.kind === "survey"), [all]);
+  const refresh = () => qc.invalidateQueries({ queryKey: ["monitoring-tests"] });
+  const canSeeAnalytics = !!user && ANALYTICS_ROLES.includes(user.role);
 
-  const resetForm = () => {
-    setEditingTestId(null);
-    setTitle(""); setSubject(""); setClassName("__all__"); setQuarter(1);
-    setDuration(30); setIsAnonymous(false); setHasOptions(true);
-    setScheduleEnabled(false); setScheduledAt(""); setTimed(true); setPauseEnabled(false);
-    setQuestions([EMPTY_QUESTION()]); setSaveError("");
-    setImportMode(false); setRawText("");
-  };
-
-  const handleOpenEdit = async (t: TestRow) => {
-    resetForm();
-    setEditingTestId(t.id);
-    setTitle(t.title);
-    setSubject(t.subject);
-    setClassName(t.class_name ?? "__all__");
-    setQuarter(t.quarter);
-    setAcademicYear(t.academic_year);
-    setDuration(t.duration_minutes);
-    setIsAnonymous(t.is_anonymous);
-    setHasOptions(t.has_options);
-    setTimed(t.timed ?? true);
-    setPauseEnabled((t.pause_seconds ?? 0) > 0);
-    if (t.scheduled_open_at) {
-      setScheduleEnabled(true);
-      setScheduledAt(new Date(t.scheduled_open_at).toISOString().slice(0, 16));
-    }
-
+  const toggle = async (t: TestRow) => {
+    setBusyId(t.id);
     try {
-      const r = await fetch(`${API_BASE}/monitoring/tests/${t.id}`, { headers: authH() });
-      if (r.ok) {
-        const fullData = await r.json();
-        if (fullData.questions && fullData.questions.length > 0) {
-          setQuestions(fullData.questions.map((q: any) => ({
-            question: q.question,
-            options: q.options || ["", ""],
-            correct_index: q.correct_index || 0,
-            correct_text: q.correct_text || "",
-            difficulty: q.difficulty || "orta",
-            customTime: !!q.time_seconds,
-            time_seconds: q.time_seconds || DIFFICULTY_TIME[q.difficulty as "orta" || "orta"],
-          })));
-        }
-      }
+      await mApi(`/tests/${t.id}/status`, { method: "PATCH", body: JSON.stringify({ status: t.status === "open" ? "closed" : "open" }) });
+      await refresh();
     } catch (e) {
-      console.error(e);
-    }
-
-    setDialogOpen(true);
+      toast({ title: "Xatolik", description: (e as Error).message, variant: "destructive" });
+    } finally { setBusyId(null); }
   };
 
-  const handleParseText = () => {
-    if (!rawText.trim()) return;
-    const parsed = parseRawTextToQuestions(rawText, hasOptions);
-    setQuestions(parsed);
-    setImportMode(false);
-    toast({ title: `${parsed.length} ta savol avtomatik o'qib olindi!`, description: "Variantlar va to'g'ri javoblarni tekshirib oling." });
-  };
-
-  const handleSave = async () => {
-    setSaveError("");
-    if (!title.trim() || !subject.trim()) { setSaveError("Sarlavha va fanni kiriting"); return; }
-    if (scheduleEnabled && !scheduledAt) { setSaveError("Avto-ochilish vaqtini tanlang"); return; }
-
-    const cleanQuestions = questions
-      .filter(q => q.question.trim())
-      .filter(q => hasOptions ? q.options.every(o => o.trim()) : q.correct_text.trim());
-
-    if (cleanQuestions.length === 0) {
-      setSaveError(hasOptions ? "Kamida 1 ta to'liq savol (variantlari bilan) qo'shing" : "Kamida 1 ta savol va to'g'ri javobini kiriting");
-      return;
-    }
-
-    setSaving(true);
+  const remove = async () => {
+    if (!toDelete) return;
     try {
-      const url = editingTestId ? `${API_BASE}/monitoring/tests/${editingTestId}` : `${API_BASE}/monitoring/tests`;
-      const method = editingTestId ? "PUT" : "POST";
-
-      const r = await fetch(url, {
-        method,
-        headers: authH(),
-        body: JSON.stringify({
-          title: title.trim(),
-          subject: subject.trim(),
-          class_name: className === "__all__" ? null : className,
-          quarter,
-          academic_year: academicYear,
-          duration_minutes: duration,
-          is_anonymous: isAnonymous,
-          show_result_immediately: true,
-          has_options: hasOptions,
-          scheduled_open_at: scheduleEnabled ? new Date(scheduledAt).toISOString() : null,
-          timed,
-          pause_seconds: pauseEnabled ? 5 : 0,
-          questions: cleanQuestions.map(q => ({
-            ...(hasOptions
-              ? { question: q.question, options: q.options, correct_index: q.correct_index }
-              : { question: q.question, correct_text: q.correct_text }),
-            difficulty: q.difficulty,
-            time_seconds: timed ? (q.customTime ? q.time_seconds : DIFFICULTY_TIME[q.difficulty]) : null,
-          })),
-        }),
-      });
-      const json = await r.json();
-      if (!r.ok) { setSaveError(json.error ?? "Xatolik yuz berdi"); return; }
-      resetForm();
-      setDialogOpen(false);
-      qc.invalidateQueries({ queryKey: ["monitoring-tests-admin"] });
-      toast({
-        title: editingTestId ? "Test yangilandi" : "Test yaratildi",
-        description: editingTestId ? "O'zgarishlar saqlandi" : (scheduleEnabled ? "Belgilangan vaqtda avtomatik ochiladi" : "Qulfda — ochish uchun 🔓 bosing")
-      });
-    } finally {
-      setSaving(false);
-    }
+      await mApi(`/tests/${toDelete.id}`, { method: "DELETE" });
+      toast({ title: "O'chirildi" });
+      await refresh();
+    } catch (e) {
+      toast({ title: "Xatolik", description: (e as Error).message, variant: "destructive" });
+    } finally { setToDelete(null); }
   };
 
-  const toggleLock = async (t: TestRow) => {
-    const next = t.status === "open" ? "closed" : "open";
-    await fetch(`${API_BASE}/monitoring/tests/${t.id}/status`, {
-      method: "PATCH", headers: authH(), body: JSON.stringify({ status: next }),
-    });
-    qc.invalidateQueries({ queryKey: ["monitoring-tests-admin"] });
-  };
+  const open = (kind: Kind, template: SurveyTemplate | null = null) => setBuilder({ kind, editId: null, template });
+  const openCount = all.filter((t) => t.status === "open").length;
+  const totalAnswers = all.reduce((s, t) => s + t.attempts_count, 0);
 
-  const deleteTest = async (id: string) => {
-    if (!confirm("Bu testni butunlay o'chirasizmi?")) return;
-    await fetch(`${API_BASE}/monitoring/tests/${id}`, { method: "DELETE", headers: authH() });
-    qc.invalidateQueries({ queryKey: ["monitoring-tests-admin"] });
-  };
-
-  const updateQuestion = (idx: number, patch: Partial<DraftQuestion>) => {
-    setQuestions(qs => qs.map((q, i) => i === idx ? { ...q, ...patch } : q));
-  };
-  const updateOption = (qIdx: number, oIdx: number, val: string) => {
-    setQuestions(qs => qs.map((q, i) => {
-      if (i !== qIdx) return q;
-      const options = [...q.options]; options[oIdx] = val;
-      return { ...q, options };
-    }));
-  };
+  const renderList = (list: TestRow[], kind: Kind) => (
+    list.length === 0 ? <EmptyState kind={kind} onCreate={() => open(kind)} /> : (
+      <div className="grid gap-4 md:grid-cols-2">
+        {list.map((t) => (
+          <TestCard
+            key={t.id} t={t} busy={busyId === t.id}
+            onEdit={() => setBuilder({ kind: t.kind, editId: t.id, template: null })}
+            onResults={() => setResultsFor(t)}
+            onToggle={() => toggle(t)}
+            onDelete={() => setToDelete(t)}
+          />
+        ))}
+      </div>
+    )
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-primary/15 via-violet-500/10 to-card p-5">
-        <div className="absolute -right-10 -top-10 w-40 h-40 rounded-full bg-primary/10 blur-2xl" />
+    <div className="space-y-6 max-w-5xl">
+      {/* ── Sarlavha ── */}
+      <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-primary/15 via-violet-500/10 to-card p-5 sm:p-6">
+        <div className="absolute -right-12 -top-12 w-48 h-48 rounded-full bg-primary/10 blur-3xl" />
         <div className="relative flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4 min-w-0">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-violet-500 flex items-center justify-center shrink-0 shadow-lg shadow-primary/20">
               <ClipboardCheck className="w-7 h-7 text-primary-foreground" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold tracking-tight">Chorak Monitoring</h1>
-              <p className="text-muted-foreground mt-0.5 text-sm">Test va so'rovnomalar yarating, natijalarni kuzating</p>
-              <div className="flex gap-2 mt-2 text-xs">
-                <span className="rounded-full bg-background/70 border px-2.5 py-1">{tests.length} ta test</span>
-                <span className="rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2.5 py-1">{tests.filter(t => t.status === "open").length} ta ochiq</span>
+              <h1 className="text-2xl font-bold tracking-tight">Monitoring</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">Chorak testlari va o'quvchilar so'rovnomalari</p>
+              <div className="flex flex-wrap gap-2 mt-2.5 text-xs">
+                <span className="rounded-full bg-background/70 border px-2.5 py-1">{tests.length} test</span>
+                <span className="rounded-full bg-background/70 border px-2.5 py-1">{surveys.length} so'rovnoma</span>
+                <span className="rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2.5 py-1">{openCount} ochiq</span>
+                <span className="rounded-full bg-background/70 border px-2.5 py-1">{totalAnswers} javob</span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          {canSeeAnalytics && (
             <Link href="/monitoring/analytics">
-              <Button variant="outline" className="gap-2 bg-background/70">
-                <BarChart3 className="w-4 h-4" /> Tahlil va reyting
-              </Button>
+              <Button variant="outline" className="gap-2 bg-background/70"><BarChart3 className="w-4 h-4" /> Tahlil va reyting</Button>
             </Link>
-            <Button onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-2">
-              <Plus className="w-4 h-4" /> Yangi test
-            </Button>
-          </div>
+          )}
         </div>
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-      ) : tests.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="py-10 text-center text-muted-foreground text-sm">
-            Hali test yaratilmagan. "Yangi test" tugmasini bosing.
-          </CardContent>
-        </Card>
+        <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {tests.map((t) => {
-            const isOpen = t.status === "open";
-            const isScheduled = t.status === "draft" && !!t.scheduled_open_at;
-            return (
-              <Card key={t.id} className={`overflow-hidden transition-shadow hover:shadow-md border-l-4 ${isOpen ? "border-l-emerald-500" : isScheduled ? "border-l-amber-500" : "border-l-border"}`}>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-semibold text-primary bg-primary/10 rounded-full px-2 py-0.5">
-                          {t.quarter}-chorak
-                        </span>
-                        <span className="text-xs font-medium bg-muted rounded-full px-2 py-0.5 flex items-center gap-1">
-                          {t.has_options ? <ListChecks className="w-3 h-3" /> : <PenLine className="w-3 h-3" />}
-                          {t.has_options ? "Variantli" : "Variantsiz"}
-                        </span>
-                        {t.is_anonymous && (
-                          <span className="text-xs font-medium bg-muted rounded-full px-2 py-0.5 flex items-center gap-1"><EyeOff className="w-3 h-3" /> Anonim</span>
-                        )}
-                      </div>
-                      <h3 className="font-bold mt-1.5 truncate">{t.subject}</h3>
-                      <p className="text-muted-foreground text-sm truncate">{t.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{t.class_name ?? "Barcha sinflar"}</p>
-                    </div>
-                    <button
-                      onClick={() => toggleLock(t)}
-                      className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                        isOpen ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25" : "bg-muted text-muted-foreground hover:bg-accent"
-                      }`}
-                      title={isOpen ? "Yopish (qulflash)" : "Ochish (qulfdan chiqarish)"}
-                    >
-                      {isOpen ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-                    </button>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Kind)} className="space-y-5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <TabsList className="h-11 p-1">
+              <TabsTrigger value="test" className="gap-2 px-4"><ClipboardCheck className="w-4 h-4" /> Testlar <span className="text-xs opacity-70">{tests.length}</span></TabsTrigger>
+              <TabsTrigger value="survey" className="gap-2 px-4"><MessageSquareText className="w-4 h-4" /> So'rovnomalar <span className="text-xs opacity-70">{surveys.length}</span></TabsTrigger>
+            </TabsList>
+            <Button onClick={() => open(tab)} className="gap-2"><Plus className="w-4 h-4" /> {tab === "survey" ? "Yangi so'rovnoma" : "Yangi test"}</Button>
+          </div>
+
+          <TabsContent value="test" className="mt-0 space-y-4">
+            {renderList(tests, "test")}
+          </TabsContent>
+
+          <TabsContent value="survey" className="mt-0 space-y-4">
+            <div className="rounded-2xl border bg-violet-500/5 p-4 flex gap-3 items-start">
+              <Globe className="w-5 h-5 text-violet-600 dark:text-violet-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-muted-foreground">
+                So'rovnomada <b className="text-foreground">to'g'ri javob yo'q</b> — o'quvchilar o'z fikrini tanlaydi. Natija reyting va tahlilga kirmaydi,
+                faqat har bir variantni necha foiz o'quvchi tanlagani ko'rsatiladi.
+              </p>
+            </div>
+
+            {surveys.length === 0 && (
+              <Card className="border-violet-500/30 bg-gradient-to-br from-violet-500/10 to-card">
+                <CardContent className="p-5 flex items-center gap-4 flex-wrap">
+                  <div className="w-12 h-12 rounded-2xl bg-violet-500/15 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0"><Sparkles className="w-6 h-6" /></div>
+                  <div className="flex-1 min-w-[200px]">
+                    <p className="font-semibold">{PLATFORM_FEEDBACK.title}</p>
+                    <p className="text-sm text-muted-foreground">{PLATFORM_FEEDBACK.description}</p>
                   </div>
-
-                  {isScheduled && (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-lg px-2.5 py-1.5">
-                      <CalendarClock className="w-3.5 h-3.5" />
-                      Avto-ochiladi: {new Date(t.scheduled_open_at!).toLocaleString("uz-UZ", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {t.attempts_count} ta yechilgan</span>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => handleOpenEdit(t)} className="text-blue-600 hover:text-blue-700 flex items-center gap-1 font-medium">
-                        <Edit className="w-3.5 h-3.5" /> Tahrirlash
-                      </button>
-                      <button onClick={() => setResultsFor(resultsFor === t.id ? null : t.id)} className="text-primary font-medium ml-1">
-                        Natijalar
-                      </button>
-                      <button onClick={() => deleteTest(t.id)} className="text-red-500 ml-1">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {resultsFor === t.id && t.has_options && optStats && optStats.total > 0 && (
-                    <div className="rounded-xl border bg-muted/30 p-3 space-y-4">
-                      <p className="text-xs font-semibold flex items-center gap-1.5"><BarChart3 className="w-3.5 h-3.5 text-primary" /> Fikrlar statistikasi · {optStats.total} ta javob</p>
-                      {optStats.questions.map((q, qi) => (
-                        <div key={q.id} className="space-y-1.5">
-                          <p className="text-xs font-medium leading-snug">{qi + 1}. {q.question}</p>
-                          {q.options.map((o, oi) => {
-                            const c = q.counts[oi] ?? 0;
-                            const p = optStats.total ? Math.round((c / optStats.total) * 100) : 0;
-                            return (
-                              <div key={oi} className="space-y-0.5">
-                                <div className="flex justify-between gap-2 text-[11px]">
-                                  <span className="truncate">{o}</span>
-                                  <span className="tabular-nums text-muted-foreground shrink-0">{c} · {p}%</span>
-                                </div>
-                                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${p}%` }} />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {resultsFor === t.id && (
-                    <div className="rounded-lg bg-muted/40 divide-y -mx-1">
-                      {results.length === 0 ? (
-                        <p className="p-3 text-xs text-muted-foreground">Hali natija yo'q</p>
-                      ) : results.map((r, i) => (
-                        <div key={i} className="flex items-center gap-3 px-3 py-1.5 text-xs">
-                          <span className="flex-1 truncate">{r.student_name}</span>
-                          <span className="text-muted-foreground">{r.class_name}</span>
-                          <span className="font-semibold">{r.percentage}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <Button variant="secondary" className="gap-2" onClick={() => open("survey", PLATFORM_FEEDBACK)}>
+                    <Sparkles className="w-4 h-4" /> Shablondan yaratish
+                  </Button>
                 </CardContent>
               </Card>
-            );
-          })}
-        </div>
+            )}
+            {surveys.length > 0 && (
+              <div className="flex justify-end">
+                <Button variant="ghost" size="sm" className="gap-1.5 text-violet-600 dark:text-violet-400" onClick={() => open("survey", PLATFORM_FEEDBACK)}>
+                  <Sparkles className="w-3.5 h-3.5" /> "{PLATFORM_FEEDBACK.title}" shabloni
+                </Button>
+              </div>
+            )}
+            {surveys.length === 0 ? null : renderList(surveys, "survey")}
+            {surveys.length === 0 && <EmptyState kind="survey" onCreate={() => open("survey")} />}
+          </TabsContent>
+        </Tabs>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) resetForm(); }}>
-        <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
-          <DialogHeader className="flex flex-row items-center justify-between">
-            <DialogTitle>{editingTestId ? "Testni tahrirlash" : "Yangi monitoring testi"}</DialogTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setImportMode(!importMode)}
-              className="gap-1.5 text-xs text-primary"
-            >
-              <FileText className="w-4 h-4" />
-              {importMode ? "Formaga qaytish" : "Matndan yuklash"}
-            </Button>
-          </DialogHeader>
+      <TestBuilder
+        open={!!builder}
+        onOpenChange={(o) => { if (!o) setBuilder(null); }}
+        kind={builder?.kind ?? "test"}
+        editId={builder?.editId ?? null}
+        template={builder?.template ?? null}
+        onSaved={refresh}
+      />
+      <ResultsDialog test={resultsFor} onClose={() => setResultsFor(null)} />
 
-          {importMode ? (
-            <div className="space-y-4 py-2">
-              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-xs space-y-1.5">
-                <p className="font-semibold flex items-center gap-1 text-primary">
-                  <Sparkles className="w-3.5 h-3.5" /> Matn formati namunasi:
-                </p>
-                <p className="font-mono text-muted-foreground">
-                  1. O'zbekiston poytaxti qayer?<br />
-                  a) Samarqand<br />
-                  b) Toshkent<br />
-                  Javob: B
-                </p>
-              </div>
-
-              <Textarea
-                placeholder="Savollarni va variantlarni bu yerga tashlang..."
-                rows={10}
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                className="font-mono text-sm"
-              />
-
-              <Button onClick={handleParseText} className="w-full gap-2">
-                <Sparkles className="w-4 h-4" /> Savollarga ajratish va yuklash
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setHasOptions(true)}
-                  className={`rounded-xl border-2 p-3 text-left transition-all ${hasOptions ? "border-primary bg-primary/5" : "border-border"}`}
-                >
-                  <ListChecks className={`w-5 h-5 mb-1 ${hasOptions ? "text-primary" : "text-muted-foreground"}`} />
-                  <p className="font-semibold text-sm">Variantli</p>
-                  <p className="text-xs text-muted-foreground">Test — javob variantlaridan tanlanadi</p>
-                </button>
-                <button
-                  onClick={() => setHasOptions(false)}
-                  className={`rounded-xl border-2 p-3 text-left transition-all ${!hasOptions ? "border-primary bg-primary/5" : "border-border"}`}
-                >
-                  <PenLine className={`w-5 h-5 mb-1 ${!hasOptions ? "text-primary" : "text-muted-foreground"}`} />
-                  <p className="font-semibold text-sm">Variantsiz</p>
-                  <p className="text-xs text-muted-foreground">Yozma — o'quvchi javobni o'zi yozadi</p>
-                </button>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label>Test sarlavhasi</Label>
-                  <Input placeholder="Masalan: 1-chorak yakuniy" value={title} onChange={e => setTitle(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Fan</Label>
-                  <Input placeholder="Matematika" value={subject} onChange={e => setSubject(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Sinf</Label>
-                  <Select value={className} onValueChange={setClassName}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__">Barcha sinflar</SelectItem>
-                      {classNames.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Chorak</Label>
-                  <Select value={String(quarter)} onValueChange={v => setQuarter(Number(v))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {[1, 2, 3, 4].map(q => <SelectItem key={q} value={String(q)}>{q}-chorak</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>O'quv yili</Label>
-                  <Input value={academicYear} onChange={e => setAcademicYear(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Davomiyligi (daqiqa)</Label>
-                  <Input type="number" min={5} max={180} value={duration} onChange={e => setDuration(Number(e.target.value))} />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
-                <div>
-                  <p className="text-sm font-medium">Anonim rejim</p>
-                  <p className="text-xs text-muted-foreground">O'quvchilar bir-birining ismini ko'rmaydi</p>
-                </div>
-                <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
-              </div>
-
-              <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
-                <div>
-                  <p className="text-sm font-medium">Vaqt cheklovi</p>
-                  <p className="text-xs text-muted-foreground">O'chirilsa — o'quvchi istagancha vaqt sarflaydi (taymersiz)</p>
-                </div>
-                <Switch checked={timed} onCheckedChange={setTimed} />
-              </div>
-
-              {timed && (
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
-                  <div>
-                    <p className="text-sm font-medium">Savollar orasida pauza</p>
-                    <p className="text-xs text-muted-foreground">Javob belgilagach, keyingi savolga o'tishdan oldin 5 soniya kutadi</p>
-                  </div>
-                  <Switch checked={pauseEnabled} onCheckedChange={setPauseEnabled} />
-                </div>
-              )}
-
-              <div className="rounded-lg border px-3 py-2.5 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium flex items-center gap-1.5"><CalendarClock className="w-4 h-4" /> Avtomatik ochilish</p>
-                    <p className="text-xs text-muted-foreground">Belgilangan vaqtda test o'zi qulfdan chiqadi</p>
-                  </div>
-                  <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
-                </div>
-                {scheduleEnabled && (
-                  <Input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold">Savollar ({questions.length})</p>
-                  <button onClick={() => setImportMode(true)} className="text-xs text-primary font-medium flex items-center gap-1">
-                    <FileText className="w-3.5 h-3.5" /> Matndan import qilish
-                  </button>
-                </div>
-
-                {questions.map((q, qi) => (
-                  <div key={qi} className="rounded-xl border p-3 space-y-2 bg-muted/20">
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">{qi + 1}</span>
-                      <Input
-                        placeholder="Savol matni"
-                        value={q.question}
-                        onChange={e => updateQuestion(qi, { question: e.target.value })}
-                        className="flex-1"
-                      />
-                      <button onClick={() => setQuestions(qs => qs.filter((_, i) => i !== qi))} className="text-red-500 shrink-0">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    {timed && (
-                      <div className="pl-8 flex items-center gap-2 flex-wrap">
-                        {(["oson", "orta", "qiyin"] as const).map(d => (
-                          <button
-                            key={d}
-                            onClick={() => updateQuestion(qi, { difficulty: d, time_seconds: q.customTime ? q.time_seconds : DIFFICULTY_TIME[d] })}
-                            className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
-                              q.difficulty === d
-                                ? d === "oson" ? "bg-emerald-100 border-emerald-300 text-emerald-700"
-                                  : d === "orta" ? "bg-amber-100 border-amber-300 text-amber-700"
-                                  : "bg-red-100 border-red-300 text-red-700"
-                                : "border-border text-muted-foreground"
-                            }`}
-                          >
-                            {d === "oson" ? "Oson" : d === "orta" ? "O'rta" : "Qiyin"}
-                          </button>
-                        ))}
-                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground ml-1">
-                          <input type="checkbox" checked={q.customTime} onChange={e => updateQuestion(qi, { customTime: e.target.checked })} />
-                          Vaqtni o'zim belgilayman
-                        </label>
-                        {q.customTime ? (
-                          <Input
-                            type="number" min={5} max={600}
-                            value={q.time_seconds}
-                            onChange={e => updateQuestion(qi, { time_seconds: Number(e.target.value) })}
-                            className="w-20 h-7 text-xs"
-                          />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{DIFFICULTY_TIME[q.difficulty]} soniya</span>
-                        )}
-                      </div>
-                    )}
-
-                    {hasOptions ? (
-                      <div className="pl-8 space-y-1.5">
-                        {q.options.map((opt, oi) => (
-                          <div key={oi} className="flex items-center gap-2">
-                            <input
-                              type="radio"
-                              checked={q.correct_index === oi}
-                              onChange={() => updateQuestion(qi, { correct_index: oi })}
-                              title="To'g'ri javob"
-                              className="accent-primary"
-                            />
-                            <Input
-                              placeholder={`Variant ${oi + 1}`}
-                              value={opt}
-                              onChange={e => updateOption(qi, oi, e.target.value)}
-                              className="flex-1 h-8 text-sm"
-                            />
-                          </div>
-                        ))}
-                        <button
-                          onClick={() => updateQuestion(qi, { options: [...q.options, ""] })}
-                          className="text-xs text-primary font-medium"
-                        >
-                          + Variant qo'shish
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="pl-8">
-                        <Input
-                          placeholder="To'g'ri javob (o'quvchi shu matnni yozishi kerak)"
-                          value={q.correct_text}
-                          onChange={e => updateQuestion(qi, { correct_text: e.target.value })}
-                          className="h-8 text-sm"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <button
-                  onClick={() => setQuestions(qs => [...qs, EMPTY_QUESTION()])}
-                  className="text-sm text-primary flex items-center gap-1 font-medium"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Savol qo'shish
-                </button>
-              </div>
-
-              {saveError && <p className="text-sm text-destructive">{saveError}</p>}
-            </div>
-          )}
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Bekor qilish</Button>
-            {!importMode && (
-              <Button onClick={handleSave} disabled={saving} className="gap-2">
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {editingTestId ? "Saqlash" : "Testni yaratish"}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => { if (!o) setToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>O'chirishni tasdiqlang</AlertDialogTitle>
+            <AlertDialogDescription>
+              «{toDelete?.title}» va unga berilgan barcha javoblar butunlay o'chiriladi. Buni qaytarib bo'lmaydi.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
+            <AlertDialogAction onClick={remove} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">O'chirish</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

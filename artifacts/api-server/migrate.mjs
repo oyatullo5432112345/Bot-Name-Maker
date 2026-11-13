@@ -49,6 +49,7 @@ const SQL_FILES = [
   "016_boshlangich_role.sql",
   "017_sayohat_v2.sql",
   "018_multi_maktab.sql",
+  "019_monitoring_surveys.sql",
 ];
 
 // Qo'shimcha ustunlar (agar mavjud bo'lmasa qo'shiladi)

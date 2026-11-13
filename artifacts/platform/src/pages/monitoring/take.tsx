@@ -1,247 +1,222 @@
-import { useState, useEffect } from "react";
+// Test yoki so'rovnomani topshirish sahifasi
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Clock, CheckCircle2, Trophy, Loader2, Play, Sparkles, ArrowRight, ShieldAlert
+  Loader2, Play, Clock, CheckCircle2, ArrowRight, ArrowLeft, ShieldAlert, Trophy, Sparkles,
+  EyeOff, MessageSquareText, HeartHandshake, ClipboardCheck, Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { useAuth } from "@/lib/use-auth";
+import { mApi, letter, DIFFICULTY_LABEL, type Difficulty, type Kind } from "./api";
 
-const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
-
-// Tokenni barcha mumkin bo'lgan kalit so'zlardan izlash
-const getToken = () => 
-  localStorage.getItem("talim_auth_token") || 
-  localStorage.getItem("token") || 
-  localStorage.getItem("auth_token") || 
-  "";
-
-const authH = (): HeadersInit => {
-  const t = getToken();
-  const base: Record<string, string> = { "Content-Type": "application/json" };
-  return t ? { ...base, Authorization: `Bearer ${t}` } : base;
-};
-
-interface Question {
-  id: string;
-  question: string;
-  options: string[];
-  difficulty: "oson" | "orta" | "qiyin";
-  time_seconds: number | null;
+interface TakeQuestion { id: string; question: string; options: string[] | null; difficulty: Difficulty; time_seconds: number | null }
+interface TakeTest {
+  id: string; kind: Kind; title: string; subject: string; quarter: number; duration_minutes: number;
+  has_options: boolean; is_anonymous: boolean; timed: boolean; pause_seconds: number;
 }
+interface TakeData { test: TakeTest; questions: TakeQuestion[] }
+interface SubmitResult { kind: Kind; submitted?: boolean; score?: number; total?: number; percentage?: number }
+type Answer = number | string;
+type Stage = "intro" | "countdown" | "run" | "done";
 
-interface TestData {
-  id: string;
-  title: string;
-  subject: string;
-  duration_minutes: number;
-  has_options: boolean;
-  is_anonymous: boolean;
-  timed: boolean;
-  pause_seconds: number;
-  questions: Question[];
+function ScoreRing({ value }: { value: number }) {
+  const r = 52, c = 2 * Math.PI * r;
+  const color = value >= 85 ? "#10b981" : value >= 60 ? "#0ea5e9" : value >= 40 ? "#f59e0b" : "#f43f5e";
+  return (
+    <div className="relative w-36 h-36 mx-auto">
+      <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
+        <circle cx="60" cy="60" r={r} fill="none" strokeWidth="10" className="stroke-muted" />
+        <circle cx="60" cy="60" r={r} fill="none" strokeWidth="10" strokeLinecap="round" stroke={color}
+          strokeDasharray={c} strokeDashoffset={c * (1 - Math.min(100, value) / 100)} style={{ transition: "stroke-dashoffset 1s ease" }} />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center"><span className="text-4xl font-black tabular-nums">{Math.round(value)}%</span></div>
+    </div>
+  );
 }
 
 export default function MonitoringTakePage() {
   const [, params] = useRoute("/monitoring/:id");
   const [, setLocation] = useLocation();
+  const qc = useQueryClient();
+  const { user } = useAuth();
   const testId = params?.id;
 
-  // Foydalanuvchi ma'lumotlari
-  const userString = localStorage.getItem("talim_user") || localStorage.getItem("user");
-  const currentUser = userString ? JSON.parse(userString) : null;
-  const studentName = currentUser?.name || currentUser?.full_name || "O'quvchi";
-
-  // Test Holatlari: "intro" -> "countdown" -> "testing" -> "completed"
-  const [stage, setStage] = useState<"intro" | "countdown" | "testing" | "completed">("intro");
-  const [countdown, setCountdown] = useState<number>(5);
-
-  const [currentQIndex, setCurrentQIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [textAnswer, setTextAnswer] = useState("");
-  const [questionTimeLeft, setQuestionTimeLeft] = useState<number | null>(null);
+  const [stage, setStage] = useState<Stage>("intro");
+  const [count, setCount] = useState(5);
+  const [idx, setIdx] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, Answer>>({});
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [inPause, setInPause] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [resultData, setResultData] = useState<any>(null);
+  const [submitError, setSubmitError] = useState("");
+  const [result, setResult] = useState<SubmitResult | null>(null);
 
-  const { data: test, isLoading, error } = useQuery<TestData>({
+  // Taymer va yuborish eskirgan qiymat bilan ishlamasligi uchun ref'lar
+  const answersRef = useRef<Record<string, Answer>>({});
+  const idxRef = useRef(0);
+  const submittingRef = useRef(false);
+  const advanceRef = useRef<(auto: boolean) => void>(() => undefined);
+
+  const { data, isLoading, error } = useQuery<TakeData>({
     queryKey: ["monitoring-take", testId],
-    queryFn: async () => {
-      if (!testId) throw new Error("Test ID topilmadi");
-
-      const r = await fetch(`${API_BASE}/monitoring/tests/${testId}/take`, { 
-        headers: authH() 
-      });
-
-      if (!r.ok) {
-        const errJson = await r.json().catch(() => ({}));
-        throw new Error(errJson.error || errJson.message || "Test topilmadi yoki test yopilgan.");
-      }
-
-      const data = await r.json();
-      // Backend { test, questions, server_now } shaklida qaytaradi — tekislaymiz
-      return { ...data.test, questions: data.questions ?? [] };
-    },
+    queryFn: () => mApi<TakeData>(`/tests/${testId}/take`),
     enabled: !!testId,
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
   });
 
-  // 5 soniyalik countdown taymeri
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (stage === "countdown") {
-      if (countdown > 0) {
-        timer = setTimeout(() => setCountdown(prev => prev - 1), 1000);
-      } else {
-        setStage("testing");
-      }
-    }
-    return () => clearTimeout(timer);
-  }, [stage, countdown]);
+  const test = data?.test;
+  const questions = data?.questions ?? [];
+  const isSurvey = test?.kind === "survey";
+  const q = questions[idx];
 
-  // Savol taymeri
-  useEffect(() => {
-    if (stage !== "testing" || !test || inPause) return;
-    const q = test.questions?.[currentQIndex];
-    if (!test.timed || !q?.time_seconds) return;
-
-    setQuestionTimeLeft(q.time_seconds);
-    const interval = setInterval(() => {
-      setQuestionTimeLeft((prev) => {
-        if (prev === null || prev <= 1) {
-          clearInterval(interval);
-          handleNextQuestion(true);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [currentQIndex, stage, inPause, test]);
-
-  const handleStartCountdown = () => {
-    setStage("countdown");
-    setCountdown(5);
+  const setAnswer = (id: string, v: Answer) => {
+    answersRef.current = { ...answersRef.current, [id]: v };
+    setAnswers(answersRef.current);
   };
 
-  const handleNextQuestion = (isAuto = false) => {
-    if (!test || !test.questions) return;
-    const q = test.questions[currentQIndex];
-
-    const currentAns = test.has_options ? selectedOption : textAnswer;
-    const newAnswers = { ...answers, [q.id]: currentAns };
-    setAnswers(newAnswers);
-
-    setSelectedOption(null);
-    setTextAnswer("");
-
-    if (currentQIndex < test.questions.length - 1) {
-      if (test.pause_seconds > 0 && !isAuto) {
-        setInPause(true);
-        setTimeout(() => {
-          setInPause(false);
-          setCurrentQIndex(prev => prev + 1);
-        }, test.pause_seconds * 1000);
-      } else {
-        setCurrentQIndex(prev => prev + 1);
-      }
-    } else {
-      finishTest(newAnswers);
-    }
-  };
-
-  const finishTest = async (finalAnswers: Record<string, any>) => {
+  const submit = useCallback(async () => {
+    if (!test || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
+    setSubmitError("");
     try {
-      // Backend { question_id, chosen_index?, text_answer? } massivini kutadi
-      const formattedAnswers = Object.entries(finalAnswers).map(([question_id, value]) => (
-        test?.has_options
-          ? { question_id, chosen_index: typeof value === "number" ? value : undefined }
-          : { question_id, text_answer: typeof value === "string" ? value : undefined }
-      ));
-
-      const r = await fetch(`${API_BASE}/monitoring/tests/${testId}/submit`, {
-        method: "POST",
-        headers: authH(),
-        body: JSON.stringify({ answers: formattedAnswers }),
+      const payload = questions.map((qq) => {
+        const v = answersRef.current[qq.id];
+        return test.has_options
+          ? { question_id: qq.id, chosen_index: typeof v === "number" ? v : undefined }
+          : { question_id: qq.id, text_answer: typeof v === "string" ? v.trim() : undefined };
       });
-      const data = await r.json();
-      setResultData(data);
-      setStage("completed");
+      const r = await mApi<SubmitResult>(`/tests/${test.id}/submit`, { method: "POST", body: JSON.stringify({ answers: payload }) });
+      setResult(r);
+      setStage("done");
+      void qc.invalidateQueries({ queryKey: ["monitoring-student-home"] });
     } catch (e) {
-      console.error(e);
+      setSubmitError((e as Error).message);
+      submittingRef.current = false;
     } finally {
       setSubmitting(false);
     }
+  }, [test, questions, qc]);
+
+  const advance = (auto: boolean) => {
+    if (!test) return;
+    if (idxRef.current >= questions.length - 1) { void submit(); return; }
+    if (!isSurvey && test.pause_seconds > 0 && !auto) { setInPause(true); return; }
+    idxRef.current += 1;
+    setIdx(idxRef.current);
+  };
+  advanceRef.current = advance;
+
+  const goBack = () => {
+    if (idxRef.current === 0) return;
+    idxRef.current -= 1;
+    setIdx(idxRef.current);
   };
 
+  // Boshlanishdan oldingi 5 soniyalik sanash
+  useEffect(() => {
+    if (stage !== "countdown") return;
+    if (count <= 0) { setStage("run"); return; }
+    const id = setTimeout(() => setCount((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [stage, count]);
+
+  // Savol uchun vaqt (faqat testda)
+  useEffect(() => {
+    if (stage !== "run" || inPause || !test || isSurvey || !test.timed || !q?.time_seconds) { setTimeLeft(null); return; }
+    const end = Date.now() + q.time_seconds * 1000;
+    setTimeLeft(q.time_seconds);
+    const id = setInterval(() => {
+      const left = Math.ceil((end - Date.now()) / 1000);
+      if (left <= 0) { clearInterval(id); setTimeLeft(0); advanceRef.current(true); }
+      else setTimeLeft(left);
+    }, 250);
+    return () => clearInterval(id);
+  }, [stage, inPause, idx, q?.id, q?.time_seconds, test, isSurvey]);
+
+  // Savollar orasidagi pauza
+  useEffect(() => {
+    if (!inPause || !test) return;
+    const id = setTimeout(() => {
+      setInPause(false);
+      idxRef.current += 1;
+      setIdx(idxRef.current);
+    }, test.pause_seconds * 1000);
+    return () => clearTimeout(id);
+  }, [inPause, test]);
+
+  // ── Yuklanish / xatolik ──
   if (isLoading) {
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-primary" />
-        <p className="text-muted-foreground animate-pulse">Monitoring testi yuklanmoqda...</p>
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="w-9 h-9 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Yuklanmoqda…</p>
       </div>
     );
   }
-
   if (error || !test) {
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center text-center p-4">
-        <ShieldAlert className="w-12 h-12 text-destructive mb-2" />
-        <h2 className="text-xl font-bold">Testni yuklab bo'lmadi</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          {error instanceof Error ? error.message : "Test yopilgan, qulflangan yoki mavjud emas."}
-        </p>
-        <Button onClick={() => setLocation("/monitoring")} className="mt-4">
-          Orqaga qaytish
-        </Button>
+      <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-4">
+        <div className="w-16 h-16 rounded-2xl bg-destructive/10 flex items-center justify-center mb-3"><ShieldAlert className="w-8 h-8 text-destructive" /></div>
+        <h2 className="text-xl font-bold">Ochib bo'lmadi</h2>
+        <p className="text-muted-foreground text-sm mt-1 max-w-sm">{(error as Error | null)?.message ?? "Yopilgan yoki mavjud emas."}</p>
+        <Button onClick={() => setLocation("/monitoring")} className="mt-5">Orqaga qaytish</Button>
       </div>
     );
   }
 
-  // 1. ISMNI CHIROLI EFEKT VA INTRO
+  const accent = isSurvey ? "violet" : "primary";
+
+  // ── 1. Kirish ──
   if (stage === "intro") {
     return (
-      <div className="min-h-[85vh] flex items-center justify-center p-4">
-        <Card className="w-full max-w-xl border-primary/20 bg-gradient-to-b from-card/80 to-card backdrop-blur-xl shadow-2xl overflow-hidden relative">
-          <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/20 rounded-full blur-3xl" />
-          <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl" />
-
-          <CardContent className="p-8 text-center space-y-8 relative z-10">
-            <div className="space-y-3">
-              <span className="text-xs font-semibold tracking-widest text-primary uppercase bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
-                {test.subject} • {test.quarter}-Chorak Monitoringi
+      <div className="min-h-[80vh] flex items-center justify-center p-4">
+        <Card className="w-full max-w-xl overflow-hidden relative shadow-xl">
+          <div className={`absolute -top-24 -right-24 w-52 h-52 rounded-full blur-3xl ${isSurvey ? "bg-violet-500/20" : "bg-primary/20"}`} />
+          <div className="absolute -bottom-24 -left-24 w-52 h-52 bg-sky-500/10 rounded-full blur-3xl" />
+          <CardContent className="p-7 text-center space-y-6 relative">
+            <div className={`w-16 h-16 mx-auto rounded-2xl flex items-center justify-center shadow-lg ${isSurvey ? "bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-violet-500/25" : "bg-gradient-to-br from-primary to-violet-500 shadow-primary/25"}`}>
+              {isSurvey ? <MessageSquareText className="w-8 h-8 text-white" /> : <ClipboardCheck className="w-8 h-8 text-primary-foreground" />}
+            </div>
+            <div className="space-y-2">
+              <span className={`inline-block text-[11px] font-semibold rounded-full px-3 py-1 ${isSurvey ? "bg-violet-500/10 text-violet-600 dark:text-violet-400" : "bg-primary/10 text-primary"}`}>
+                {isSurvey ? "So'rovnoma" : `${test.subject} · ${test.quarter}-chorak`}
               </span>
-              <h1 className="text-2xl font-black">{test.title}</h1>
+              <h1 className="text-2xl font-black leading-tight">{test.title}</h1>
             </div>
 
-            <div className="relative group mx-auto max-w-md">
-              <div className="absolute -inset-1 bg-gradient-to-r from-primary via-indigo-500 to-purple-500 rounded-2xl blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-gradient-x" />
-              <div className="relative px-6 py-6 bg-card rounded-xl border border-primary/20 flex flex-col items-center justify-center space-y-1">
-                <Sparkles className="w-6 h-6 text-primary animate-bounce mb-1" />
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Test topshiruvchi</p>
-                <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-600 tracking-wide">
-                  {studentName}
-                </h2>
+            {isSurvey ? (
+              <div className="rounded-2xl bg-violet-500/5 border border-violet-500/20 p-4 text-sm text-left space-y-2">
+                <p className="flex gap-2"><Sparkles className="w-4 h-4 mt-0.5 text-violet-500 shrink-0" /> To'g'ri yoki noto'g'ri javob yo'q — o'z fikringizni tanlang.</p>
+                <p className="flex gap-2">
+                  {test.is_anonymous ? <EyeOff className="w-4 h-4 mt-0.5 text-violet-500 shrink-0" /> : <Eye className="w-4 h-4 mt-0.5 text-violet-500 shrink-0" />}
+                  {test.is_anonymous ? "So'rovnoma anonim: ismingiz saqlanmaydi." : "Javobingiz ismingiz bilan saqlanadi."}
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-2xl bg-muted/50 border px-4 py-3">
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Topshiruvchi</p>
+                <p className="text-xl font-black mt-0.5">{user?.full_name ?? "O'quvchi"}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 text-left text-xs">
+              <div className="rounded-xl border bg-card p-3"><p className="text-muted-foreground">Savollar</p><p className="font-bold text-base">{questions.length} ta</p></div>
+              <div className="rounded-xl border bg-card p-3">
+                <p className="text-muted-foreground">{isSurvey ? "Vaqt" : "Tartib"}</p>
+                <p className="font-bold text-base">{isSurvey ? "Cheklanmagan" : test.timed ? "Savolga vaqt bor" : "Vaqtsiz"}</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-left text-xs bg-muted/40 p-4 rounded-xl border border-border/50">
-              <div>
-                <p className="text-muted-foreground">Savollar soni:</p>
-                <p className="font-bold text-sm">{test.questions?.length || 0} ta</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Vaqt tartibi:</p>
-                <p className="font-bold text-sm">{test.timed ? "Sekundli taymer" : "Vaqt cheklovsiz"}</p>
-              </div>
-            </div>
-
-            <Button size="lg" onClick={handleStartCountdown} className="w-full text-base font-bold gap-2 shadow-lg shadow-primary/25 hover:scale-[1.02] transition-transform">
-              <Play className="w-5 h-5 fill-current" /> Testni Boshlash
+            <Button size="lg" className={`w-full gap-2 text-base font-bold ${isSurvey ? "bg-violet-600 hover:bg-violet-700 text-white" : ""}`}
+              onClick={() => { setStage(isSurvey ? "run" : "countdown"); setCount(5); }}>
+              <Play className="w-5 h-5 fill-current" /> {isSurvey ? "Boshlash" : "Testni boshlash"}
             </Button>
           </CardContent>
         </Card>
@@ -249,142 +224,139 @@ export default function MonitoringTakePage() {
     );
   }
 
-  // 2. 5 SONYALIK DYNAMIC COUNTDOWN
+  // ── 2. Sanash ──
   if (stage === "countdown") {
     return (
-      <div className="min-h-[85vh] flex flex-col items-center justify-center p-4">
+      <div className="min-h-[80vh] flex flex-col items-center justify-center p-4">
         <div className="relative flex items-center justify-center">
           <div className="w-48 h-48 rounded-full border-4 border-primary/30 animate-ping absolute" />
-          <div className="w-44 h-44 rounded-full border-4 border-primary bg-primary/10 flex flex-col items-center justify-center shadow-2xl backdrop-blur-md z-10">
-            <span className="text-7xl font-black text-primary animate-pulse">{countdown}</span>
+          <div className="w-44 h-44 rounded-full border-4 border-primary bg-primary/10 flex items-center justify-center z-10">
+            <span className="text-7xl font-black text-primary tabular-nums">{count}</span>
           </div>
         </div>
-        <h2 className="text-2xl font-bold mt-8 animate-bounce">Tayyormisiz?</h2>
-        <p className="text-muted-foreground text-sm mt-1">Test bir ozdan so'ng boshlanadi...</p>
+        <h2 className="text-2xl font-bold mt-8">Tayyormisiz?</h2>
+        <p className="text-muted-foreground text-sm mt-1">Test bir ozdan so'ng boshlanadi…</p>
       </div>
     );
   }
 
-  // 3. YAKUNLANGAN NATIJA SAHIFASI
-  if (stage === "completed" && resultData) {
-    const percentage = resultData.percentage || Math.round((resultData.score / resultData.total) * 100);
+  // ── 4. Yakun ──
+  if (stage === "done") {
+    const showScore = !isSurvey && result?.percentage !== undefined;
     return (
-      <div className="min-h-[85vh] flex items-center justify-center p-4">
-        <Card className="w-full max-w-lg border-primary/20 text-center shadow-2xl">
+      <div className="min-h-[80vh] flex items-center justify-center p-4">
+        <Card className="w-full max-w-md text-center shadow-xl overflow-hidden">
           <CardContent className="p-8 space-y-6">
-            <div className="w-20 h-20 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20">
-              <Trophy className="w-10 h-10 animate-bounce" />
-            </div>
-
-            <div className="space-y-1">
-              <h2 className="text-2xl font-black">Test Yakunlandi!</h2>
-              <p className="text-sm text-muted-foreground">{studentName}, natijangiz bilan tanishing</p>
-            </div>
-
-            <div className="py-6 bg-muted/30 rounded-2xl border border-border/50">
-              <span className="text-5xl font-black text-primary">{percentage}%</span>
-              <p className="text-xs text-muted-foreground mt-2 font-medium">
-                To'g'ri javoblar: <span className="text-foreground font-bold">{resultData.score}</span> / {resultData.total}
-              </p>
-            </div>
-
-            <Button onClick={() => setLocation("/monitoring")} className="w-full">
-              Bosh sahifaga qaytish
-            </Button>
+            {showScore ? (
+              <>
+                <ScoreRing value={result!.percentage!} />
+                <div className="space-y-1">
+                  <h2 className="text-2xl font-black flex items-center justify-center gap-2"><Trophy className="w-6 h-6 text-amber-500" /> Test yakunlandi</h2>
+                  <p className="text-sm text-muted-foreground">{user?.full_name}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-emerald-500/10 py-3"><p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">{result!.score}</p><p className="text-xs text-muted-foreground">to'g'ri</p></div>
+                  <div className="rounded-2xl bg-rose-500/10 py-3"><p className="text-2xl font-black text-rose-600 dark:text-rose-400 tabular-nums">{(result!.total ?? 0) - (result!.score ?? 0)}</p><p className="text-xs text-muted-foreground">noto'g'ri</p></div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={`w-20 h-20 rounded-full mx-auto flex items-center justify-center ${isSurvey ? "bg-violet-500/10 text-violet-500" : "bg-emerald-500/10 text-emerald-500"}`}>
+                  {isSurvey ? <HeartHandshake className="w-10 h-10" /> : <CheckCircle2 className="w-10 h-10" />}
+                </div>
+                <div className="space-y-1.5">
+                  <h2 className="text-2xl font-black">{isSurvey ? "Rahmat!" : "Javoblar qabul qilindi"}</h2>
+                  <p className="text-sm text-muted-foreground">{isSurvey ? "Fikringiz biz uchun juda muhim — platformani yaxshilashda foydalanamiz." : "Natijalar o'qituvchi tomonidan e'lon qilinadi."}</p>
+                </div>
+              </>
+            )}
+            <Button onClick={() => setLocation("/monitoring")} className="w-full">Monitoring sahifasiga qaytish</Button>
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  // 4. TEST TOPSHIRISH (TESTING)
-  const q = test.questions?.[currentQIndex];
-  const totalQuestions = test.questions?.length || 1;
-  const progressPercent = ((currentQIndex + 1) / totalQuestions) * 100;
-
+  // ── 3. Savollar ──
   if (!q) return null;
+  const current = answers[q.id];
+  const hasAnswer = test.has_options ? typeof current === "number" : typeof current === "string" && current.trim().length > 0;
+  const isLast = idx === questions.length - 1;
+  const lowTime = timeLeft !== null && timeLeft <= 5;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 py-6 px-4">
+    <div className="max-w-2xl mx-auto space-y-5 py-4 px-1">
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
-          <span>Savol {currentQIndex + 1} / {totalQuestions}</span>
-          {test.timed && questionTimeLeft !== null && (
-            <span className={`flex items-center gap-1 font-mono text-sm px-2.5 py-0.5 rounded-full border ${
-              questionTimeLeft <= 5 ? "bg-red-500/10 border-red-500 text-red-500 animate-pulse" : "bg-muted border-border"
-            }`}>
-              <Clock className="w-3.5 h-3.5" /> {questionTimeLeft}s
+          <span>Savol {idx + 1} / {questions.length}</span>
+          {timeLeft !== null && (
+            <span className={`flex items-center gap-1 font-mono text-sm px-2.5 py-0.5 rounded-full border tabular-nums ${lowTime ? "bg-red-500/10 border-red-500 text-red-500 animate-pulse" : "bg-muted"}`}>
+              <Clock className="w-3.5 h-3.5" /> {timeLeft}s
             </span>
           )}
         </div>
-        <Progress value={progressPercent} className="h-2.5 bg-muted" />
+        <Progress value={((idx + 1) / questions.length) * 100} className={`h-2.5 ${accent === "violet" ? "[&>div]:bg-violet-500" : ""}`} />
       </div>
 
       {inPause ? (
-        <Card className="py-16 text-center border-dashed">
-          <CardContent className="space-y-3">
-            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto animate-pulse" />
-            <h3 className="text-lg font-bold">Javobingiz qabul qilindi!</h3>
-            <p className="text-xs text-muted-foreground">Keyingi savol yuklanmoqda...</p>
+        <Card className="border-dashed">
+          <CardContent className="py-16 text-center space-y-3">
+            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+            <h3 className="text-lg font-bold">Javobingiz qabul qilindi</h3>
+            <p className="text-xs text-muted-foreground">Keyingi savol yuklanmoqda…</p>
           </CardContent>
         </Card>
       ) : (
-        <Card className="border-primary/20 shadow-xl overflow-hidden">
-          <CardContent className="p-6 space-y-6">
+        <Card className="shadow-lg overflow-hidden">
+          <CardContent className="p-5 sm:p-6 space-y-5">
             <div className="space-y-2">
-              <span className="text-xs font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-md">
-                {q.difficulty === "oson" ? "Oson" : q.difficulty === "qiyin" ? "Qiyin" : "O'rta"} daraja
-              </span>
+              {!isSurvey && (
+                <span className="inline-block text-[11px] font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-md">{DIFFICULTY_LABEL[q.difficulty]} daraja</span>
+              )}
               <h2 className="text-lg sm:text-xl font-bold leading-relaxed">{q.question}</h2>
             </div>
 
             {test.has_options ? (
-              <div className="grid gap-3">
-                {q.options?.map((opt, idx) => {
-                  const isSelected = selectedOption === idx;
+              <div className="grid gap-2.5">
+                {(q.options ?? []).map((opt, oi) => {
+                  const sel = current === oi;
                   return (
                     <button
-                      key={idx}
-                      onClick={() => setSelectedOption(idx)}
-                      className={`w-full p-4 rounded-xl border-2 text-left font-medium text-sm transition-all flex items-center justify-between ${
-                        isSelected
-                          ? "border-primary bg-primary/10 shadow-md shadow-primary/10"
-                          : "border-border hover:border-primary/50 hover:bg-muted/50"
-                      }`}
+                      key={oi} type="button" onClick={() => setAnswer(q.id, oi)}
+                      className={`w-full p-3.5 rounded-xl border-2 text-left text-sm font-medium transition-all flex items-center gap-3 ${
+                        sel
+                          ? isSurvey ? "border-violet-500 bg-violet-500/10 shadow-md shadow-violet-500/10" : "border-primary bg-primary/10 shadow-md shadow-primary/10"
+                          : "border-border hover:border-primary/40 hover:bg-muted/50"}`}
                     >
-                      <span className="flex items-center gap-3">
-                        <span className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center ${
-                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                        }`}>
-                          {String.fromCharCode(65 + idx)}
-                        </span>
-                        {opt}
-                      </span>
-                      {isSelected && <CheckCircle2 className="w-5 h-5 text-primary" />}
+                      <span className={`w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 ${sel ? (isSurvey ? "bg-violet-500 text-white" : "bg-primary text-primary-foreground") : "bg-muted text-muted-foreground"}`}>{letter(oi)}</span>
+                      <span className="flex-1">{opt}</span>
+                      {sel && <CheckCircle2 className={`w-5 h-5 shrink-0 ${isSurvey ? "text-violet-500" : "text-primary"}`} />}
                     </button>
                   );
                 })}
               </div>
             ) : (
-              <div className="space-y-2">
-                <Input
-                  placeholder="Javobingizni bu yerga yozing..."
-                  value={textAnswer}
-                  onChange={(e) => setTextAnswer(e.target.value)}
-                  className="h-12 text-base"
-                />
-              </div>
+              <Input
+                placeholder="Javobingizni yozing…" value={typeof current === "string" ? current : ""}
+                onChange={(e) => setAnswer(q.id, e.target.value)} className="h-12 text-base" autoFocus
+              />
             )}
 
-            <div className="flex justify-end pt-2">
+            {submitError && (
+              <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{submitError}</p>
+            )}
+
+            <div className="flex items-center justify-between gap-3 pt-1">
+              {isSurvey && idx > 0 ? (
+                <Button variant="ghost" onClick={goBack} className="gap-2"><ArrowLeft className="w-4 h-4" /> Orqaga</Button>
+              ) : <span />}
               <Button
-                onClick={() => handleNextQuestion(false)}
-                disabled={(test.has_options ? selectedOption === null : !textAnswer.trim()) || submitting}
-                className="gap-2 px-6 font-bold"
+                onClick={() => advance(false)} disabled={submitting || (!hasAnswer && !submitError)}
+                className={`gap-2 px-6 font-bold ${isSurvey ? "bg-violet-600 hover:bg-violet-700 text-white" : ""}`}
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {currentQIndex === totalQuestions - 1 ? "Testni yakunlash" : "Keyingisi"}
-                <ArrowRight className="w-4 h-4" />
+                {isLast ? (submitError ? "Qayta yuborish" : isSurvey ? "Yuborish" : "Yakunlash") : "Keyingisi"}
+                {!isLast && <ArrowRight className="w-4 h-4" />}
               </Button>
             </div>
           </CardContent>
