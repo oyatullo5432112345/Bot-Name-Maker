@@ -115,6 +115,13 @@ function RadialMenu({ onGo, onStart }: { onGo: (route: string) => void; onStart:
             <stop offset="0" stopColor={s.c} /><stop offset="1" stopColor={s.c2} />
           </linearGradient>
         ))}
+        {SEGS.map((s) => (
+          <linearGradient key={`b-${s.k}`} id={`fb-${s.k}`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor={s.c} stopOpacity=".85" />
+            <stop offset=".6" stopColor={s.c2} stopOpacity=".55" />
+            <stop offset="1" stopColor={s.c2} stopOpacity=".35" />
+          </linearGradient>
+        ))}
       </defs>
       <circle cx="500" cy="500" r="494" fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="1.5" />
       <g className="fsp"><circle cx="500" cy="500" r="486" fill="none" stroke="rgba(150,190,255,.3)" strokeWidth="2" strokeDasharray="1 14" strokeLinecap="round" /></g>
@@ -127,11 +134,11 @@ function RadialMenu({ onGo, onStart }: { onGo: (route: string) => void; onStart:
           <g key={s.k} className="seg" role="button" tabIndex={0} onClick={() => onGo(s.route)}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onGo(s.route); } }}>
             <g className="fbody">
-              <path d={sector(248, 468, s.a1, s.a2)} fill="rgba(2,16,13,.6)" stroke={`url(#fs-${s.k})`} strokeOpacity=".9" strokeWidth="2" strokeLinejoin="round" />
+              <path d={sector(248, 468, s.a1, s.a2)} fill={`url(#fb-${s.k})`} stroke={`url(#fs-${s.k})`} strokeOpacity="1" strokeWidth="3" strokeLinejoin="round" />
               <path d={sector(446, 466, s.a1 + 2, s.a2 - 2)} fill={`url(#fs-${s.k})`} fillOpacity=".18" pointerEvents="none" />
             </g>
             <g pointerEvents="none">
-              <circle cx={lx} cy={y - 56} r="37" fill={s.c} fillOpacity=".28" stroke={s.c} strokeOpacity=".85" strokeWidth="2" />
+              <circle cx={lx} cy={y - 56} r="40" fill={s.c} fillOpacity=".95" stroke="#ffffff" strokeOpacity=".7" strokeWidth="2.5" />
               <g transform={`translate(${lx} ${y - 56}) scale(1.65) translate(-12 -12)`} fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
                 dangerouslySetInnerHTML={{ __html: ICONS[s.k] }} />
             </g>
@@ -148,11 +155,11 @@ function RadialMenu({ onGo, onStart }: { onGo: (route: string) => void; onStart:
         <circle className="fpulse" cx="500" cy="500" r="218" fill="none" stroke="#5eead4" strokeWidth="3" />
         <g className="fsp fsp2"><circle cx="500" cy="500" r="239" fill="none" stroke="#fbbf24" strokeOpacity=".7" strokeWidth="3" strokeDasharray="2 12" strokeLinecap="round" /></g>
         <circle cx="500" cy="500" r="218" fill="url(#fcoreG)" />
-        <text x="500" y="458" textAnchor="middle" fontSize="20" fontWeight="800" letterSpacing="7" fill="#e6fff8">FACE ID</text>
+        <text x="500" y="452" textAnchor="middle" fontSize="44" fontWeight="900" letterSpacing="5" fill="#ffffff">FACE ID</text>
         <g id="fcta">
-          <rect x="385" y="598" width="230" height="90" rx="32" fill="url(#fctaG)" stroke="rgba(255,255,255,.7)" strokeWidth="2" />
-          <text className="fcl" x="500" y="630" textAnchor="middle" fontWeight="800" fontSize="17" letterSpacing="7">FACE ID</text>
-          <text x="500" y="667" textAnchor="middle" fontWeight="900" fontSize="30" letterSpacing="3" fill="#03251c">BOSHLASH</text>
+          <rect x="330" y="590" width="340" height="104" rx="34" fill="url(#fctaG)" stroke="rgba(255,255,255,.8)" strokeWidth="2.5" />
+          <text className="fcl" x="500" y="626" textAnchor="middle" fontWeight="800" fontSize="20" letterSpacing="8">FACE ID</text>
+          <text x="500" y="675" textAnchor="middle" fontWeight="900" fontSize="40" letterSpacing="2" fill="#03251c">BOSHLASH</text>
         </g>
       </g>
     </svg>
