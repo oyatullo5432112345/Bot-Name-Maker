@@ -98,6 +98,12 @@ const SEGS: { k: SegKey; a1: number; a2: number; lr: number; c: string; c2: stri
   { k: "rep", a1: 32, a2: 148, lr: 352, c: "#c084fc", c2: "#f472b6", t: ["HISOBOT", "YUKLASH"], route: "/faceid/today" },
 ];
 
+const ICONS: Record<SegKey, string> = {
+  reg: `<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M19 8v6M16 11h6"/>`,
+  fix: `<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>`,
+  rep: `<path d="M4 20V14M9 20V8M14 20V11M19 20V5"/><path d="M2 20h20"/>`,
+};
+
 function RadialMenu({ onGo, onStart }: { onGo: (route: string) => void; onStart: () => void }) {
   return (
     <svg viewBox="0 0 1000 1000" aria-label="Asosiy menyu">
@@ -126,6 +132,8 @@ function RadialMenu({ onGo, onStart }: { onGo: (route: string) => void; onStart:
             </g>
             <g pointerEvents="none">
               <circle cx={lx} cy={y - 56} r="37" fill={s.c} fillOpacity=".28" stroke={s.c} strokeOpacity=".85" strokeWidth="2" />
+              <g transform={`translate(${lx} ${y - 56}) scale(1.65) translate(-12 -12)`} fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
+                dangerouslySetInnerHTML={{ __html: ICONS[s.k] }} />
             </g>
             {s.t.map((l, j) => (
               <text key={l} className={`flbl${j ? " dim" : ""}`} x={lx} y={y + 10 + 32 * j} pointerEvents="none">{l}</text>
