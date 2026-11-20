@@ -173,9 +173,10 @@ router.get("/consent/students", async (req, res): Promise<void> => {
   const cls = s(req.query["class_name"]);
   if (!cls) { res.status(400).json({ error: "class_name kerak" }); return; }
   const mid = schoolOf(u);
-  const rows = await query<{ login: string; full_name: string; consent: boolean; enrolled: boolean; signer_name: string | null; signed_at: string | null }>(
+  const rows = await query<{ login: string; full_name: string; consent: boolean; enrolled: boolean; rules: boolean; signer_name: string | null; signed_at: string | null }>(
     `SELECT u.login, u.full_name,
             face_consent_ok(u.login) AS consent,
+            EXISTS (SELECT 1 FROM user_consents r WHERE r.subject_login = u.login AND r.kind = 'rules' AND r.version = '${RULES_VERSION}') AS rules,
             EXISTS (SELECT 1 FROM face_profiles fp WHERE fp.student_login = u.login) AS enrolled,
             (SELECT c.signer_name FROM user_consents c WHERE c.subject_login = u.login AND c.kind = 'face_id' AND c.version = $3
               ORDER BY c.accepted_at DESC LIMIT 1) AS signer_name,
@@ -190,6 +191,7 @@ router.get("/consent/students", async (req, res): Promise<void> => {
     login: r.login,
     full_name: r.full_name,
     status: !r.consent ? "locked" : r.enrolled ? "enrolled" : "signed",
+    rules: r.rules,
     signer_name: r.signer_name,
     signed_at: r.signed_at,
   })));
@@ -213,6 +215,33 @@ router.get("/consent/records", async (req, res): Promise<void> => {
       ORDER BY accepted_at DESC
       LIMIT 3000`,
     [kind, cls, mid]);
+  res.json(rows);
+});
+
+// GET /api/consent/summary — sinflar bo'yicha foizlar (admin: hammasi, rahbariyat: o'z maktabi, sinf rahbari: o'z sinfi)
+router.get("/consent/summary", async (req, res): Promise<void> => {
+  const u = getAuthUser(req.headers.authorization);
+  if (!u) { res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return; }
+  const role = s(u["role"]);
+  let mid: number | null = null;
+  let cls = "";
+  if (role === "admin") mid = null;
+  else if (MGMT.includes(role)) mid = schoolOf(u) ?? 3;
+  else if (FACE_ROLES.includes(role)) { mid = schoolOf(u) ?? 3; cls = s(u["class_name"]); if (!cls) { res.json([]); return; } }
+  else { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const rows = await query(
+    `SELECT u.maktab_id, COALESCE(m.nom, '') AS maktab_nom, u.class_name,
+            COUNT(*)::int AS total,
+            SUM(CASE WHEN EXISTS (SELECT 1 FROM user_consents r WHERE r.subject_login = u.login AND r.kind = 'rules' AND r.version = $1) THEN 1 ELSE 0 END)::int AS rules_signed,
+            SUM(CASE WHEN face_consent_ok(u.login) THEN 1 ELSE 0 END)::int AS face_signed,
+            SUM(CASE WHEN EXISTS (SELECT 1 FROM face_profiles fp WHERE fp.student_login = u.login) THEN 1 ELSE 0 END)::int AS enrolled
+       FROM users u
+       LEFT JOIN maktablar m ON m.id = u.maktab_id
+      WHERE ($2::int IS NULL OR u.maktab_id = $2)
+        AND ($3 = '' OR u.class_name = $3)
+      GROUP BY u.maktab_id, m.nom, u.class_name
+      ORDER BY u.maktab_id NULLS LAST, u.class_name`,
+    [RULES_VERSION, mid, cls]).catch(() => []);
   res.json(rows);
 });
 
