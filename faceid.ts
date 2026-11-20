@@ -18,6 +18,7 @@ import { getAuthUser, schoolOf } from "./auth.js";
 import { schoolActive } from "./maktablar.js";
 import { notifyUser } from "../lib/notify.js";
 import { isRealTelegramId, uzDateStr, uzHourMin, uzDay, sendToChat, sendDocumentToChat, esc, PERIOD_TIMES, getClassChats, getChatsByPurpose, sleep, sendTrackedMessage, clearTrackedMessages } from "../lib/tg-shared.js";
+import { hasFaceConsent } from "./consent.js";
 
 const router: IRouter = Router();
 
@@ -100,6 +101,7 @@ void query(FACE_SCHEMA_SQL)
 
 export interface FaceSettings {
   late_after: string; // "08:00" — shundan keyin kelsa "kech qoldi"
+  paused?: boolean; // davomat xabarlari pauzada (global yoki shu maktab)
   notify: boolean; // o'quvchiga (ota-onasiga) shaxsiy Telegram xabar
   notify_group: boolean; // har bir o'quvchi kir/chiqishini O'Z SINF GURUHIGA darhol, alohida post qilish (vaqti bilan)
   threshold: number; // moslik chegarasi (kichik = qat'iyroq)
@@ -118,6 +120,20 @@ const DEFAULT_SETTINGS: FaceSettings = {
   open_from: "06:00", close_after: "14:30", late_until: "10:00", quarter_start: "", quarter_end: "", hour_limit: 36,
 };
 
+// ── Davomat xabarlarini pauza qilish: maktab_id=0 → barcha maktablar (global, faqat admin)
+void query(`CREATE TABLE IF NOT EXISTS face_msg_pause (
+  maktab_id  INT PRIMARY KEY,
+  paused     BOOLEAN NOT NULL DEFAULT FALSE,
+  by_name    TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`).catch(() => { /* migratsiya */ });
+
+export async function isMsgPaused(mid: number | null | undefined): Promise<boolean> {
+  const rows = await query<{ paused: boolean }>(
+    "SELECT paused FROM face_msg_pause WHERE maktab_id IN (0, $1)", [mid ?? -1]).catch(() => []);
+  return rows.some((r) => r.paused);
+}
+
 // Sozlamalar: DEFAULT → global(id=1) → maktab(smena=0) → maktab(smena).
 // maktabId berilmasa — faqat global (orqaga mos: eski chaqiruvlar o'zgarmaydi).
 async function getSettings(maktabId?: number | null, smena = 0): Promise<FaceSettings> {
@@ -133,6 +149,7 @@ async function getSettings(maktabId?: number | null, smena = 0): Promise<FaceSet
       if (schS?.data) merged = { ...merged, ...schS.data };
     }
   }
+  merged = { ...merged, paused: await isMsgPaused(maktabId ?? null) };
   return merged;
 }
 
@@ -165,6 +182,7 @@ function uzTime(): string {
  * xabar/post ketmaydi — guruhlar va ota-onalar bezovta bo'lmaydi.
  */
 function messagingAllowed(s: FaceSettings): boolean {
+  if (s.paused) return false;
   const day = uzDay(); // 0=Yakshanba ... 6=Shanba
   if (day === 0) return false; // Yakshanba — dam olish, xabar yo'q
   const hm = uzTime();
@@ -203,15 +221,15 @@ const STAFF_GROUP = "Xodimlar";
 interface FacePerson { login: string; full_name: string; class_name: string; telegram_id: number | null; kind: "student" | "staff" }
 
 /** Loginni avval o'quvchilardan (users), keyin xodimlardan (staff) qidiradi */
-async function findPerson(login: string): Promise<FacePerson | null> {
+async function findPerson(login: string, mid: number | null = null): Promise<FacePerson | null> {
   const u = await queryOne<{ full_name: string; class_name: string; telegram_id: number | null }>(
-    "SELECT full_name, class_name, telegram_id FROM users WHERE login = $1",
-    [login]
+    "SELECT full_name, class_name, telegram_id FROM users WHERE login = $1 AND ($2::int IS NULL OR maktab_id = $2)",
+    [login, mid]
   );
   if (u) return { login, full_name: u.full_name, class_name: u.class_name, telegram_id: u.telegram_id, kind: "student" };
   const s = await queryOne<{ full_name: string; telegram_id: number | null }>(
-    "SELECT full_name, telegram_id FROM staff WHERE login = $1",
-    [login]
+    "SELECT full_name, telegram_id FROM staff WHERE login = $1 AND ($2::int IS NULL OR maktab_id = $2)",
+    [login, mid]
   );
   if (s) return { login, full_name: s.full_name, class_name: STAFF_GROUP, telegram_id: s.telegram_id, kind: "staff" };
   return null;
@@ -263,29 +281,29 @@ router.get("/faceid/overview", async (req, res): Promise<void> => {
           ),
       mid !== null
         ? query<{ student_name: string; class_name: string; kind: string; status: string; time: string }>(
-            `SELECT student_name, class_name, kind, status, to_char(at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
+            `SELECT student_name, class_name, kind, status, to_char(ts AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
                FROM (
-                 SELECT student_name, class_name, 'in' AS kind, status, checked_at AS at
+                 SELECT student_name, class_name, 'in' AS kind, status, checked_at AS ts
                    FROM face_checkins WHERE date = $1::date AND checked_at IS NOT NULL AND maktab_id = $2
                  UNION ALL
                  SELECT student_name, class_name, 'out' AS kind,
                         CASE WHEN excused THEN 'excused' WHEN left_early THEN 'early' ELSE 'normal' END, left_at
                    FROM face_checkins WHERE date = $1::date AND left_at IS NOT NULL AND maktab_id = $2
                ) e
-              ORDER BY at DESC LIMIT 25`,
+              ORDER BY ts DESC LIMIT 25`,
             [today, mid]
           )
         : query<{ student_name: string; class_name: string; kind: string; status: string; time: string }>(
-            `SELECT student_name, class_name, kind, status, to_char(at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
+            `SELECT student_name, class_name, kind, status, to_char(ts AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS time
                FROM (
-                 SELECT student_name, class_name, 'in' AS kind, status, checked_at AS at
+                 SELECT student_name, class_name, 'in' AS kind, status, checked_at AS ts
                    FROM face_checkins WHERE date = $1::date AND checked_at IS NOT NULL
                  UNION ALL
                  SELECT student_name, class_name, 'out' AS kind,
                         CASE WHEN excused THEN 'excused' WHEN left_early THEN 'early' ELSE 'normal' END, left_at
                    FROM face_checkins WHERE date = $1::date AND left_at IS NOT NULL
                ) e
-              ORDER BY at DESC LIMIT 25`,
+              ORDER BY ts DESC LIMIT 25`,
             [today]
           ),
       mid !== null
@@ -328,7 +346,8 @@ router.get("/faceid/overview", async (req, res): Promise<void> => {
           [today]
         ).catch(() => null);
     if (staffAgg && staffAgg.total > 0) classes.push({ class_name: STAFF_GROUP, ...staffAgg });
-    const sum = (k: "arrived" | "late" | "left" | "early") => classes.reduce((acc, c) => acc + c[k], 0);
+    const sum = (k: "arrived" | "late" | "left" | "early") =>
+      classes.filter((c) => c.class_name !== STAFF_GROUP).reduce((acc, c) => acc + c[k], 0);
     res.json({
       date: today,
       time: uzTime(),
@@ -365,15 +384,15 @@ router.post("/faceid/settings", async (req, res): Promise<void> => {
   const smena = Number(b.smena) === 1 || Number(b.smena) === 2 ? Number(b.smena) : 0;
   const cur = await getSettings(mid, smena);
   const next: FaceSettings = {
-    late_after: typeof b.late_after === "string" && /^\d{2}:\d{2}$/.test(b.late_after) ? b.late_after : cur.late_after,
+    late_after: typeof b.late_after === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(b.late_after) ? b.late_after : cur.late_after,
     notify: typeof b.notify === "boolean" ? b.notify : cur.notify,
     notify_group: typeof b.notify_group === "boolean" ? b.notify_group : cur.notify_group,
     threshold: typeof b.threshold === "number" && b.threshold >= 0.3 && b.threshold <= 0.65 ? b.threshold : cur.threshold,
     min_stay: typeof b.min_stay === "number" && b.min_stay >= 1 && b.min_stay <= 480 ? Math.round(b.min_stay) : cur.min_stay,
-    default_end: typeof b.default_end === "string" && /^\d{2}:\d{2}$/.test(b.default_end) ? b.default_end : cur.default_end,
-    open_from: typeof b.open_from === "string" && /^\d{2}:\d{2}$/.test(b.open_from) ? b.open_from : cur.open_from,
-    close_after: typeof b.close_after === "string" && /^\d{2}:\d{2}$/.test(b.close_after) ? b.close_after : cur.close_after,
-    late_until: typeof b.late_until === "string" && /^\d{2}:\d{2}$/.test(b.late_until) ? b.late_until : cur.late_until,
+    default_end: typeof b.default_end === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(b.default_end) ? b.default_end : cur.default_end,
+    open_from: typeof b.open_from === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(b.open_from) ? b.open_from : cur.open_from,
+    close_after: typeof b.close_after === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(b.close_after) ? b.close_after : cur.close_after,
+    late_until: typeof b.late_until === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(b.late_until) ? b.late_until : cur.late_until,
     quarter_start: typeof b.quarter_start === "string" && (/^\d{4}-\d{2}-\d{2}$/.test(b.quarter_start) || b.quarter_start === "") ? b.quarter_start : cur.quarter_start,
     quarter_end: typeof b.quarter_end === "string" && (/^\d{4}-\d{2}-\d{2}$/.test(b.quarter_end) || b.quarter_end === "") ? b.quarter_end : cur.quarter_end,
     hour_limit: typeof b.hour_limit === "number" && b.hour_limit >= 1 && b.hour_limit <= 500 ? Math.round(b.hour_limit) : cur.hour_limit,
@@ -397,10 +416,52 @@ router.post("/faceid/settings", async (req, res): Promise<void> => {
 });
 
 // POST /api/faceid/notify-absent — kelmaganlar ro'yxatini sinf rahbarlariga (Telegram)
+// ── Davomat xabarlari pauzasi: holatini olish va o'zgartirish
+router.get("/faceid/msg-pause", async (req, res): Promise<void> => {
+  const au = authAs(req, MANAGE);
+  if (!au) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const a = au as Record<string, unknown>;
+  const mid = schoolOf(au);
+  const g = await queryOne<{ paused: boolean }>("SELECT paused FROM face_msg_pause WHERE maktab_id = 0", []).catch(() => null);
+  const sc = mid === null ? null : await queryOne<{ paused: boolean }>("SELECT paused FROM face_msg_pause WHERE maktab_id = $1", [mid]).catch(() => null);
+  res.json({ global: !!g?.paused, school: !!sc?.paused, can_global: a["role"] === "admin", has_school: mid !== null });
+});
+
+router.post("/faceid/msg-pause", async (req, res): Promise<void> => {
+  const au = authAs(req, MANAGE);
+  if (!au) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
+  const a = au as Record<string, unknown>;
+  const { scope, paused } = req.body as { scope?: string; paused?: boolean };
+  if (typeof paused !== "boolean") { res.status(400).json({ error: "paused (true/false) kerak" }); return; }
+  const by = String(a["full_name"] ?? a["login"] ?? "");
+  try {
+    if (scope === "global") {
+      if (a["role"] !== "admin") { res.status(403).json({ error: "Umumiy pauzani faqat admin qila oladi" }); return; }
+      await query(
+        `INSERT INTO face_msg_pause (maktab_id, paused, by_name, updated_at) VALUES (0, $1, $2, NOW())
+         ON CONFLICT (maktab_id) DO UPDATE SET paused = EXCLUDED.paused, by_name = EXCLUDED.by_name, updated_at = NOW()`,
+        [paused, by]);
+    } else if (scope === "school") {
+      const mid = schoolOf(au);
+      if (mid === null) { res.status(400).json({ error: "Maktab tanlanmagan. Admin: avval maktabni 'ko'rish' rejimiga o'tkazing" }); return; }
+      await query(
+        `INSERT INTO face_msg_pause (maktab_id, paused, by_name, updated_at) VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (maktab_id) DO UPDATE SET paused = EXCLUDED.paused, by_name = EXCLUDED.by_name, updated_at = NOW()`,
+        [mid, paused, by]);
+    } else {
+      res.status(400).json({ error: "scope: 'global' yoki 'school' bo'lsin" }); return;
+    }
+    res.json({ ok: true, paused });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 router.post("/faceid/notify-absent", async (req, res): Promise<void> => {
   const u = authAs(req, MANAGE);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const mid = schoolOf(u);
+  if (await isMsgPaused(mid)) { res.status(409).json({ error: "Davomat xabarlari pauzada" }); return; }
   try {
     const today = uzDateStr();
     const rows = mid !== null
@@ -583,18 +644,18 @@ router.post("/faceid/enroll", async (req, res): Promise<void> => {
     student_login?: string; descriptors?: unknown; consent?: boolean; force?: boolean;
   };
   if (!student_login) { res.status(400).json({ error: "student_login kerak" }); return; }
-  if (consent !== true) {
-    res.status(400).json({ error: "Ota-ona roziligi belgilanmagan — yuz ma'lumoti saqlanmaydi" });
+  if (consent !== true || !(await hasFaceConsent(student_login))) {
+    res.status(403).json({ error: "Ota-ona roziligi rasmiylashtirilmagan. Avval \"Rozilik va qoidalar\" bo'limida roziligini imzolang" });
     return;
   }
   if (!Array.isArray(descriptors) || descriptors.length < 1 || descriptors.length > 8 || !descriptors.every(isDescriptor)) {
     res.status(400).json({ error: "Yuz namunalari noto'g'ri (1–8 ta, har biri 128 son)" });
     return;
   }
-  const student = await findPerson(student_login);
+  const mid = schoolOf(u);
+  const student = await findPerson(student_login, mid);
   if (!student) { res.status(404).json({ error: "Foydalanuvchi topilmadi" }); return; }
   if (!canTouchClass(u, student.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
-  const mid = schoolOf(u);
 
   // Namunalarning o'zi bir-biriga mosmi (kadrda boshqa odam bo'lib qolmaganmi).
   // Namunalar turli burchakdan (to'g'ri → yon) olinadi, shuning uchun "zanjir" tekshiruvi:
@@ -663,8 +724,9 @@ router.delete("/faceid/enroll/:login", async (req, res): Promise<void> => {
   const u = authAs(req, ENROLL);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const login = String(req.params["login"] ?? "");
-  const person = await findPerson(login);
-  if (person && !canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
+  const person = await findPerson(login, schoolOf(u));
+  if (!person) { res.status(404).json({ error: "Foydalanuvchi topilmadi" }); return; }
+  if (!canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
   await query("DELETE FROM face_profiles WHERE student_login = $1", [login]);
   res.json({ ok: true });
 });
@@ -672,8 +734,12 @@ router.delete("/faceid/enroll/:login", async (req, res): Promise<void> => {
 // POST /api/faceid/reset — HAMMA yuz ma'lumotlarini o'chirish (faqat admin)
 // Eski (3 namunali) ro'yxatdan o'tganlarni tozalash uchun — keyin yangi 7 burchak bilan qayta olinadi.
 router.post("/faceid/reset", async (req, res): Promise<void> => {
-  if (!authAs(req, ["admin"])) { res.status(403).json({ error: "Faqat admin" }); return; }
-  const rows = await query<{ student_login: string }>("DELETE FROM face_profiles RETURNING student_login");
+  const au = authAs(req, ["admin"]);
+  if (!au) { res.status(403).json({ error: "Faqat admin" }); return; }
+  const rows = await query<{ student_login: string }>(
+    "DELETE FROM face_profiles WHERE ($1::int IS NULL OR maktab_id = $1) RETURNING student_login",
+    [schoolOf(au)]
+  );
   logger.info({ deleted: rows.length }, "Face ID: hamma yuz ma'lumoti o'chirildi");
   res.json({ ok: true, deleted: rows.length });
 });
@@ -704,7 +770,7 @@ router.get("/faceid/descriptors", async (req, res): Promise<void> => {
            LEFT JOIN users u ON u.login = fp.student_login
            LEFT JOIN staff s ON s.login = fp.student_login
            LEFT JOIN face_checkins fc ON fc.student_login = fp.student_login AND fc.date = $1::date
-          WHERE fp.consent AND (u.login IS NOT NULL OR s.login IS NOT NULL) AND fp.maktab_id = $2`,
+          WHERE fp.consent AND face_consent_ok(fp.student_login) AND (u.login IS NOT NULL OR s.login IS NOT NULL) AND fp.maktab_id = $2`,
         [today, mid]
       )
     : await query<{
@@ -722,7 +788,7 @@ router.get("/faceid/descriptors", async (req, res): Promise<void> => {
            LEFT JOIN users u ON u.login = fp.student_login
            LEFT JOIN staff s ON s.login = fp.student_login
            LEFT JOIN face_checkins fc ON fc.student_login = fp.student_login AND fc.date = $1::date
-          WHERE fp.consent AND (u.login IS NOT NULL OR s.login IS NOT NULL)`,
+          WHERE fp.consent AND face_consent_ok(fp.student_login) AND (u.login IS NOT NULL OR s.login IS NOT NULL)`,
         [today]
       );
   const [settings, starts] = await Promise.all([getSettings(mid), classStarts()]);
@@ -861,6 +927,13 @@ async function postClassGroupClub(
   }
 }
 
+// 2 smena: ketish faqat smena tugashiga yaqin yoziladi (daqiqa)
+const OUT_LEAD_MIN = 15;
+function hmToMin(hm: string): number {
+  const [h, m] = String(hm ?? "00:00").split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
 async function handleScan(
   login: string,
   mode: ScanMode,
@@ -868,7 +941,7 @@ async function handleScan(
   device: string,
   mid: number | null
 ): Promise<ScanResult | null> {
-  const st = await findPerson(login);
+  const st = await findPerson(login, mid);
   if (!st) return null;
 
   const today = uzDateStr();
@@ -892,9 +965,22 @@ async function handleScan(
   // tasodifiy darhol qayta skanni "ketdi" deb hisoblamaslik uchun qisqa (1 daqiqa) himoya.
   const RESCAN_GUARD_MS = 60_000;
 
+  // Maktab 2 smenali bo'lsa — ikki smena bir vaqtda almashsa ham har kim o'z smenasi bo'yicha yoziladi
+  const schoolRow = mid === null
+    ? null
+    : await queryOne<{ ikki: boolean }>("SELECT COALESCE(ikki_smena, false) AS ikki FROM maktablar WHERE id = $1", [mid]).catch(() => null);
+  const twoShift = !!schoolRow?.ikki;
+
   // ── Qaror: keldi yoki ketdi
   let action: "in" | "out";
-  if (mode === "in") {
+  if (twoShift) {
+    if (!row?.arrived) action = "in";
+    else if (row.left) return { ...base, event: "already_out", time: row.left };
+    else if (row.arrived_ms && Date.now() - row.arrived_ms < RESCAN_GUARD_MS) {
+      return { ...base, event: "already_in", time: row.arrived, status: row.status };
+    } else if (hmToMin(time) >= hmToMin(String(settings.default_end ?? "13:30")) - OUT_LEAD_MIN) action = "out";
+    else return { ...base, event: "already_in", time: row.arrived, status: row.status };
+  } else if (mode === "in") {
     if (row?.arrived) return { ...base, event: "already_in", time: row.arrived, status: row.status };
     action = "in";
   } else if (mode === "out") {
@@ -1045,16 +1131,16 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Keldi/ketdi va ruxsat bilan ketishni faqat maktab rahbariyati belgilaydi. Sinf rahbari faqat 'sababli' qila oladi." });
     return;
   }
-  const person = await findPerson(student_login);
+  const mid = schoolOf(u);
+  const person = await findPerson(student_login, mid);
   if (!person) { res.status(404).json({ error: "Topilmadi" }); return; }
   if (!canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
-  const mid = schoolOf(u);
   const byName = String(u.full_name ?? u.login ?? "O'qituvchi").trim();
   const excuseReason = String(reason ?? "").trim().slice(0, 300);
 
   const today = uzDateStr();
   const settings = await getSettings(mid);
-  const t = typeof time === "string" && /^\d{2}:\d{2}$/.test(time) ? time : null;
+  const t = typeof time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : null;
   const ts = t ? `${today}T${t}:00+05:00` : null; // O'zbekiston = UTC+5
   const shownTime = t ?? uzTime();
 
@@ -1171,10 +1257,10 @@ router.post("/faceid/chronic", async (req, res): Promise<void> => {
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const { student_login, on, note } = req.body as { student_login?: string; on?: boolean; note?: string };
   if (!student_login) { res.status(400).json({ error: "student_login kerak" }); return; }
-  const person = await findPerson(student_login);
+  const mid = schoolOf(u);
+  const person = await findPerson(student_login, mid);
   if (!person) { res.status(404).json({ error: "Topilmadi" }); return; }
   if (!canTouchClass(u, person.class_name)) { res.status(403).json({ error: "Bu sizga biriktirilmagan" }); return; }
-  const mid = schoolOf(u);
   if (on === false) {
     await query("DELETE FROM face_chronic WHERE student_login = $1", [student_login]);
     res.json({ ok: true, chronic: false });
@@ -1251,6 +1337,7 @@ async function dailyAttendanceChats(mid: number | null) {
 //  08:00 — MAKTAB GURUHIGA: shu paytgacha kelganlar soni (qisqa snapshot)
 // ═══════════════════════════════════════════════════════════════════════════
 export async function faceidArrivedCount(mid: number): Promise<{ sent: number; arrived: number; total: number }> {
+  if (await isMsgPaused(mid)) return { sent: 0, arrived: 0, total: 0 };
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
   const agg = await queryOne<{ total: number; arrived: number; late: number }>(
@@ -1281,6 +1368,7 @@ export async function faceidArrivedCount(mid: number): Promise<{ sent: number; a
 //  Har bir o'quvchiga (ota-onasiga) alohida xabar handleScan ichida darhol boradi.
 // ═══════════════════════════════════════════════════════════════════════════
 export async function faceidGroupSummary(mid: number): Promise<{ classes: number; sent: number }> {
+  if (await isMsgPaused(mid)) return { classes: 0, sent: 0 };
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
   const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' AND maktab_id = $1 ORDER BY name", [mid]);
@@ -1353,6 +1441,7 @@ export async function faceidGroupSummary(mid: number): Promise<{ classes: number
 //  10:00 — "MUNTAZAM KELMAYDIGAN" o'quvchilar har kuni sinf guruhiga eslatiladi
 // ═══════════════════════════════════════════════════════════════════════════
 export async function faceidChronicNotify(mid: number): Promise<{ classes: number; sent: number }> {
+  if (await isMsgPaused(mid)) return { classes: 0, sent: 0 };
   const today = uzDateStr();
   const classes = await query<{ id: string; name: string }>("SELECT id, name FROM classes WHERE name <> '' AND maktab_id = $1 ORDER BY name", [mid]);
   let sent = 0, done = 0;
@@ -1399,6 +1488,7 @@ router.post("/faceid/group-summary", async (req, res): Promise<void> => {
 //   • Shundan so'ng kunlik faoliyat yopiladi (14:30 dan keyin Face ID ishlamaydi).
 // ═══════════════════════════════════════════════════════════════════════════
 export async function faceidDepartureSummary(mid: number): Promise<{ classes: number; sent: number; truants: number }> {
+  if (await isMsgPaused(mid)) return { classes: 0, sent: 0, truants: 0 };
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
 
@@ -1547,6 +1637,7 @@ async function mgmtRecipients(mid: number): Promise<number[]> {
 }
 
 export async function faceidUnexcusedNotify(mid: number): Promise<{ classes: number; recipients: number }> {
+  if (await isMsgPaused(mid)) return { classes: 0, recipients: 0 };
   const today = uzDateStr();
   const dateStr = today.split("-").reverse().join(".");
   const classes = await query<{ name: string }>(
@@ -1831,6 +1922,7 @@ router.get("/faceid/archive", async (req, res): Promise<void> => {
 
 /** 14:30 da — kunlik arxivni Telegramga (maktab guruhi + rahbariyat) hujjat sifatida yuboradi. */
 export async function faceidArchiveToTelegram(mid: number, date = uzDateStr()): Promise<{ sent: number }> {
+  if (await isMsgPaused(mid)) return { sent: 0 };
   const data = await collectArchive(date, mid);
   const buf = Buffer.from(renderArchiveDoc(data), "utf-8");
   const fname = `davomat-${date}.doc`;
@@ -1878,6 +1970,7 @@ async function quarterOffenders(mid: number, quarterStart: string, quarterEnd: s
 }
 
 export async function checkHourLimits(mid: number): Promise<{ newly: number }> {
+  if (await isMsgPaused(mid)) return { newly: 0 };
   const settings = await getSettings(mid);
   const today = uzDateStr();
   const quarterStart = autoQuarterStart(today, settings.quarter_start);
