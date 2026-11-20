@@ -5,8 +5,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
-import { SeasonProvider } from "@/lib/season";
-import { Snowfall, WinterLights } from "@/components/winter";
 import { BirthdayBanner } from "@/components/birthday-banner";
 import { PwaUpdatePrompt } from "@/components/pwa-update-prompt";
 import { useAuth } from "@/lib/use-auth";
@@ -41,6 +39,7 @@ const ProPage = lazy(() => import("@/pages/pro"));
 const BaholashPage = lazy(() => import("@/pages/baholash/index"));
 const DarsJadvaliPage = lazy(() => import("@/pages/dars-jadvali/index"));
 const AnalyticsPage = lazy(() => import("@/pages/analytics/index"));
+const RozilikPage = lazy(() => import("@/pages/rozilik/index"));
 const Kutubxona = lazy(() => import("@/pages/kutubxona/index"));
 
 const AdminResetPage = lazy(() => import("@/pages/admin/reset"));
@@ -151,6 +150,7 @@ function Router() {
 
       <Route path="/baholash"><ProtectedRoute component={BaholashPage} /></Route>
       <Route path="/dars-jadvali"><ProtectedRoute component={DarsJadvaliPage} /></Route>
+      <Route path="/rozilik"><ProtectedRoute component={RozilikPage} /></Route>
       <Route path="/analytics"><ProtectedRoute component={AnalyticsPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/kutubxona"><ProtectedRoute component={Kutubxona} /></Route>
       <Route path="/olimpiada"><ProtectedRoute component={OlimpiyadaPage} /></Route>
@@ -200,20 +200,16 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <SeasonProvider>
         <AuthProvider>
           <TooltipProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />
               <BirthdayBanner />
-              <Snowfall />
-              <WinterLights />
               <PwaUpdatePrompt />
             </WouterRouter>
             <Toaster />
           </TooltipProvider>
         </AuthProvider>
-        </SeasonProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
