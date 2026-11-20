@@ -1,5 +1,4 @@
-// Birinchi kirishda platforma qoidalarini imzolash. Imzolanmaguncha sahifa ochilmaydi.
-// Admin uchun ko'rsatilmaydi.
+// Birinchi kirishda platforma qoidalarini imzolash. Imzolanmaguncha sahifa ochilmaydi (barcha rollar uchun).
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -83,11 +82,11 @@ export function ConsentGate() {
       const r = await fetch(`${API_BASE}/consent/status`, { headers: authJson() });
       return r.json();
     },
-    enabled: !!user && user.role !== "admin",
+    enabled: !!user,
     staleTime: 60_000,
   });
 
-  if (!user || user.role === "admin") return null;
+  if (!user) return null;
   if (!status.data || status.data.rules_done || !status.data.rules_required) return null;
 
   const valid = agree && name.trim().length >= 5 && sig.trim().toUpperCase() === name.trim().toUpperCase();
