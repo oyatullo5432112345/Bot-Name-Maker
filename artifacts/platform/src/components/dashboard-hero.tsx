@@ -28,6 +28,36 @@ function Neon({ children, from, to, className = "" }: { children: ReactNode; fro
   );
 }
 
+// Qor parchalari (faqat qish rejimida), komponent ichida
+const FLAKES = Array.from({ length: 14 }, (_, i) => ({
+  left: (i * 53) % 100, delay: -((i * 2.3) % 12), dur: 9 + ((i * 1.7) % 7), size: 10 + ((i * 7) % 14), dx: ((i % 5) - 2) * 12,
+}));
+const SNOW_CSS = `
+@keyframes hero-fall{0%{transform:translate3d(0,-10%,0) rotate(0)}100%{transform:translate3d(var(--dx),110%,0) rotate(360deg)}}
+@keyframes hero-fly{0%{transform:translateX(-40%)}9%{transform:translateX(120%)}100%{transform:translateX(120%)}}
+@media (prefers-reduced-motion: reduce){.hero-anim{animation:none!important}}
+`;
+function SnowLayer() {
+  return (
+    <>
+      <style>{SNOW_CSS}</style>
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
+        {FLAKES.map((f, i) => (
+          <svg key={i} className="hero-anim absolute top-0 text-sky-100/80" width={f.size} height={f.size} viewBox="0 0 100 100"
+            style={{ left: `${f.left}%`, animation: `hero-fall ${f.dur}s linear ${f.delay}s infinite`, ["--dx" as string]: `${f.dx}px` }}>
+            <g stroke="currentColor" strokeWidth="7" strokeLinecap="round">
+              {[0, 60, 120].map((a) => <line key={a} x1="50" y1="8" x2="50" y2="92" transform={`rotate(${a} 50 50)`} />)}
+            </g>
+          </svg>
+        ))}
+        <div className="hero-anim absolute top-[14%] left-0 z-[2]" style={{ animation: "hero-fly 40s linear infinite" }}>
+          <img src={A + "santa-sleigh.png"} alt="" className="h-16 w-auto opacity-90" />
+        </div>
+      </div>
+    </>
+  );
+}
+
 // Muz gul overlay (kartaning burchagi)
 const Frost = ({ className = "" }: { className?: string }) => (
   <img src={A + "frost-card.png"} alt="" aria-hidden className={`pointer-events-none absolute w-40 opacity-70 ${className}`} />
@@ -52,9 +82,10 @@ export function DashboardHero({ dateWidget, greeting, motivation, rightSlot, can
     <div className="relative space-y-4 overflow-hidden rounded-[28px] bg-[#070d1d] pb-4">
       {/* Shahar foni (yuqori qismi) */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[360px]" style={{ backgroundImage: `url(${A}city-bg.jpg)`, backgroundSize: "cover", backgroundPosition: "center top", opacity: 0.55, maskImage: "linear-gradient(#000 60%, transparent)", WebkitMaskImage: "linear-gradient(#000 60%, transparent)" }} />
-      {/* Garland (yuqori burchaklar) */}
-      <img src={A + "garland-tl.png"} alt="" aria-hidden className="pointer-events-none absolute -left-2 -top-2 w-44" />
-      <img src={A + "garland-tr.png"} alt="" aria-hidden className="pointer-events-none absolute -right-2 -top-2 w-44" />
+      {winter && <SnowLayer />}
+      {/* Garland (yuqori burchaklar) — faqat qish rejimida */}
+      {winter && <img src={A + "garland-tl.png"} alt="" aria-hidden className="pointer-events-none absolute -left-2 -top-2 z-[2] w-44" />}
+      {winter && <img src={A + "garland-tr.png"} alt="" aria-hidden className="pointer-events-none absolute -right-2 -top-2 z-[2] w-44" />}
 
       {/* Yuqori panel */}
       <div className="relative mx-2 mt-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0b1426]/85 px-3 py-2.5 backdrop-blur">
@@ -80,9 +111,9 @@ export function DashboardHero({ dateWidget, greeting, motivation, rightSlot, can
       <div className="relative space-y-4 px-2">
         {/* Qishki mavsum */}
         {winter !== undefined && (
-          <Neon from="#f472b6" to="#38bdf8">
-            <Frost className="-left-3 -top-4 rotate-180" />
-            <Frost className="-bottom-6 -right-4" />
+          <Neon from={winter ? "#f472b6" : "#334155"} to={winter ? "#38bdf8" : "#475569"}>
+            {winter && <Frost className="-left-3 -top-4 rotate-180" />}
+            {winter && <Frost className="-bottom-6 -right-4" />}
             <div className="relative flex items-center gap-2 p-4">
               <img src={A + "santa-sleigh.png"} alt="Qorbobo chanada" className="h-[120px] w-[120px] shrink-0 object-contain" />
               <div className="min-w-0 flex-1">
@@ -161,9 +192,9 @@ export function DashboardHero({ dateWidget, greeting, motivation, rightSlot, can
       </div>
 
       {/* Pastki bezaklar */}
-      <img src={A + "ball-blue-left.png"} alt="" aria-hidden className="pointer-events-none absolute -left-1 bottom-2 w-10" />
-      <img src={A + "ball-blue-bottom.png"} alt="" aria-hidden className="pointer-events-none absolute bottom-3 right-4 w-12" />
-      <img src={A + "ball-red-bottom.png"} alt="" aria-hidden className="pointer-events-none absolute bottom-1 right-20 w-12" />
+      {winter && <img src={A + "ball-blue-left.png"} alt="" aria-hidden className="pointer-events-none absolute -left-1 bottom-2 w-10" />}
+      {winter && <img src={A + "ball-blue-bottom.png"} alt="" aria-hidden className="pointer-events-none absolute bottom-3 right-4 w-12" />}
+      {winter && <img src={A + "ball-red-bottom.png"} alt="" aria-hidden className="pointer-events-none absolute bottom-1 right-20 w-12" />}
     </div>
   );
 }
