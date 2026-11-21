@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { ConsentGate } from "@/components/consent-gate";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useTheme } from "@/lib/theme";
@@ -713,8 +712,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-36 lg:pb-20">
-          <ConsentGate />
-          <div className="mx-auto max-w-6xl">
+            <div className="mx-auto max-w-6xl">
             {faceLockedForMgmt ? (
               <div className="mb-4 rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 flex items-start gap-2.5">
                 <Lock className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
