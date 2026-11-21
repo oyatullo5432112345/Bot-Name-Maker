@@ -43,6 +43,7 @@ const BaholashPage = lazy(() => import("@/pages/baholash/index"));
 const DarsJadvaliPage = lazy(() => import("@/pages/dars-jadvali/index"));
 const AnalyticsPage = lazy(() => import("@/pages/analytics/index"));
 const RozilikPage = lazy(() => import("@/pages/rozilik/index"));
+const ArchaPage = lazy(() => import("@/pages/archa/index"));
 const Kutubxona = lazy(() => import("@/pages/kutubxona/index"));
 
 const AdminResetPage = lazy(() => import("@/pages/admin/reset"));
@@ -154,6 +155,7 @@ function Router() {
       <Route path="/baholash"><ProtectedRoute component={BaholashPage} /></Route>
       <Route path="/dars-jadvali"><ProtectedRoute component={DarsJadvaliPage} /></Route>
       <Route path="/rozilik"><ProtectedRoute component={RozilikPage} /></Route>
+      <Route path="/archa"><ProtectedRoute component={ArchaPage} /></Route>
       <Route path="/analytics"><ProtectedRoute component={AnalyticsPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/kutubxona"><ProtectedRoute component={Kutubxona} /></Route>
       <Route path="/olimpiada"><ProtectedRoute component={OlimpiyadaPage} /></Route>
