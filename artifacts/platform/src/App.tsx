@@ -1,4 +1,7 @@
 import { lazy, Suspense } from "react";
+import { SeasonProvider } from "@/lib/season";
+import { WinterLights } from "@/components/winter";
+import { WinterScene } from "@/components/winter-scene";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -200,16 +203,20 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <SeasonProvider>
         <AuthProvider>
           <TooltipProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />
               <BirthdayBanner />
+              <WinterScene />
+              <WinterLights />
               <PwaUpdatePrompt />
             </WouterRouter>
             <Toaster />
           </TooltipProvider>
         </AuthProvider>
+        </SeasonProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
