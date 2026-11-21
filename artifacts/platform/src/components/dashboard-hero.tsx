@@ -6,8 +6,8 @@ import { Link } from "wouter";
 import { ChevronRight, Menu, Search, Home, Settings } from "lucide-react";
 import { useSeason } from "@/lib/season";
 
-// Rasmlar public/imagine/ papkasida. Boshqa papka bo'lsa, faqat shu qatorni o'zgartiring.
-const A = "/imagine/";
+// Rasmlar public/images/ papkasida. Boshqa papka bo'lsa, faqat shu qatorni o'zgartiring.
+const A = "/images/";
 
 function daysToNewYear(now = new Date()): number {
   const ny = new Date(now.getFullYear() + 1, 0, 1);
