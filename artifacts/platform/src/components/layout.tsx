@@ -683,9 +683,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       />
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 pt-14 lg:pt-0">
+      <div className={`flex-1 flex flex-col min-w-0 ${location === "/" ? "" : "pt-14"} lg:pt-0`}>
         {/* Mobile header */}
-        <header className="h-14 flex items-center gap-1 px-3 border-b bg-background lg:hidden fixed top-0 inset-x-0 z-40 shrink-0">
+        <header className={`h-14 items-center gap-1 px-3 border-b bg-background lg:hidden fixed top-0 inset-x-0 z-40 shrink-0 ${location === "/" ? "hidden" : "flex"}`}>
           <MenuButton onClick={() => setQuickSheetOpen(true)} />
           <div className="ml-3 flex-1 min-w-0 overflow-hidden">
             <TalimTvLogo size="small" />
