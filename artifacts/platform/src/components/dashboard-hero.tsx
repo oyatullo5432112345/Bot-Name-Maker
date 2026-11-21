@@ -1,10 +1,9 @@
-```react
 import { useState, useEffect, type ReactNode } from "react";
 import { Link } from "wouter";
 import { ChevronRight } from "lucide-react";
 import { useSeason } from "@/lib/season";
 
-const A = "/imagine/";
+const A = "/images/";
 
 // Yangi yilgacha jonli orqama-sanoq (Kun, Soat, Daqiqa, Soniya)
 function useNewYearCountdown() {
@@ -339,12 +338,3 @@ export function DashboardHero({
     </div>
   );
 }
-```
-
-### Nima o'zgardi:
-* **Motivatsion matn olib tashlandi** — karta ichi ortiqcha yozuvlardan tozalandi.
-* **Qorbobo o'lchami cheklandi** — chap tomonda `w-20 h-20` (telefonda) / `w-24 h-24` (kattaroq ekranda) ramka ichida turadi, hech qachon kattalashib ketmaydi.
-* **Muzli orqama-sanoq (`❄️ Yangi yilgacha qoldi:`)** — o'ng tomonda 4 ta muzdek yaltirab turuvchi katakchada **Kun, Soat, Daqiqa, Soniya** jonli ravishda kamayib boradi.
-
-Buni qo'yib ko'ring, keyin navbatdagi qismga o'tamiz!
-```
