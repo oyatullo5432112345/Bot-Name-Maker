@@ -3,6 +3,7 @@ import { ConsentGate } from "@/components/consent-gate";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 import { useTheme } from "@/lib/theme";
+import { WinterToggle } from "@/components/winter";
 import { useLogout } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -527,6 +528,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <TalimTvLogo />
         <div className="flex items-center gap-1">
+          <WinterToggle className="w-8 h-8" />
           <button
             onClick={toggleTheme}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -700,6 +702,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <Home className="w-4 h-4" />
             </button>
           </Link>
+          <WinterToggle className="w-9 h-9" />
           <button
             onClick={toggleTheme}
             className="w-9 h-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
