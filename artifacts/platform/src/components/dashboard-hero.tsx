@@ -1,10 +1,10 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link } from "wouter";
-import { ChevronRight, Search, Home, Settings } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useSeason } from "@/lib/season";
 import { ArchaTree, loadArcha, type Orn } from "@/components/archa-tree";
 
-const A = "/images/";
+const A = "/imagine/";
 
 // Yangi yilgacha jonli orqama-sanoq (Kun, Soat, Daqiqa, Soniya)
 function useNewYearCountdown() {
@@ -19,22 +19,45 @@ function useNewYearCountdown() {
       seconds: Math.floor((diff % 60000) / 1000),
     };
   };
+
   const [time, setTime] = useState(getDiff);
+
   useEffect(() => {
     const timer = setInterval(() => setTime(getDiff()), 1000);
     return () => clearInterval(timer);
   }, []);
+
   return time;
 }
 
-// Bir xil ko'rinishdagi karta (neon chegara + shisha ichki qism)
-function Card({ children, from, to, className = "" }: { children: ReactNode; from: string; to: string; className?: string }) {
+// Neon chegara + muzli shaffof effekt
+function Neon({
+  children,
+  from,
+  to,
+  className = "",
+}: {
+  children: ReactNode;
+  from: string;
+  to: string;
+  className?: string;
+}) {
   return (
     <div
-      className={`relative rounded-[22px] p-[1.5px] ${className}`}
-      style={{ background: `linear-gradient(125deg, ${from}, ${to}, ${from})`, boxShadow: `0 8px 22px -10px ${from}` }}
+      className={`relative rounded-[24px] p-[1.5px] transition-transform active:scale-[0.99] ${className}`}
+      style={{
+        background: `linear-gradient(125deg, ${from}, ${to}, ${from})`,
+        boxShadow: `0 10px 28px -8px ${from}`,
+      }}
     >
-      <div className="relative h-full overflow-hidden rounded-[20.5px] bg-[#0b1530]/92 backdrop-blur-md">{children}</div>
+      <div
+        className="relative h-full overflow-hidden rounded-[22.5px] bg-[#0b1530]/92 backdrop-blur-md"
+        style={{
+          boxShadow: "inset 0 0 20px rgba(186, 230, 253, 0.15)",
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -50,13 +73,24 @@ export interface DashboardHeroProps {
   stats?: { students: number; classes: number };
 }
 
-export function DashboardHero({ dateWidget, greeting, motivation, rightSlot, canUseFaceId, faceIdHref, faceIdSub, stats }: DashboardHeroProps) {
+export function DashboardHero({
+  dateWidget,
+  greeting,
+  motivation,
+  rightSlot,
+  canUseFaceId,
+  faceIdHref,
+  faceIdSub,
+  stats,
+}: DashboardHeroProps) {
   const { winter, setWinter } = useSeason();
   const { days, hours, minutes, seconds } = useNewYearCountdown();
   const [orn, setOrn] = useState<Orn[]>([]);
-  useEffect(() => { setOrn(loadArcha()); }, []);
+  useEffect(() => {
+    setOrn(loadArcha());
+  }, []);
 
-  const units = [
+  const countdownUnits = [
     { val: days, label: "kun" },
     { val: hours, label: "soat" },
     { val: minutes, label: "daq" },
@@ -64,112 +98,217 @@ export function DashboardHero({ dateWidget, greeting, motivation, rightSlot, can
   ];
 
   return (
-    <div className="space-y-4">
-      {/* 1. Yuqori panel: tepada, rasmdagidek (to'q shisha, oltin belgilar) */}
-      <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0a1020]/85 px-3.5 py-2.5 backdrop-blur-md">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-200 to-amber-600 text-sm font-black text-[#1a1204]">TP</div>
-        <span className="text-[17px] font-semibold text-slate-100">Ta’lim Platform</span>
-        <div className="ml-auto flex items-center gap-4 text-amber-200">
-          <Search className="h-5 w-5" />
-          <Link href="/"><Home className="h-5 w-5" /></Link>
-          <Settings className="h-5 w-5" />
+    <div className="relative space-y-5 overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#0f1f42] via-[#091226] to-[#070d1d] p-4 sm:p-5 shadow-xl">
+      {/* Ortiqcha fon rasmi (city-bg.jpg) olib tashlandi — endi tepadagi yozuvlar aralashmaydi */}
+
+      {/* Yuqori panel (to'q rang) va archa yonida */}
+      <div className="relative z-[2] flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-[#0a1020]/90 px-3.5 py-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-200 to-amber-600 text-sm font-black text-[#1a1204]">
+            TP
+          </div>
+          <span className="truncate text-base font-semibold text-slate-100">Ta’lim Platform</span>
         </div>
+        {winter && (
+          <div className="w-16 shrink-0">
+            <ArchaTree ornaments={orn} showStar className="h-auto w-full" />
+          </div>
+        )}
       </div>
 
-      {/* 2. Archa: yuqori panel tagida */}
-      {winter && (
-        <div className="mx-auto w-28">
-          <ArchaTree ornaments={orn} showStar className="h-auto w-full" />
+      {/* Sana va sarlavha */}
+      <div className="relative z-[2] pt-1">
+        <div className="mb-3.5 flex items-center justify-between gap-2">
+          <div>{dateWidget}</div>
+          {rightSlot && <div>{rightSlot}</div>}
         </div>
-      )}
-
-      {/* 3. Sana va sarlavha */}
-      <div className="px-1">
-        <div className="mb-3">{dateWidget}</div>
-        <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-white">Bosh sahifa</h1>
-        <p className="mt-1 text-[17px] font-medium text-slate-100">{greeting}</p>
-        <p className="text-sm text-slate-400">{motivation}</p>
-        {rightSlot && <div className="mt-2">{rightSlot}</div>}
+        <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-white sm:text-4xl">
+          Bosh sahifa
+        </h1>
+        <p className="mt-1.5 text-lg font-medium text-slate-100 sm:text-xl">
+          {greeting}
+        </p>
+        <p className="mt-0.5 text-sm text-slate-400 sm:text-base">{motivation}</p>
       </div>
 
-      {/* 4. Kartalar: bir xil kenglik, bir xil balandlik */}
-      {winter !== undefined && (
-        <Card from={winter ? "#38bdf8" : "#334155"} to={winter ? "#e879f9" : "#475569"}>
-          <div className="p-4">
-            <div className="flex items-center gap-3">
-              <img src={A + "santa-sleigh.png"} alt="Qorbobo" className="h-20 w-20 shrink-0 rounded-2xl object-contain" />
-              <div className="min-w-0 flex-1">
-                <div className="mb-2 text-xs font-extrabold uppercase tracking-wider text-sky-200">❄️ Yangi yilgacha qoldi:</div>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {units.map(({ val, label }) => (
-                    <div key={label} className="flex flex-col items-center rounded-xl border border-sky-200/30 bg-sky-400/10 py-2">
-                      <span className="text-xl font-black leading-none tabular-nums text-white">{String(val).padStart(2, "0")}</span>
-                      <span className="mt-1 text-[10px] font-bold uppercase text-sky-200">{label}</span>
-                    </div>
-                  ))}
+      {/* Kartalar ro'yxati (Kattalashtirilgan va bo'ydor) */}
+      <div className="relative z-[2] space-y-4">
+        {/* 1. Qishki mavsum (Chapda Qorbobo, O'ngda muzli orqama-sanoq) */}
+        {winter !== undefined && (
+          <Neon
+            from={winter ? "#38bdf8" : "#334155"}
+            to={winter ? "#e879f9" : "#475569"}
+          >
+            <div className="relative p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-3.5">
+                {/* Chap: Qorbobo rasmi */}
+                <div className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-sky-300/20 bg-sky-500/10 p-1 sm:h-28 sm:w-28">
+                  <img
+                    src={A + "santa-sleigh.png"}
+                    alt="Qorbobo"
+                    className="h-full w-full object-contain mix-blend-lighten"
+                  />
+                </div>
+
+                {/* O'ng: Yangi yilgacha muzli orqama-sanoq */}
+                <div className="min-w-0 flex-1">
+                  <div className="mb-2.5 flex items-center justify-between gap-1">
+                    <span
+                      className="text-xs font-extrabold uppercase tracking-wider sm:text-sm"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, #ffffff 15%, #bae6fd 55%, #38bdf8 100%)",
+                        WebkitBackgroundClip: "text",
+                        WebkitTextFillColor: "transparent",
+                        filter: "drop-shadow(0 0 8px rgba(56,189,248,0.45))",
+                      }}
+                    >
+                      ❄️ Yangi yilgacha qoldi:
+                    </span>
+                  </div>
+
+                  {/* 4 ta muzli katakcha: Kun, Soat, Daq, Son */}
+                  <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                    {countdownUnits.map(({ val, label }) => (
+                      <div
+                        key={label}
+                        className="flex flex-col items-center justify-center rounded-xl border border-sky-200/35 bg-gradient-to-b from-sky-200/20 via-sky-400/10 to-slate-900/60 py-2.5 backdrop-blur-md"
+                        style={{
+                          boxShadow:
+                            "inset 0 1px 4px rgba(255,255,255,0.4), 0 4px 10px rgba(0,0,0,0.25)",
+                        }}
+                      >
+                        <span
+                          className="text-xl font-black leading-none tabular-nums sm:text-2xl"
+                          style={{
+                            background:
+                              "linear-gradient(180deg, #ffffff 20%, #bae6fd 65%, #7dd3fc 100%)",
+                            WebkitBackgroundClip: "text",
+                            WebkitTextFillColor: "transparent",
+                            filter:
+                              "drop-shadow(0 2px 6px rgba(56,189,248,0.6))",
+                          }}
+                        >
+                          {String(val).padStart(2, "0")}
+                        </span>
+                        <span className="mt-1 text-[10px] font-bold uppercase tracking-wide text-sky-200/90 sm:text-xs">
+                          {label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2.5">
-              <span className="text-xs font-semibold text-sky-200/85">🎄 Qishki mavsum</span>
-              <button type="button" onClick={() => setWinter(!winter)} className="text-xs font-medium text-sky-300">
-                {winter ? "Qishki bezakni o‘chirish" : "Qishki bezakni yoqish"}
-              </button>
-            </div>
-          </div>
-        </Card>
-      )}
 
-      {canUseFaceId && (
-        <Link href={faceIdHref} className="block">
-          <Card from="#22d3ee" to="#6366f1" className="cursor-pointer">
-            <div className="flex h-[104px] items-center gap-3.5 px-4">
-              <img src={A + "face-id.png"} alt="" aria-hidden className="h-16 w-16 shrink-0 rounded-2xl object-contain" />
+              {/* Pastki qator */}
+              <div className="mt-3.5 flex items-center justify-between border-t border-white/10 pt-2.5">
+                <span className="text-xs font-semibold text-sky-200/85 sm:text-sm">
+                  🎄 Qishki mavsum
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setWinter(!winter)}
+                  className="text-xs font-medium text-sky-300 transition-colors hover:text-sky-200 sm:text-sm"
+                >
+                  {winter
+                    ? "Qishki bezakni o‘chirish"
+                    : "Qishki bezakni yoqish"}
+                </button>
+              </div>
+            </div>
+          </Neon>
+        )}
+
+        {/* 2. Face ID (Kattalashtirilgan) */}
+        {canUseFaceId && (
+          <Link href={faceIdHref} className="block">
+            <Neon from="#22d3ee" to="#6366f1" className="cursor-pointer">
+              <div className="relative flex items-center gap-4 p-4 sm:p-5">
+                <img
+                  src={A + "face-id.png"}
+                  alt=""
+                  aria-hidden
+                  className="h-20 w-20 shrink-0 rounded-2xl object-contain mix-blend-lighten sm:h-24 sm:w-24"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xl font-bold text-white sm:text-2xl">
+                    Face ID
+                  </div>
+                  <p className="mt-1 text-sm leading-snug text-slate-300 sm:text-base">
+                    {faceIdSub}
+                  </p>
+                </div>
+                <ChevronRight className="h-6 w-6 shrink-0 text-slate-400" />
+              </div>
+            </Neon>
+          </Link>
+        )}
+
+        {/* 3. Intelektual o'yinlar (Kattalashtirilgan) */}
+        <Link href="/intellektual" className="block">
+          <Neon from="#e879f9" to="#6366f1" className="cursor-pointer">
+            <div className="relative flex items-center gap-4 p-4 sm:p-5">
+              <img
+                src={A + "games.png"}
+                alt=""
+                aria-hidden
+                className="h-20 w-20 shrink-0 rounded-2xl object-contain mix-blend-lighten sm:h-24 sm:w-24"
+              />
               <div className="min-w-0 flex-1">
-                <div className="text-lg font-bold text-white">Face ID</div>
-                <p className="line-clamp-2 text-sm text-slate-300">{faceIdSub}</p>
+                <div className="text-xl font-bold text-white sm:text-2xl">
+                  Intelektual o‘yinlar
+                </div>
+                <p className="mt-1 text-sm leading-snug text-slate-300 sm:text-base">
+                  Maktab Olami, Merge — aqlni charxla, kuchaytir
+                </p>
               </div>
-              <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
+              <ChevronRight className="h-6 w-6 shrink-0 text-slate-400" />
             </div>
-          </Card>
+          </Neon>
         </Link>
-      )}
 
-      <Link href="/intellektual" className="block">
-        <Card from="#e879f9" to="#6366f1" className="cursor-pointer">
-          <div className="flex h-[104px] items-center gap-3.5 px-4">
-            <img src={A + "games.png"} alt="" aria-hidden className="h-16 w-16 shrink-0 rounded-2xl object-contain" />
-            <div className="min-w-0 flex-1">
-              <div className="text-lg font-bold text-white">Intelektual o‘yinlar</div>
-              <p className="line-clamp-2 text-sm text-slate-300">Maktab Olami, Merge — aqlni charxla, kuchaytir</p>
-            </div>
-            <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
+        {/* 4. Statistika (Kattalashtirilgan) */}
+        {stats && (
+          <div className="grid grid-cols-2 gap-3.5">
+            <Neon from="#60a5fa" to="#818cf8">
+              <div className="relative flex items-center gap-3.5 p-4 sm:p-5">
+                <img
+                  src={A + "grad-cap.png"}
+                  alt=""
+                  aria-hidden
+                  className="h-12 w-12 shrink-0 object-contain mix-blend-lighten sm:h-14 sm:w-14"
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-medium text-slate-300 sm:text-sm">
+                    Jami O‘quvchilar
+                  </div>
+                  <div className="mt-0.5 text-2xl font-extrabold tabular-nums text-amber-200 sm:text-3xl">
+                    {stats.students.toLocaleString("uz-UZ")}
+                  </div>
+                </div>
+              </div>
+            </Neon>
+            <Neon from="#60a5fa" to="#818cf8">
+              <div className="relative flex items-center gap-3.5 p-4 sm:p-5">
+                <img
+                  src={A + "school.png"}
+                  alt=""
+                  aria-hidden
+                  className="h-12 w-12 shrink-0 object-contain mix-blend-lighten sm:h-14 sm:w-14"
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-medium text-slate-300 sm:text-sm">
+                    Jami Sinflar
+                  </div>
+                  <div className="mt-0.5 text-2xl font-extrabold tabular-nums text-amber-200 sm:text-3xl">
+                    {stats.classes}
+                  </div>
+                </div>
+              </div>
+            </Neon>
           </div>
-        </Card>
-      </Link>
-
-      {stats && (
-        <div className="grid grid-cols-2 gap-3">
-          <Card from="#60a5fa" to="#818cf8">
-            <div className="flex h-[92px] items-center gap-3 px-3.5">
-              <img src={A + "grad-cap.png"} alt="" aria-hidden className="h-11 w-11 shrink-0 object-contain" />
-              <div className="min-w-0">
-                <div className="truncate text-xs text-slate-300">Jami O‘quvchilar</div>
-                <div className="text-2xl font-extrabold tabular-nums text-amber-200">{stats.students.toLocaleString("uz-UZ")}</div>
-              </div>
-            </div>
-          </Card>
-          <Card from="#60a5fa" to="#818cf8">
-            <div className="flex h-[92px] items-center gap-3 px-3.5">
-              <img src={A + "school.png"} alt="" aria-hidden className="h-11 w-11 shrink-0 object-contain" />
-              <div className="min-w-0">
-                <div className="truncate text-xs text-slate-300">Jami Sinflar</div>
-                <div className="text-2xl font-extrabold tabular-nums text-amber-200">{stats.classes}</div>
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
