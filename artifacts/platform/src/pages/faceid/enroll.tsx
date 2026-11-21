@@ -16,6 +16,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
 import { api, beep, detectFaces, distance, hasSsd, loadFaceApi, startCamera, stopCamera, type FaceResult } from "@/lib/face";
+import { FaceRingOverlay } from "@/components/face-ring";
 
 interface ClassRow { class_name: string; total: number; enrolled: number }
 interface StudentRow { login: string; full_name: string; enrolled: boolean; samples: number; updated_at: string | null }
@@ -263,17 +264,7 @@ function CaptureDialog({ student, onClose, onSaved }: { student: StudentRow; onC
           />
           {stage === "capture" && (
             <>
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-[55%] aspect-[3/4] rounded-[45%] border-4 border-cyan-400/70" />
-              </div>
-              <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/80 to-transparent text-white text-center">
-                <div className="font-semibold">{hint}</div>
-                <div className="mt-2 flex justify-center gap-2">
-                  {Array.from({ length: SAMPLES }, (_, i) => (
-                    <div key={i} className={`w-3 h-3 rounded-full ${i < count ? "bg-cyan-400" : "bg-white/30"}`} />
-                  ))}
-                </div>
-              </div>
+              <FaceRingOverlay done={count} total={SAMPLES} hint={hint} />
               <button
                 onClick={() => { const n = facing === "user" ? "environment" : "user"; setFacing(n); void begin(n); }}
                 className="absolute top-3 right-3 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center"
