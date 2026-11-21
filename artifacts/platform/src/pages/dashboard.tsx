@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { ConfirmCard } from "@/components/confirm-card";
+import { DashboardHero } from "@/components/dashboard-hero";
 import { WinterBanner } from "@/components/winter";
 
 
@@ -306,54 +307,18 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="mb-1.5"><DateWidget /></div>
-          <h1 className="text-2xl font-bold tracking-tight">Bosh sahifa</h1>
-          <p className="text-muted-foreground mt-1">{getMorningGreeting(user.full_name ?? "")}</p>
-          <p className="text-xs text-muted-foreground/70 mt-0.5 italic">{motivation}</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {isStudent && <TangaHeaderWidget />}
-        </div>
-      </div>
+      <DashboardHero
+        dateWidget={<DateWidget />}
+        greeting={getMorningGreeting(user.full_name ?? "")}
+        motivation={motivation}
+        rightSlot={isStudent ? <TangaHeaderWidget /> : undefined}
+        canUseFaceId={canUseFaceId}
+        faceIdHref={faceIdHref}
+        faceIdSub={faceIdSub}
+      />
 
-      {/* Oylik "o'zimman" tasdiqlash — bosilgach yo'qoladi (faollik natijalari "Faollik" sahifasida) */}
-      <WinterBanner />
+      {/* Oylik "o'zimman" tasdiqlash — bosilgach yo'qoladi */}
       <ConfirmCard />
-
-      {/* Tezkor tugmalar — Face ID va Bek va Lola o'yini */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {canUseFaceId && (
-          <Link href={faceIdHref}>
-            <div className="h-full rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 via-sky-950/30 to-card p-4 cursor-pointer hover:scale-[1.01] transition-transform shadow-md">
-              <div className="flex items-center gap-3.5">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shrink-0 shadow">
-                  <ScanFace className="w-6 h-6 text-white" strokeWidth={2} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-extrabold text-base text-foreground">Face ID</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{faceIdSub}</p>
-                </div>
-                <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
-              </div>
-            </div>
-          </Link>
-        )}
-
-        <Link href="/intellektual" className={canUseFaceId ? "" : "sm:col-span-2"}>
-          <div className="h-full rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 via-violet-950/30 to-card p-4 cursor-pointer hover:scale-[1.01] transition-transform shadow-md">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 via-violet-600 to-amber-500 flex items-center justify-center shrink-0 shadow text-2xl">🧠</div>
-              <div className="min-w-0 flex-1">
-                <h3 className="font-extrabold text-base text-foreground">Intelektual o'yinlar</h3>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">Maktab Olami, Merge — aqlni charxla, kuchaytir</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
-            </div>
-          </div>
-        </Link>
-      </div>
 
       <OlimpiyadaBanner />
       <AnnouncementsBanner />
