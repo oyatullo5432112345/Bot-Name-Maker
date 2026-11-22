@@ -1,7 +1,7 @@
 // O'yinlar — yagona kirish sahifasi.
 // Hamma uchun: Intelektual o'yinlar. O'qituvchi/rahbariyat uchun: guruh o'yinlari.
 import { Link } from "wouter";
-import { Brain, Users, Trophy, Zap, Play, ChevronRight } from "lucide-react";
+import { Users, Trophy, Zap, Play } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
 
 const STAFF_ROLES = ["admin", "director", "zam_direktor", "zavuch", "teacher", "sinf_rahbari", "boshlangich_oqituvchi"];
