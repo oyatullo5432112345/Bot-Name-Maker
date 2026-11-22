@@ -153,19 +153,4 @@ export function ArchaCard() {
   );
 }
 
-/** Qorbobo chanasi (bosh sahifa banneri uchun). public/images/santa-sleigh.png dan. */
-export function SantaSleigh({ width = 120, className }: { width?: number; className?: string }) {
-  return (
-    <img
-      src={`${import.meta.env.BASE_URL}images/santa-sleigh.png`}
-      width={width}
-      alt=""
-      aria-hidden
-      draggable={false}
-      className={className}
-      style={{ height: "auto" }}
-    />
-  );
-}
-
 export { Flake };
