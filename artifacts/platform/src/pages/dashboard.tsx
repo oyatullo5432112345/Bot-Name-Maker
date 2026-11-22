@@ -1,5 +1,5 @@
 import { useAuth } from "@/lib/use-auth";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AchievementsWidget } from "@/components/achievements-widget";
 import { GrowthChart } from "@/components/growth-chart";
@@ -14,8 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { ConfirmCard } from "@/components/confirm-card";
 import { DashboardHero } from "@/components/dashboard-hero";
+import { CountdownBanner as KonstitutsiyaBanner } from "@/components/countdown-banner";
 import { WinterBanner } from "@/components/winter";
-
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -25,31 +25,6 @@ const authHeaders = (): HeadersInit => {
 };
 
 const SCHOOL_YEAR_START = new Date("2026-09-02T08:00:00");
-
-// Bayramlar — eng yaqin bayramgacha sanoq uchun (tuman platformasi)
-const HOLIDAYS: { date: string; name: string; emoji: string }[] = [
-  { date: "2026-10-21", name: "O'zbek tili bayrami", emoji: "🇺🇿" },
-  { date: "2026-12-08", name: "Konstitutsiya kuni", emoji: "📜" },
-  { date: "2027-01-01", name: "Yangi yil", emoji: "🎄" },
-  { date: "2027-03-08", name: "Xalqaro xotin-qizlar kuni", emoji: "🌷" },
-  { date: "2027-03-21", name: "Navro'z bayrami", emoji: "🌸" },
-  { date: "2027-05-09", name: "Xotira va qadrlash kuni", emoji: "🕊️" },
-  { date: "2027-06-01", name: "Bolalarni himoya qilish kuni", emoji: "🧒" },
-  { date: "2027-09-01", name: "Mustaqillik kuni", emoji: "🇺🇿" },
-  { date: "2027-10-01", name: "O'qituvchi va murabbiylar kuni", emoji: "👩‍🏫" },
-  { date: "2027-10-21", name: "O'zbek tili bayrami", emoji: "🇺🇿" },
-  { date: "2027-12-08", name: "Konstitutsiya kuni", emoji: "📜" },
-  { date: "2028-01-01", name: "Yangi yil", emoji: "🎄" },
-];
-function nextHoliday(): { name: string; emoji: string; date: Date } {
-  const now = Date.now();
-  for (const h of HOLIDAYS) {
-    const d = new Date(h.date + "T00:00:00");
-    if (d.getTime() >= now) return { name: h.name, emoji: h.emoji, date: d };
-  }
-  const last = HOLIDAYS[HOLIDAYS.length - 1]!;
-  return { name: last.name, emoji: last.emoji, date: new Date(last.date + "T00:00:00") };
-}
 
 const DAY_NAMES: Record<number, string> = {
   1: "Dushanba", 2: "Seshanba", 3: "Chorshanba",
@@ -88,24 +63,6 @@ const PERIOD_TIMES: Record<number, string> = {
   4: "10:45–11:30", 5: "11:50–12:35", 6: "12:45–13:20",
   7: "13:30–14:15", 8: "14:25–15:10",
 };
-
-function useCountdown(target: Date) {
-  const [timeLeft, setTimeLeft] = useState(() => Math.max(0, target.getTime() - Date.now()));
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const left = Math.max(0, target.getTime() - Date.now());
-      setTimeLeft(left);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [target]);
-  return {
-    days: Math.floor(timeLeft / 86400000),
-    hours: Math.floor((timeLeft % 86400000) / 3600000),
-    minutes: Math.floor((timeLeft % 3600000) / 60000),
-    seconds: Math.floor((timeLeft % 60000) / 1000),
-    ended: timeLeft <= 0,
-  };
-}
 
 interface TimetableEntry {
   id: string;
@@ -320,6 +277,8 @@ export default function Dashboard() {
       {/* Oylik "o'zimman" tasdiqlash — bosilgach yo'qoladi */}
       <ConfirmCard />
 
+      <KonstitutsiyaBanner />
+
       <OlimpiyadaBanner />
       <AnnouncementsBanner />
       {isAdminOrDir && <AdminDashboard />}
@@ -342,9 +301,6 @@ function AdminDashboard() {
     </div>
   );
 
-  const holiday = nextHoliday();
-  const holidayDays = Math.max(0, Math.ceil((holiday.date.getTime() - Date.now()) / 86400000));
-
   const statCards = [
     {
       title: "Jami O'quvchilar", value: stats.total_students,
@@ -361,29 +317,23 @@ function AdminDashboard() {
       icon: Users, color: "text-purple-400", bg: "bg-purple-400/10",
       trend: "Ro'yxatga olingan", trendUp: null, href: "/staff",
     },
-    {
-      title: "Keyingi bayram",
-      value: holidayDays <= 0 ? "Bugun! 🎉" : `${holidayDays} kun`,
-      icon: CalendarDays, color: "text-emerald-400", bg: "bg-emerald-400/10",
-      trend: `${holiday.emoji} ${holiday.name}`, trendUp: null, href: null as string | null,
-    },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:gap-4 grid-cols-3">
         {statCards.map(({ title, value, icon: Icon, color, bg, trend, href }) => {
           const card = (
             <Card className={`h-full relative overflow-hidden hover-lift ${href ? "cursor-pointer" : ""}`}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-                <CardTitle className="text-xs font-medium text-muted-foreground leading-tight">{title}</CardTitle>
-                <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-3 sm:px-4">
+                <CardTitle className="text-[11px] sm:text-xs font-medium text-muted-foreground leading-tight">{title}</CardTitle>
+                <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
                   <Icon className={`h-4 w-4 ${color}`} />
                 </div>
               </CardHeader>
-              <CardContent className="px-4 pb-4 pt-1">
-                <div className={`text-2xl sm:text-3xl font-bold ${color} tabular-nums`}>{value}</div>
-                <p className="text-[11px] mt-1 font-medium text-muted-foreground truncate">{trend}</p>
+              <CardContent className="px-3 sm:px-4 pb-4 pt-1">
+                <div className={`text-xl sm:text-3xl font-bold ${color} tabular-nums`}>{value}</div>
+                <p className="text-[10px] sm:text-[11px] mt-1 font-medium text-muted-foreground truncate">{trend}</p>
               </CardContent>
             </Card>
           );
@@ -592,36 +542,6 @@ function TeacherDashboard() {
   );
 }
 
-function CountdownBanner() {
-  const holiday = useMemo(() => nextHoliday(), []);
-  const { days, hours, minutes, seconds, ended } = useCountdown(holiday.date);
-  if (ended) return (
-    <Card className="border-primary bg-primary/5">
-      <CardContent className="py-4 text-center">
-        <p className="text-lg font-bold text-primary">{holiday.emoji} {holiday.name} muborak bo'lsin!</p>
-      </CardContent>
-    </Card>
-  );
-  return (
-    <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
-      <CardContent className="py-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-xl leading-none">{holiday.emoji}</span>
-          <p className="text-sm font-medium text-primary">{holiday.name}gacha qoldi</p>
-        </div>
-        <div className="grid grid-cols-4 gap-2 text-center">
-          {[{ value: days, label: "Kun" }, { value: hours, label: "Soat" }, { value: minutes, label: "Daqiqa" }, { value: seconds, label: "Soniya" }].map(({ value, label }) => (
-            <div key={label} className="bg-background rounded-lg border border-primary/20 py-3">
-              <div className="text-2xl font-bold text-primary tabular-nums">{String(value).padStart(2, "0")}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 type Grade = { id: string; subject: string; grade: number; comment: string; teacher_name: string; created_at: string };
 
 const GRADE_COLORS: Record<number, string> = {
@@ -781,7 +701,6 @@ function StudentDashboard() {
 
   return (
     <div className="space-y-4">
-      <CountdownBanner />
       <MyAttendanceWidget />
 
       <Card>
@@ -792,7 +711,7 @@ function StudentDashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <p className="text-sm font-medium text-muted-foreground">F.I.O</p>
               <p className="font-medium mt-1">{user.full_name}</p>
@@ -804,10 +723,6 @@ function StudentDashboard() {
                   {user.class_name || "Biriktirilmagan"}
                 </span>
               </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Login</p>
-              <p className="font-mono font-medium mt-1">{user.login}</p>
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground">Sinf rahbari</p>
