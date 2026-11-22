@@ -333,12 +333,27 @@ export default function MaktabOlami() {
             </div>
 
             {/* Qishki 3D Binolar maydoni (1- va 2-rasmlar uslubida) */}
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="mt-4 grid grid-cols-2 gap-3">
               {st.buildings.map((b) => {
                 const col = accentOf(b.key);
                 const maxed = b.next_cost == null;
                 const afford = b.next_cost != null && st.total >= b.next_cost;
                 const pct = Math.min(100, Math.round((b.level / b.max) * 100));
+
+                if (b.key === "kutubxona" || b.key === "maktab") {
+                  const src = b.key === "kutubxona" ? "/imagine/kutubxona-karta.jpg" : "/imagine/maktab-karta.jpg";
+                  return (
+                    <button
+                      key={b.key}
+                      type="button"
+                      onClick={() => void upgrade(b)}
+                      disabled={!!busy || maxed}
+                      className="relative block w-full overflow-hidden rounded-[22px] transition-transform active:scale-[0.98] disabled:opacity-90"
+                    >
+                      <img src={src} alt={b.name} className="block h-auto w-full" />
+                    </button>
+                  );
+                }
 
                 return (
                   <div
