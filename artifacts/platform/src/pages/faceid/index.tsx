@@ -18,6 +18,7 @@ import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/use-auth";
 import { api } from "@/lib/face";
 import { MsgPauseCard } from "@/components/msg-pause-card";
+import { useSeason } from "@/lib/season";
 
 interface Settings {
   late_after: string; notify: boolean; threshold: number; min_stay: number; default_end: string;
@@ -83,6 +84,16 @@ const CSS = `
 .fidp .frow .fsm{display:block;color:#6678ad;font-size:11px;margin-top:2px;font-weight:500}
 .fidp .frow .ftm{margin-left:auto;font-size:13px;font-weight:700;color:#9db0e6;font-variant-numeric:tabular-nums}
 .fidp .ftag{margin-left:6px;flex-shrink:0;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:99px;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);border:1px solid color-mix(in srgb,var(--c) 38%,transparent)}
+
+@media(min-width:1024px){
+  .fidp{max-width:1120px;padding:26px 28px 24px;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);column-gap:32px;align-content:start}
+  .fidp .fhead,.fidp .fhours{grid-column:1/-1}
+  .fidp .fstage{grid-column:1;grid-row:3/span 12;margin:6px 0 0;max-width:560px;align-self:start}
+  .fidp .fstats{grid-column:2;margin-top:14px}
+  .fidp .fcard{grid-column:2;margin-top:14px}
+  .fidp h1{font-size:26px}
+}
+@media(min-width:1024px) and (min-height:900px){.fidp .fstage{max-width:620px}}
 `;
 
 const P = (r: number, a: number): [number, number] => [500 + r * Math.cos((a * Math.PI) / 180), 500 + r * Math.sin((a * Math.PI) / 180)];
@@ -105,6 +116,7 @@ const ICONS: Record<SegKey, string> = {
 };
 
 function RadialMenu({ onGo, onStart }: { onGo: (route: string) => void; onStart: () => void }) {
+  const { winter } = useSeason();
   return (
     <svg viewBox="0 0 1000 1000" aria-label="Asosiy menyu">
       <defs>
@@ -161,6 +173,13 @@ function RadialMenu({ onGo, onStart }: { onGo: (route: string) => void; onStart:
           <text className="fcl" x="500" y="626" textAnchor="middle" fontWeight="800" fontSize="20" letterSpacing="8">FACE ID</text>
           <text x="500" y="675" textAnchor="middle" fontWeight="900" fontSize="40" letterSpacing="2" fill="#03251c">BOSHLASH</text>
         </g>
+        {winter && (
+          <g pointerEvents="none" transform="translate(556 560) rotate(14)">
+            <path d="M0 40 C6 6 52 -22 96 12 C84 18 72 30 70 44 Z" fill="#e11d2e" stroke="#7f0f1a" strokeWidth="2" />
+            <path d="M-6 38 Q40 58 78 40 L74 58 Q38 74 -8 58 Z" fill="#fff" stroke="#e5eefb" strokeWidth="1.5" />
+            <circle cx="98" cy="14" r="13" fill="#fff" stroke="#e5eefb" strokeWidth="1.5" />
+          </g>
+        )}
       </g>
     </svg>
   );
