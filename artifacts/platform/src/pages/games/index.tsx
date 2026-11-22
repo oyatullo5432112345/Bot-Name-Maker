@@ -37,25 +37,6 @@ export default function GamesPage() {
         <p className="text-muted-foreground text-sm mt-1">O'ynab o'rganing</p>
       </header>
 
-      {/* Bolalar uchun: Intelektual */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Intelektual o'yinlar</h2>
-        <Link href="/intellektual" className="block group">
-          <div className="relative overflow-hidden rounded-3xl border border-indigo-400/40 bg-gradient-to-br from-indigo-600/15 via-violet-600/10 to-amber-500/10 p-5 sm:p-6 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-0.5">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-amber-500 flex items-center justify-center shadow-lg shrink-0 group-hover:scale-105 transition-transform">
-                <Brain className="w-8 h-8 text-white" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-lg font-bold">Intelektual o'yinlar</h3>
-                <p className="text-sm text-muted-foreground mt-0.5">Maktab olami, Merge va boshqa aqliy o'yinlar</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:translate-x-1 transition-transform shrink-0" />
-            </div>
-          </div>
-        </Link>
-      </section>
-
       {/* Guruh o'yinlari: faqat o'qituvchi va rahbariyat */}
       {isStaff && (
         <section className="space-y-3">
