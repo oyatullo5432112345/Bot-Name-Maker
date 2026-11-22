@@ -161,10 +161,9 @@ function NavLink({ href, icon: Icon, label, badge, active, onClick }: {
     <Link
       href={href}
       onClick={onClick}
-      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors relative ${
-        active
-          ? "bg-primary/10 text-primary"
-          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+      data-active={active}
+      className={`g-sidelink flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors relative ${
+        active ? "" : "text-muted-foreground hover:text-foreground"
       }`}
     >
       <div className="relative shrink-0">
@@ -220,9 +219,9 @@ function TalimTvLogo({ size = "default" }: { size?: "default" | "small" }) {
   return (
     <div className="flex items-center gap-2 select-none">
       <span
-        className={`font-black ${isSmall ? "text-base" : "text-lg"} leading-none tracking-tight text-foreground`}
+        className={`g-brand ${isSmall ? "text-base" : "text-lg"} text-foreground`}
       >
-        Ta'lim <span className="text-blue-500">Platform</span>
+        Ta'lim <b>Platform</b> <span aria-hidden>🇺🇿</span>
       </span>
     </div>
   );
@@ -359,22 +358,13 @@ function QuickSheet({
 // ===================================================
 function MenuButton({ onClick }: { onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className="relative w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-95"
-      style={{
-        background: "linear-gradient(135deg, #1C64A8, #1EB53A)",
-        boxShadow: "0 2px 8px rgba(28,100,168,0.4)",
-      }}
-      aria-label="Menyu"
-    >
+    <button onClick={onClick} className="g-btn" aria-label="Menyu">
       <div className="flex flex-col gap-[4px] items-center justify-center">
-        <div className="w-4 h-[2px] bg-white rounded-full" />
-        <div className="w-3 h-[2px] bg-white/80 rounded-full" />
-        <div className="w-4 h-[2px] bg-white rounded-full" />
+        <div className="w-4 h-[2px] bg-current rounded-full" />
+        <div className="w-3 h-[2px] bg-current/80 rounded-full" />
+        <div className="w-4 h-[2px] bg-current rounded-full" />
       </div>
-      <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full"
-        style={{ background: "#F5A623" }} />
+      <span className="g-dot" />
     </button>
   );
 }
@@ -643,7 +633,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen w-full bg-background">
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-64 border-r flex-col shrink-0">
+      <aside className="g-sidebar hidden lg:flex w-64 flex-col shrink-0 sticky top-0 h-screen">
         {sidebarContent}
       </aside>
 
@@ -661,7 +651,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           // Har qanday havolani bosganda menyu yopiladi (joriy sahifa bo'lsa ham — qora qatlam qolmasin)
           if ((e.target as HTMLElement).closest("a")) setDrawerOpen(false);
         }}
-        className={`fixed inset-y-0 left-0 z-50 w-72 bg-background border-r shadow-xl flex flex-col transition-transform duration-300 lg:hidden ${
+        className={`g-sidebar fixed inset-y-0 left-0 z-50 w-72 shadow-xl flex flex-col transition-transform duration-300 lg:hidden ${
           drawerOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -683,36 +673,43 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 pt-14 lg:pt-0">
-        {/* Mobile header */}
-        <header className="h-14 flex items-center gap-1 px-3 border-b bg-background lg:hidden fixed top-0 inset-x-0 z-40 shrink-0">
+        {/* Mobile header — shisha panel */}
+        <header className="g-topbar h-14 flex items-center gap-2 px-3 lg:hidden fixed top-0 inset-x-0 z-40 shrink-0">
           <MenuButton onClick={() => setQuickSheetOpen(true)} />
-          <div className="ml-3 flex-1 min-w-0 overflow-hidden">
+          <div className="ml-1 flex-1 min-w-0 overflow-hidden">
             <TalimTvLogo size="small" />
           </div>
           <Link href="/dashboard">
-            <button
-              className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors mr-1 ${
-                location === "/dashboard" || location === "/"
-                  ? "text-primary bg-primary/10"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-              aria-label="Bosh sahifa"
-            >
-              <Home className="w-4 h-4" />
+            <button className="g-btn" aria-label="Bosh sahifa" data-active={location === "/dashboard" || location === "/"}>
+              <Home className="w-[18px] h-[18px]" />
+              <span className="g-dot" />
             </button>
           </Link>
           <WinterToggle className="w-9 h-9" />
-          <button
-            onClick={toggleTheme}
-            className="w-9 h-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          <button onClick={toggleTheme} className="g-orb" aria-label="Mavzuni almashtirish">
+            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
+        </header>
+
+        {/* Kompyuter: yuqori panel */}
+        <header className="g-deskbar hidden lg:flex items-center gap-3 px-8 h-16">
+          <div className="flex-1 min-w-0"><SchoolBadge /></div>
+          <WinterToggle className="w-9 h-9" />
+          <button onClick={toggleTheme} className="g-orb" aria-label="Mavzuni almashtirish">
+            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
+          <div className="g-chip">
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">{initials}</div>
+            <div className="leading-tight">
+              <p className="text-sm font-semibold max-w-[180px] truncate">{user.full_name}</p>
+              <p className="text-[11px] text-muted-foreground">{roleDisplay[user.role] || user.role}</p>
+            </div>
+          </div>
         </header>
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-36 lg:pb-20">
-            <div className="mx-auto max-w-6xl">
+            <div className="mx-auto g-page max-w-6xl">
             {faceLockedForMgmt ? (
               <div className="mb-4 rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 flex items-start gap-2.5">
                 <Lock className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
@@ -731,14 +728,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             ) : null}
           </div>
-          <div key={location} className="mx-auto max-w-6xl page-fade">
+          <div key={location} className="mx-auto g-page max-w-6xl page-fade">
             {children}
           </div>
         </main>
 
         {/* Mobile bottom tab bar */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30">
-          <div className="mx-2 mb-2 rounded-2xl border bg-background/95 backdrop-blur shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.25)]">
+          <div className="g-nav mx-2 mb-2">
             <div className="flex items-center justify-around px-1 py-2">
               {mobileNavItems.map(({ href, icon: Icon, label, badge }, i) => {
                 const active = href === "/dashboard"
@@ -754,13 +751,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                         localStorage.setItem("announcements_last_seen", String(Date.now()));
                       }
                     }}
-                    className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition-all duration-150 active:scale-90"
+                    data-active={active}
+                    className="g-nav-item flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition-all duration-150 active:scale-90"
                   >
                     <div
-                      className={`relative flex items-center justify-center w-10 h-8 rounded-xl transition-all duration-200 ${
+                      className={`g-nav-ico relative flex items-center justify-center w-10 h-8 rounded-xl transition-all duration-200 ${
                         active ? "scale-105" : "scale-100"
                       }`}
-                      style={active ? { background: `${accent}20` } : undefined}
+                      style={active ? ({ background: `${accent}26`, "--acc": `${accent}99`, "--acc-line": `${accent}66` } as React.CSSProperties) : undefined}
                     >
                       <Icon className="w-5 h-5 relative" style={{ color: active ? accent : "hsl(var(--muted-foreground))" }} />
                       {badge && badge > 0 ? (
