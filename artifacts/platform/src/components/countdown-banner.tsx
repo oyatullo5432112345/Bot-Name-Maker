@@ -59,7 +59,7 @@ export function CountdownBanner() {
   const [idx, setIdx] = useState(0);
 
   useEffect(() => {
-    const id = setInterval(() => setIdx((p) => (p + 1) % ARTICLES.length), 7000);
+    const id = setInterval(() => setIdx((p) => (p + 1) % ARTICLES.length), 60000);
     return () => clearInterval(id);
   }, []);
 
