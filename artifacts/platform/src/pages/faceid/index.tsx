@@ -95,7 +95,7 @@ type SegKey = "reg" | "fix" | "rep";
 const SEGS: { k: SegKey; a1: number; a2: number; lr: number; c: string; c2: string; t: string[]; route: string }[] = [
   { k: "reg", a1: 152, a2: 268, lr: 345, c: "#38bdf8", c2: "#818cf8", t: ["YUZLARNI", "RO’YXATGA", "OLISH"], route: "/faceid/enroll" },
   { k: "fix", a1: 272, a2: 388, lr: 345, c: "#fbbf24", c2: "#fb7185", t: ["DAVOMATNI", "QO’LDA", "TO’G’RILASH"], route: "/faceid/today" },
-  { k: "rep", a1: 32, a2: 148, lr: 352, c: "#c084fc", c2: "#f472b6", t: ["HISOBOT", "YUKLASH"], route: "/faceid/today" },
+  { k: "rep", a1: 32, a2: 148, lr: 352, c: "#c084fc", c2: "#f472b6", t: ["HISOBOT", "YUKLASH"], route: "/faceid/hisobot" },
 ];
 
 const ICONS: Record<SegKey, string> = {
