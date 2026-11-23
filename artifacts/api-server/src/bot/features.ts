@@ -501,9 +501,16 @@ function registerPrivate(priv: Composer<Context>): void {
   priv.hears(/^\s*\d{5,15}\s*$/, async (ctx) => {
     if (!ctx.from) return;
     if (ADMIN_ID > 0 && ctx.from.id === ADMIN_ID && Number(ctx.message?.text?.trim()) === ADMIN_ID) {
+      const loginUrl = `${WEBSITE_URL}/login`;
+      const cfg = await queryOne<{ data: { admin_login_id?: string } }>("SELECT data FROM auth_settings WHERE id = 1").catch(() => null);
+      const kirishId = cfg?.data?.admin_login_id ?? "";
+      const kb = WEBSITE_URL.startsWith("https://") ? new InlineKeyboard().url("⚙️ Admin panelga kirish", loginUrl) : undefined;
       await ctx.reply(
-        "👑 Administrator sifatida tasdiqlandi.\n\nAdmin panelga kirish uchun quyidagi tugmani bosing:",
-        { reply_markup: new InlineKeyboard().url("⚙️ Admin panelga kirish", `${WEBSITE_URL}/login`) }
+        "👑 Administrator sifatida tasdiqlandi.\n\n" +
+          `🌐 Havola: ${loginUrl}\n` +
+          (kirishId ? `🔑 Kirish ID: ${kirishId}\n\nSaytda "O'qituvchi / Xodim" tugmasini bosib, shu ID ni kiriting.` : "🔑 Kirish ID hali yaratilmagan — admin paneldan yarating.") +
+          (kb ? "" : "\n\n⚠️ Tugma uchun WEBSITE_URL https bilan boshlanishi kerak."),
+        { reply_markup: kb }
       );
       return;
     }
