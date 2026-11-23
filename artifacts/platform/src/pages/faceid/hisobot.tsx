@@ -2,7 +2,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, CalendarDays, ClipboardList } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 import { API_BASE, authHeaders } from "@/lib/face";
 
 interface HisobotStudent {
@@ -28,6 +31,7 @@ interface HisobotResponse {
   students: HisobotStudent[];
 }
 
+const fmtDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -68,13 +72,27 @@ export default function FaceHisobotPage() {
           <h1 className="text-2xl font-bold tracking-tight">Kunlik hisobot</h1>
           <p className="text-sm text-muted-foreground mt-1">Har qanday kunni tanlang — ma'lumot arxivda saqlanadi.</p>
         </div>
-        <input
-          type="date"
-          value={date}
-          max={todayStr()}
-          onChange={(e) => e.target.value && setDate(e.target.value)}
-          className="rounded-md border bg-background px-3 py-2 text-sm"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setDate(todayStr())}>Bugun</Button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-2">
+                <CalendarDays className="h-4 w-4" /> {date}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <Calendar
+                mode="single"
+                selected={new Date(date + "T00:00:00")}
+                onSelect={(d) => d && setDate(fmtDate(d))}
+                disabled={(d) => d > new Date()}
+              />
+            </PopoverContent>
+          </Popover>
+          <Link href="/faceid/sorov" className="inline-flex">
+            <Button size="sm" className="gap-2"><ClipboardList className="h-4 w-4" /> So'rovlar</Button>
+          </Link>
+        </div>
       </div>
 
       {loading && <div className="flex justify-center py-12"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>}
