@@ -43,19 +43,19 @@ interface Unvon {
 }
 
 const UNVONLAR: Unvon[] = [
-  { id: "yangi_shogird",   title: "Yangi Shogird",   emoji: "🌱", min_tanga: 0,    color: "#9CA3AF", description: "Saytga birinchi kirganda avtomatik beriladi" },
-  { id: "izlanuvchi",      title: "Izlanuvchi",       emoji: "🔍", min_tanga: 30,   color: "#3B82F6", description: "Bilim yo'liga qadam qo'ydingiz!" },
-  { id: "gayratli",        title: "G'ayratli",        emoji: "⭐", min_tanga: 80,   color: "#1D4ED8", description: "Bilimga chanqoqlik — muvaffaqiyat kaliti" },
-  { id: "bilimdon",        title: "Bilimdon",         emoji: "🧠", min_tanga: 150,  color: "#F59E0B", description: "Profilda maxsus ramka paydo bo'ladi" },
-  { id: "faol_talaba",     title: "Faol Talaba",      emoji: "⚡", min_tanga: 250,  color: "#06B6D4", description: "Reyting jadvalida ismi yonida belgi ko'rinadi" },
-  { id: "ilm_sohibi",      title: "Ilm Sohibi",       emoji: "📚", min_tanga: 400,  color: "#059669", description: "Bilimning uch yulduz egasi" },
-  { id: "olimpchi",        title: "Olimpchi",         emoji: "🏟️", min_tanga: 600,  color: "#7C3AED", description: "Olimpiadada ishtirok etgan!", special: "olimpiada" },
-  { id: "ustoz_shogird",   title: "Ustoz Shogird",    emoji: "🎓", min_tanga: 900,  color: "#D97706", description: "Profil rasmi atrofida oltin halqa" },
-  { id: "sinf_yulduzi",    title: "Sinf Yulduzi",     emoji: "🌟", min_tanga: 1300, color: "#FCD34D", description: "Sinfda eng ko'p tanga yig'gan o'quvchi" },
-  { id: "maktab_faxri",    title: "Maktab Faxri",     emoji: "🏆", min_tanga: 2000, color: "#DC2626", description: "Maktab Faxrlari Zaliga kirdi!" },
-  { id: "tuman_golibi",    title: "Tuman G'olibi",    emoji: "👑", min_tanga: 3000, color: "#2563EB", description: "Tuman olimpiadasida 1-o'rin!", special: "tuman" },
-  { id: "olimp_choqqisi",  title: "Olimp Cho'qqisi",  emoji: "🌟", min_tanga: 5000, color: "#7C3AED", description: "Respublika darajasida natija" },
-  { id: "afsonaviy",       title: "AFSONAVIY",        emoji: "🔱", min_tanga: 8000, color: "#1F2937", description: "Hech kim bilmaydi bu unvon borligini..." },
+  { id: "boshlangich",      title: "Boshlang'ich",      emoji: "🧭", min_tanga: 0,    color: "#B45309", description: "Ilm va kashfiyotlar yo'liga ilk qadam" },
+  { id: "zukko",            title: "Zukko",             emoji: "✨", min_tanga: 30,   color: "#EA580C", description: "Bilimga chanqoq va tezkor fikrlovchi" },
+  { id: "intiluvchan",      title: "Intiluvchan",       emoji: "🔥", min_tanga: 80,   color: "#64748B", description: "Har kuni o'z ustida ishlovchi o'quvchi" },
+  { id: "tafakkur_sohibi",  title: "Tafakkur Sohibi",   emoji: "🧠", min_tanga: 150,  color: "#22D3EE", description: "Profilda maxsus kumush ramka" },
+  { id: "ilgor",            title: "Ilg'or",            emoji: "⚡", min_tanga: 250,  color: "#34D399", description: "Reyting jadvalida maxsus nishon" },
+  { id: "alloma",           title: "Alloma",            emoji: "📚", min_tanga: 400,  color: "#14B8A6", description: "Kitobsevar va chuqur bilim egasi" },
+  { id: "zafarli",          title: "Zafarli",           emoji: "🏅", min_tanga: 600,  color: "#3B82F6", description: "Bellashuv va olimpiadalar ishtirokchisi", special: "olimpiada" },
+  { id: "ustoz_daraja",     title: "Ustoz Daraja",      emoji: "🎓", min_tanga: 900,  color: "#6366F1", description: "Profil atrofida nurli safir halqa" },
+  { id: "sinf_yetakchisi",  title: "Sinf Yetakchisi",   emoji: "⭐", min_tanga: 1300, color: "#F59E0B", description: "Sinfning eng faol va namunali a'zosi" },
+  { id: "maktab_akademigi", title: "Maktab Akademigi",  emoji: "🏛️", min_tanga: 2000, color: "#EAB308", description: "Maktab shon-sharaf zaliga kiritilgan" },
+  { id: "tuman_chempioni",  title: "Tuman Chempioni",   emoji: "🏆", min_tanga: 3000, color: "#E11D48", description: "Tuman miqyosidagi g'oliblik maqomi", special: "tuman" },
+  { id: "olimp_choqqisi",   title: "Olimp Cho'qqisi",   emoji: "⛰️", min_tanga: 5000, color: "#A855F7", description: "Respublika darajasidagi yuksak natija" },
+  { id: "buyuk_afsona",     title: "Buyuk Afsona",      emoji: "👑", min_tanga: 8000, color: "#F43F5E", description: "Eng oliy maqom — platforma faxri" },
 ];
 
 function getUnvon(totalTanga: number, hasOlimp = false): Unvon {

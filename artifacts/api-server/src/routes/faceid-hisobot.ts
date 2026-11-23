@@ -197,6 +197,19 @@ router.get("/faceid/oquvchi", async (req, res): Promise<void> => {
       [login, from, to]
     );
     const arrived = rows.filter((r) => r.arrived_time).length;
+    // Dars jadvali bo'yicha: har kunning darslar soni (sinf va hafta kuni bo'yicha)
+    const lessonRows = await query<{ dow: number; n: number }>(
+      `SELECT t.day_of_week AS dow, COUNT(*)::int AS n
+         FROM timetable t JOIN classes c ON c.id = t.class_id
+        WHERE c.name = $1 AND c.maktab_id = $2
+        GROUP BY t.day_of_week`,
+      [st[0].class_name, mid]
+    );
+    const lessonsOn = new Map(lessonRows.map((r) => [Number(r.dow), Number(r.n)]));
+    const lessonsFor = (d: string) => lessonsOn.get(new Date(d + "T00:00:00").getDay()) ?? 0;
+    const absentRows = rows.filter((r) => !r.arrived_time);
+    const hoursMissed = absentRows.reduce((sum, r) => sum + lessonsFor(r.date), 0);
+    const hoursExcused = absentRows.filter((r) => r.excused).reduce((sum, r) => sum + lessonsFor(r.date), 0);
     res.json({
       login,
       full_name: st[0].full_name,
@@ -210,6 +223,9 @@ router.get("/faceid/oquvchi", async (req, res): Promise<void> => {
         left_early: rows.filter((r) => r.left_early).length,
         excused_absent: rows.filter((r) => !r.arrived_time && r.excused).length,
         unexcused_absent: rows.filter((r) => !r.arrived_time && !r.excused).length,
+        hours_missed: hoursMissed,
+        hours_excused: hoursExcused,
+        hours_unexcused: hoursMissed - hoursExcused,
       },
       rows,
     });
