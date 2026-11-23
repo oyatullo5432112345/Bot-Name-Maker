@@ -300,8 +300,8 @@ router.post("/tanga/bonus", async (req, res): Promise<void> => {
 // ============================================================
 router.post("/tanga/daily-login", async (req, res): Promise<void> => {
   const user = getAuthUser(req.headers.authorization);
-  if (!user || user["role"] !== "student") {
-    res.status(403).json({ error: "Faqat o'quvchilar uchun" }); return;
+  if (!user) {
+    res.status(401).json({ error: "Avtorizatsiya talab etiladi" }); return;
   }
   const login = user["login"] as string;
   const mid = schoolOf(user);
