@@ -815,17 +815,24 @@ async function classStarts(): Promise<Record<string, string>> {
 
 /** Sinfning bugungi oxirgi darsi tugash vaqti (dars jadvalidan), masalan "13:30".
  *  Jadval bo'lmasa — standart (default_end, odatda "13:30"). */
-async function lessonsEnd(className: string, fallback: string): Promise<string | null> {
+async function lessonsEnd(className: string, fallback: string, mid: number = 3): Promise<string | null> {
   const day = uzDay();
   if (day === 0) return fallback; // yakshanba — jadval yo'q, standart
   const r = await queryOne<{ p: number | null }>(
     `SELECT MAX(t.period)::int AS p FROM timetable t JOIN classes c ON c.id = t.class_id
-      WHERE c.name = $1 AND t.day_of_week = $2`,
-    [className, day]
+      WHERE c.name = $1 AND c.maktab_id = $3 AND t.day_of_week = $2`,
+    [className, day, mid]
   ).catch(() => null);
-  const range = r?.p ? PERIOD_TIMES[r.p] : undefined;
+  if (!r?.p) return fallback; // jadval topilmasa — standart vaqt
+  // Shu maktabning o'z dars vaqtlari (maktab_periods); bo'lmasa umumiy jadval
+  const own = await queryOne<{ end_time: string }>(
+    "SELECT end_time FROM maktab_periods WHERE maktab_id = $1 AND period = $2",
+    [mid, r.p]
+  ).catch(() => null);
+  if (own?.end_time) return own.end_time;
+  const range = PERIOD_TIMES[r.p];
   const end = range ? range.split("–")[1] : undefined;
-  return end ?? fallback; // jadval topilmasa — standart vaqt
+  return end ?? fallback;
 }
 
 type ScanMode = "auto" | "in" | "out";
@@ -1032,8 +1039,13 @@ async function handleScan(
   }
 
   // action === "out"
-  const end = await lessonsEnd(st.class_name, settings.default_end);
-  const early = !!end && time < end;
+  const end = await lessonsEnd(st.class_name, settings.default_end, mid ?? 3);
+  // Tasdiqlangan ruxsat (exit_requests) bo'lsa — erta ketish hisoblanmaydi
+  const approvedExit = await queryOne<{ id: number }>(
+    "SELECT id FROM exit_requests WHERE student_login = $1 AND date = $2::date AND status = 'approved' LIMIT 1",
+    [login, today]
+  ).catch(() => null);
+  const early = !!end && time < end && !approvedExit;
   await query(
     `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, distance, device, left_at, left_early, maktab_id)
      VALUES ($1, $2, $3, $4::date, NULL, 'present', $5, $6, NOW(), $7, $8)
@@ -1228,8 +1240,13 @@ router.post("/faceid/manual", async (req, res): Promise<void> => {
 
   // out yoki out_excused
   const excused = action === "out_excused";
-  const end = await lessonsEnd(person.class_name, settings.default_end);
-  const early = !!end && shownTime < end;
+  const end = await lessonsEnd(person.class_name, settings.default_end, mid ?? 3);
+  // Tasdiqlangan ruxsat (exit_requests) bo'lsa — erta ketish hisoblanmaydi
+  const approvedExit = await queryOne<{ id: number }>(
+    "SELECT id FROM exit_requests WHERE student_login = $1 AND date = $2::date AND status = 'approved' LIMIT 1",
+    [student_login, today]
+  ).catch(() => null);
+  const early = !!end && shownTime < end && !approvedExit;
   await query(
     `INSERT INTO face_checkins (student_login, student_name, class_name, date, checked_at, status, device, left_at, left_early, excused, maktab_id)
      VALUES ($1, $2, $3, $4::date, NULL, 'present', 'manual', COALESCE($5::timestamptz, NOW()), $6, $7, $8)
