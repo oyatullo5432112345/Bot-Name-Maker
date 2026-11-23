@@ -86,7 +86,7 @@ async function initTables(): Promise<void> {
 interface HisobotRow {
   login: string; full_name: string; class_name: string;
   arrived_time: string | null; left_time: string | null; status: string;
-  left_early: boolean; excused: boolean; excuse_reason: string; excused_by: string;
+  left_early: boolean; excused: boolean; excuse_reason: string; excused_by: string; exit_approved: boolean;
 }
 
 // GET /api/faceid/hisobot?date=YYYY-MM-DD — bir kunlik hisobot (arxivdan)
@@ -107,10 +107,12 @@ router.get("/faceid/hisobot", async (req, res): Promise<void> => {
               COALESCE(fa.left_early, FALSE) AS left_early,
               (COALESCE(fa.excused, FALSE) OR an.student_login IS NOT NULL) AS excused,
               COALESCE(NULLIF(fa.excuse_reason, ''), an.reason, '') AS excuse_reason,
-              COALESCE(NULLIF(fa.excused_by, ''), an.created_by, '') AS excused_by
+              COALESCE(NULLIF(fa.excused_by, ''), an.created_by, '') AS excused_by,
+              (ex.id IS NOT NULL) AS exit_approved
          FROM users u
          LEFT JOIN face_checkins_arxiv fa ON fa.student_login = u.login AND fa.date = $1::date
          LEFT JOIN absence_notices an ON an.student_login = u.login AND an.date = $1::date
+         LEFT JOIN exit_requests ex ON ex.student_login = u.login AND ex.date = $1::date AND ex.status = 'approved'
         WHERE u.role = 'student' AND u.maktab_id = $2 AND u.class_name <> ''
           AND ($3::text IS NULL OR u.class_name = $3)
         ORDER BY u.class_name, u.full_name`,
@@ -136,6 +138,7 @@ router.get("/faceid/hisobot", async (req, res): Promise<void> => {
         left_early: rows.filter((r) => r.left_early).length,
         excused_absent: rows.filter((r) => !r.arrived_time && r.excused).length,
         unexcused_absent: rows.filter((r) => !r.arrived_time && !r.excused).length,
+        exit_approved: rows.filter((r) => r.exit_approved).length,
       },
       classes: [...classMap.values()].map((c) => ({ ...c, percent: pct(c.arrived, c.total) })),
       students: rows,
@@ -220,6 +223,11 @@ router.get("/faceid/oquvchi", async (req, res): Promise<void> => {
     }
 
     const arrived = rows.filter((r) => r.arrived_time).length;
+    const exits = await query<{ date: string }>(
+      `SELECT to_char(date, 'YYYY-MM-DD') AS date FROM exit_requests
+        WHERE student_login = $1 AND status = 'approved' AND date >= $2::date AND date <= $3::date`,
+      [login, from, to]
+    );
     res.json({
       login, full_name: st[0].full_name, class_name: st[0].class_name, from, to,
       summary: {
@@ -232,6 +240,7 @@ router.get("/faceid/oquvchi", async (req, res): Promise<void> => {
         hours_excused: hoursExcused,
         hours_unexcused: hoursMissed - hoursExcused,
         unrecorded_school_days: unrecorded,
+        exit_approved: exits.length,
       },
       rows,
     });
