@@ -3,7 +3,7 @@
 // gumbaz va oltin bezaklar paydo bo'ladi.
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, Loader2, Snowflake, X } from "lucide-react";
+import { ArrowLeft, Loader2, Snowflake } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/face";
 
@@ -233,7 +233,6 @@ export default function MaktabOlami() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [pop, setPop] = useState("");
-  const [picker, setPicker] = useState(false);
   const [liveAccrued, setLiveAccrued] = useState(0);
 
   useEffect(() => {
@@ -276,14 +275,6 @@ export default function MaktabOlami() {
     finally { setBusy(""); }
   };
 
-  const pickAvatar = async (id: string) => {
-    if (!st) return;
-    setSt({ ...st, avatar: id }); setPicker(false);
-    try { await api("/tanga/game/avatar", { method: "POST", body: JSON.stringify({ avatar: id }) }); } catch { /* ignore */ }
-  };
-
-  const curAvatar = st?.avatars.find((a) => a.id === st.avatar);
-
   return (
     <div style={{ minHeight: "100vh", background: `linear-gradient(180deg, #241B4A 0%, ${INK2} 42%, ${INK} 100%)`, color: CREAM }}>
       <style>{`@keyframes mo-rise{0%{transform:translateY(6px) scale(.96)}60%{transform:translateY(-3px) scale(1.04)}100%{transform:translateY(0) scale(1)}} .mo-rise{animation:mo-rise .5s ease}`}</style>
@@ -294,11 +285,6 @@ export default function MaktabOlami() {
             <ArrowLeft size={18} /> Orqaga
           </Link>
           <div style={{ display: "flex", gap: 8 }}>
-            <Link href="/reyting" style={{ display: "inline-flex", alignItems: "center", gap: 5, background: PANEL, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 999, padding: "5px 12px", color: CREAM, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>🏆 Reyting</Link>
-            <button onClick={() => setPicker(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: PANEL, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 999, padding: "5px 10px", color: CREAM, cursor: "pointer" }}>
-              <span style={{ width: 22, height: 22, borderRadius: 999, background: `${GOLD}22`, border: `1px solid ${GOLD}`, display: "grid", placeItems: "center", fontSize: 13 }}>{curAvatar?.emoji ?? "👤"}</span>
-              <span style={{ fontSize: 13 }}>{curAvatar?.name ?? "Qahramon"}</span>
-            </button>
             <div style={{ display: "flex", alignItems: "center", gap: 6, background: PANEL, border: `1px solid ${GOLD}55`, borderRadius: 999, padding: "6px 14px", fontWeight: 700, color: GOLD }}>🪙 {st?.total ?? "…"}</div>
           </div>
         </div>
@@ -465,29 +451,6 @@ export default function MaktabOlami() {
         )}
       </div>
 
-      {/* Qahramon tanlash */}
-      {picker && st && (
-        <div onClick={() => setPicker(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "grid", placeItems: "center", padding: 20, zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: PANEL, borderRadius: 20, padding: 18, width: "100%", maxWidth: 360, border: `1px solid ${GOLD}33` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <b style={{ fontSize: 16 }}>Qahramonni tanlang</b>
-              <button onClick={() => setPicker(false)} style={{ background: "none", border: "none", color: CREAM, cursor: "pointer" }}><X size={18} /></button>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              {st.avatars.map((a) => {
-                const on = a.id === st.avatar;
-                return (
-                  <button key={a.id} onClick={() => void pickAvatar(a.id)} style={{ borderRadius: 14, padding: "12px 6px", cursor: "pointer",
-                    background: on ? `${GOLD}22` : "rgba(0,0,0,0.25)", border: on ? `2px solid ${GOLD}` : "1px solid rgba(255,255,255,0.1)", color: CREAM }}>
-                    <div style={{ fontSize: 26 }}>{a.emoji}</div>
-                    <div style={{ fontSize: 12, marginTop: 4 }}>{a.name}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
