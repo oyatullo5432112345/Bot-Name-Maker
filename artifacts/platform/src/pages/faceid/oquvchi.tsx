@@ -22,7 +22,7 @@ interface ProfileResponse {
   class_name: string;
   from: string;
   to: string;
-  summary: { days: number; arrived: number; late: number; left_early: number; excused_absent: number; unexcused_absent: number };
+  summary: { days: number; arrived: number; late: number; left_early: number; excused_absent: number; unexcused_absent: number; hours_missed: number; hours_excused: number; hours_unexcused: number };
   rows: ProfileRow[];
 }
 
@@ -103,6 +103,12 @@ export default function FaceOquvchiPage() {
             <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Sababli / sababsiz</CardTitle></CardHeader>
               <CardContent><div className="text-2xl font-bold tabular-nums">{s.excused_absent} / {s.unexcused_absent}</div></CardContent></Card>
           </div>
+          <Card>
+            <CardHeader className="pb-1"><CardTitle className="text-sm">Dars qoldirish (dars jadvali bo'yicha)</CardTitle></CardHeader>
+            <CardContent className="text-sm tabular-nums">
+              Jami: <b>{s.hours_missed}</b> soat · Sababli: <b>{s.hours_excused}</b> · Sababsiz: <b>{s.hours_unexcused}</b>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader><CardTitle className="text-sm">Kunlar bo'yicha</CardTitle></CardHeader>
