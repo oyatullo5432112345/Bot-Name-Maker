@@ -3,8 +3,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Trophy, ShoppingBag, History, List, Crown } from "lucide-react";
+import { Loader2, Trophy, ShoppingBag, History, Crown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { UnvonSummary, UnvonlarList } from "@/components/unvonlar";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
 const getToken = () => localStorage.getItem("talim_auth_token");
@@ -31,22 +32,6 @@ interface ShopItem {
 }
 
 type Tab = "mening" | "reyting" | "dokon" | "unvonlar";
-
-const ALL_UNVONLAR = [
-  { id: "yangi_shogird",  title: "Yangi Shogird",  emoji: "🌱", min_tanga: 0,    color: "#9CA3AF", description: "Saytga birinchi kirganda" },
-  { id: "izlanuvchi",     title: "Izlanuvchi",      emoji: "🔍", min_tanga: 30,   color: "#3B82F6", description: "Bilim yo'liga qadam!" },
-  { id: "gayratli",       title: "G'ayratli",       emoji: "⭐", min_tanga: 80,   color: "#1D4ED8", description: "Chanqoqlik — muvaffaqiyat kaliti" },
-  { id: "bilimdon",       title: "Bilimdon",        emoji: "🧠", min_tanga: 150,  color: "#F59E0B", description: "Profilda maxsus ramka" },
-  { id: "faol_talaba",    title: "Faol Talaba",     emoji: "⚡", min_tanga: 250,  color: "#06B6D4", description: "Reytingda maxsus belgi" },
-  { id: "ilm_sohibi",     title: "Ilm Sohibi",      emoji: "📚", min_tanga: 400,  color: "#059669", description: "Uch yulduz egasi" },
-  { id: "olimpchi",       title: "Olimpchi",        emoji: "🏟️", min_tanga: 600,  color: "#7C3AED", description: "Olimpiadada ishtirok etgan" },
-  { id: "ustoz_shogird",  title: "Ustoz Shogird",   emoji: "🎓", min_tanga: 900,  color: "#D97706", description: "Profil atrofida oltin halqa" },
-  { id: "sinf_yulduzi",   title: "Sinf Yulduzi",    emoji: "🌟", min_tanga: 1300, color: "#FCD34D", description: "Sinfning eng yaxshi o'quvchisi" },
-  { id: "maktab_faxri",   title: "Maktab Faxri",    emoji: "🏆", min_tanga: 2000, color: "#DC2626", description: "Maktab Faxrlari Zaliga kirdi!" },
-  { id: "tuman_golibi",   title: "Tuman G'olibi",   emoji: "👑", min_tanga: 3000, color: "#2563EB", description: "Tuman olimpiadasida 1-o'rin" },
-  { id: "olimp_choqqisi", title: "Olimp Cho'qqisi", emoji: "🌟", min_tanga: 5000, color: "#7C3AED", description: "Respublika darajasida natija" },
-  { id: "afsonaviy",      title: "🔱 AFSONAVIY",    emoji: "🔱", min_tanga: 8000, color: "#1F2937", description: "Sir. Hech kim bilmaydi..." },
-];
 
 const SOURCES: Record<string, string> = {
   grade: "📝 Baho", olimpiada: "🏟️ Olimpiada", attendance: "✅ Davomat",
@@ -207,33 +192,8 @@ export default function TangaPage() {
               </div>
             </div>
 
-            {/* Keyingi unvon */}
-            {myData.next_unvon && (
-              <Card>
-                <CardContent className="py-3 px-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{myData.next_unvon.emoji}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-muted-foreground">Keyingi unvon</p>
-                      <p className="font-bold text-sm">{myData.next_unvon.title}</p>
-                      <div className="mt-1.5 h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{
-                            width: `${Math.min(100, (myData.total / myData.next_unvon.min_tanga) * 100)}%`,
-                            background: myData.next_unvon.color,
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-xs text-muted-foreground">kerak</p>
-                      <p className="font-bold text-sm">{myData.next_unvon.min_tanga - myData.total} 🪙</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            {/* Joriy unvon va keyingi unvongacha progress */}
+            <UnvonSummary userCoins={myData.total} />
 
             {/* Tanga formulasi */}
             <Card>
@@ -408,36 +368,7 @@ export default function TangaPage() {
 
       {/* ===================== UNVONLAR ===================== */}
       {tab === "unvonlar" && (
-        <div className="space-y-2">
-          <p className="text-xs text-center text-muted-foreground">Barcha unvonlar va ularning talablari</p>
-          {ALL_UNVONLAR.map(u => {
-            const earned = isStudent && myData && myData.total >= u.min_tanga;
-            return (
-              <Card
-                key={u.id}
-                className={earned ? "border-2" : "opacity-60"}
-                style={earned ? { borderColor: u.color + "60" } : {}}
-              >
-                <CardContent className="py-3 px-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{u.emoji}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-bold text-sm" style={earned ? { color: u.color } : {}}>{u.title}</p>
-                        {earned && <span className="text-[10px] text-green-600 font-bold">✅ Qo'lga kiritildi</span>}
-                      </div>
-                      <p className="text-xs text-muted-foreground">{u.description}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-bold text-amber-600 dark:text-amber-400 tabular-nums">{u.min_tanga}</p>
-                      <p className="text-[10px] text-muted-foreground">🪙</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        <UnvonlarList userCoins={isStudent ? (myData?.total ?? 0) : 0} />
       )}
     </div>
   );
