@@ -149,11 +149,11 @@ export default function Login() {
 
   // ── O'qituvchi 5 xonali ID kiritdi → kirish ──
   const handleStaffLogin = async () => {
-    if (staffId.length !== 5) return;
+    if (staffId.length < 5) return;
     setLoading(true);
     setError("");
     try {
-      const r = await fetch(`${API_BASE}/auth/staff/login`, {
+      const r = await fetch(`${API_BASE}/auth/id-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ login_id: staffId }),
@@ -483,13 +483,13 @@ export default function Login() {
 
             <div style={{ fontSize: 64, marginBottom: 12 }}>👨‍🏫</div>
             <h2 className="text-white text-2xl font-black mb-1">O'qituvchi / Xodim</h2>
-            <p className="text-white/40 text-sm mb-6">5 xonali ID raqamingizni kiriting</p>
+            <p className="text-white/40 text-sm mb-6">ID raqamingizni kiriting (5–8 xonali)</p>
 
             <div style={{ animation: shake ? "tt-shake 0.3s ease-in-out" : "none" }}>
               <input
                 type="text"
                 inputMode="numeric"
-                maxLength={5}
+                maxLength={8}
                 value={staffId}
                 onChange={(e) => { setStaffId(e.target.value.replace(/\D/g, "")); setError(""); }}
                 onKeyDown={onKeyDown(handleStaffLogin)}
@@ -511,7 +511,7 @@ export default function Login() {
 
             <button
               onClick={handleStaffLogin}
-              disabled={staffId.length !== 5 || loading}
+              disabled={staffId.length < 5 || loading}
               className="w-full mt-5 p-4 rounded-2xl text-white font-black text-lg disabled:opacity-40 active:scale-95 transition flex items-center justify-center gap-2"
               style={{ background: "linear-gradient(135deg, #06b6d4, #7c3aed)", boxShadow: "0 8px 32px rgba(99,102,241,0.4)" }}
             >
