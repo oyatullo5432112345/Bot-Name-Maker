@@ -436,6 +436,11 @@ export default function FaceEnrollPage() {
         </div>
       </div>
 
+      <div className="grid grid-cols-2 gap-3">
+        <Link href="/faceid/hisobot"><Button variant="outline" className="w-full">📊 Sinf arxivi (sababli / ruxsat)</Button></Link>
+        <Link href="/faceid/sorov"><Button variant="outline" className="w-full">📝 So'rovlar</Button></Link>
+      </div>
+
       <Card>
         <CardContent className="pt-5 space-y-3">
           <ClassChips classes={classes.data ?? []} value={cls} onChange={setCls} />
