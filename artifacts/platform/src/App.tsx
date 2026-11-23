@@ -180,7 +180,7 @@ function Router() {
       <Route path="/faceid/kiosk"><KioskRoute component={FaceKioskPage} roles={["admin","director","zam_direktor","zavuch"]} faceLock /></Route>
       <Route path="/faceid/enroll"><ProtectedRoute component={FaceEnrollPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
       <Route path="/faceid/today"><ProtectedRoute component={FaceTodayPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
-      <Route path="/faceid/hisobot"><ProtectedRoute component={FaceHisobotPage} roles={["admin","director","zam_direktor","zavuch"]} faceLock /></Route>
+      <Route path="/faceid/hisobot"><ProtectedRoute component={FaceHisobotPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
       <Route path="/faceid/oquvchi"><ProtectedRoute component={FaceOquvchiPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
       <Route path="/faceid/sorov"><ProtectedRoute component={FaceSorovPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
       <Route path="/faceid"><ProtectedRoute component={FaceIdPage} roles={["admin","director","zam_direktor","zavuch"]} faceLock /></Route>
