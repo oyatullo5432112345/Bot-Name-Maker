@@ -1,6 +1,6 @@
 // Intelektual o'yinlar — bolalar uchun. Qulf yo'q, hamma o'yin ochiq.
 import { Link } from "wouter";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Trophy, Gift } from "lucide-react";
 
 const GAMES = [
   {
@@ -43,6 +43,24 @@ export default function IntellektualPage() {
             />
           </Link>
         ))}
+      </section>
+
+      {/* Reyting va Sovg'alar — o'yinlardan keyin, yonma-yon */}
+      <section className="grid grid-cols-2 gap-3">
+        <Link
+          href="/reyting"
+          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-amber-300/40 bg-gradient-to-b from-[#1b2550] to-[#0e1530] py-5 text-white shadow-md transition active:scale-95"
+        >
+          <Trophy className="h-7 w-7 text-amber-300" />
+          <span className="text-sm font-extrabold">Reyting</span>
+        </Link>
+        <Link
+          href="/reyting"
+          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-sky-300/40 bg-gradient-to-b from-[#1b2550] to-[#0e1530] py-5 text-white shadow-md transition active:scale-95"
+        >
+          <Gift className="h-7 w-7 text-sky-300" />
+          <span className="text-sm font-extrabold">Sovg'alar</span>
+        </Link>
       </section>
     </div>
   );
