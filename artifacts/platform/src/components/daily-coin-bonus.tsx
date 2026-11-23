@@ -1,5 +1,5 @@
-// Kunlik bonus: har bir foydalanuvchi kuniga 1 marta +2 tanga oladi.
-// Rasmlar public/imagine/ papkasida bo'lishi kerak: plus-2-tanga.jpg va sovga-qop.jpg
+// Kunlik bonus: har bir foydalanuvchi kuniga 1 marta +2 tanga oladi (server tomonda tekshiriladi).
+// Rasmlar public/imagine/ papkasida: plus-2-tanga.jpg va sovga-qop.jpg
 import { useEffect, useState } from "react";
 import { Sparkles, Gift, X } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
@@ -7,51 +7,36 @@ import { api } from "@/lib/face";
 
 const IMG_TEXT = "/imagine/plus-2-tanga.jpg";
 const IMG_SACK = "/imagine/sovga-qop.jpg";
-const BONUS_AMOUNT = 2;
 const SHOW_SECONDS = 10;
+
+interface DailyLoginResponse { ok: boolean; amount?: number; message?: string }
 
 export function DailyCoinBonus() {
   const { user } = useAuth();
   const [visible, setVisible] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(SHOW_SECONDS);
 
-  // Bugun bonus olinganmi — tekshirish va serverdan olish
   useEffect(() => {
     if (!user) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const uid = String((user as { id?: string | number }).id ?? user.role ?? "user");
-    const storageKey = `talim_daily_coin_${uid}_${today}`;
-    if (localStorage.getItem(storageKey)) return;
-
     let cancelled = false;
     void (async () => {
       try {
-        // Faqat server tasdiqlagandan keyin ko'rsatiladi va belgilanadi
-        await api("/tanga/daily-bonus", {
-          method: "POST",
-          body: JSON.stringify({ amount: BONUS_AMOUNT }),
-        });
-        if (cancelled) return;
-        localStorage.setItem(storageKey, "1");
-        window.dispatchEvent(new CustomEvent("talim:coins-updated", { detail: { added: BONUS_AMOUNT } }));
+        // Server bugun tanga berilganini tekshiradi; ok:true bo'lsa yangi tanga berilgan
+        const res = await api<DailyLoginResponse>("/tanga/daily-login", { method: "POST" });
+        if (cancelled || !res?.ok) return;
+        window.dispatchEvent(new CustomEvent("talim:coins-updated", { detail: { added: res.amount ?? 2 } }));
         setSecondsLeft(SHOW_SECONDS);
         setVisible(true);
       } catch (e) {
         console.warn("Kunlik bonus olinmadi:", e);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [user]);
 
-  // Har soniyada sanaydi; 0 bo'lganda yopiladi
   useEffect(() => {
     if (!visible) return;
-    const id = setInterval(() => {
-      setSecondsLeft((s) => s - 1);
-    }, 1000);
+    const id = setInterval(() => setSecondsLeft((s) => s - 1), 1000);
     return () => clearInterval(id);
   }, [visible]);
 
