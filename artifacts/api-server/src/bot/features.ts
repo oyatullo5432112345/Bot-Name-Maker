@@ -497,6 +497,19 @@ function registerPrivate(priv: Composer<Context>): void {
     await ctx.reply(`🆔 Sizning Telegram ID: <code>${ctx.from.id}</code>\n👤 Bot sizni taniydi: ${as}`, { parse_mode: "HTML" });
   });
 
+  // Admin o'z Telegram ID sini yuborsa — admin panelga kirish havolasi
+  priv.hears(/^\s*\d{5,15}\s*$/, async (ctx) => {
+    if (!ctx.from) return;
+    if (ADMIN_ID > 0 && ctx.from.id === ADMIN_ID && Number(ctx.message?.text?.trim()) === ADMIN_ID) {
+      await ctx.reply(
+        "👑 Administrator sifatida tasdiqlandi.\n\nAdmin panelga kirish uchun quyidagi tugmani bosing:",
+        { reply_markup: new InlineKeyboard().url("⚙️ Admin panelga kirish", `${WEBSITE_URL}/login`) }
+      );
+      return;
+    }
+    await ctx.reply("❌ Bu ID administrator emas. Admin ID ni /id buyrug'i bilan tekshiring.");
+  });
+
   priv.command("menu", async (ctx) => {
     if (!ctx.from) return;
     await sendMainMenu(ctx, ctx.from.id);
