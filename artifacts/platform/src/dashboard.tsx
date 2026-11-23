@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { ConfirmCard } from "@/components/confirm-card";
 import { DashboardHero } from "@/components/dashboard-hero";
+import { DailyCoinBonus } from "@/components/daily-coin-bonus";
 import { ArchaCard } from "@/components/winter-scene";
 
 
@@ -307,6 +308,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <DailyCoinBonus />
       <DashboardHero
         dateWidget={<DateWidget />}
         greeting={getMorningGreeting(user.full_name ?? "")}
