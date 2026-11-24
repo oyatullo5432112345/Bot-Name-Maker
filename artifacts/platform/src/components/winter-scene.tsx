@@ -3,7 +3,6 @@
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useSeason } from "@/lib/season";
-import { ArchaTree, loadArcha, type Orn } from "@/components/archa-tree";
 
 const GIFT_TEXT = "Sizning sovg'angiz bor! Yangi yil bilan — platforma jamoasi nomidan eng yaxshi tilaklar. 🎁";
 const GIFT_KEY = "talim_gift_year_";
@@ -120,37 +119,3 @@ export function GiftSurprise() {
     </div>
   );
 }
-
-export function ArchaCard() {
-  const { winter } = useSeason();
-  const [orn, setOrn] = useState<Orn[]>([]);
-  const [taps, setTaps] = useState(0);
-  useEffect(() => { setOrn(loadArcha()); }, []);
-  if (!winter) return null;
-  return (
-    <a href="/archa" className="block rounded-2xl border border-white/10 bg-gradient-to-br from-[#0f2a1f] to-[#0b1224] p-4 text-white hover:border-emerald-400/40 transition">
-      <div className="flex items-center gap-4">
-        <div className="w-20 shrink-0">
-          <ArchaTree
-            ornaments={orn}
-            className="w-full h-auto"
-            showStar
-            onStarClick={() => {
-              const n = taps + 1;
-              setTaps(n);
-              if (n >= 7) { setTaps(0); openGift(true); }
-            }}
-          />
-        </div>
-        <div className="min-w-0">
-          <div className="font-bold">Yangi yil archasi</div>
-          <div className="text-xs text-white/70 mt-1">
-            {orn.length ? `${orn.length} ta bezak` : "Hali bezak yo'q"} · Archani bezash uchun bosing
-          </div>
-        </div>
-      </div>
-    </a>
-  );
-}
-
-export { Flake };
