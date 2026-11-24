@@ -27,7 +27,7 @@ function addDays(d: string, n: number): string {
 // O'quvchi shu foydalanuvchining sinfida va shu maktabda ekanini tekshiradi
 async function studentFor(u: AuthUser, login: string, mid: number) {
   const st = await queryOne<{ full_name: string; class_name: string }>(
-    "SELECT full_name, class_name FROM users WHERE login = $1 AND role = 'student' AND maktab_id = $2",
+    "SELECT full_name, class_name FROM users WHERE login = $1 AND maktab_id = $2",
     [login, mid]
   );
   if (!st) return { error: "O'quvchi topilmadi", code: 404 } as const;

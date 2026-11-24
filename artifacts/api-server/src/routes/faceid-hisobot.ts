@@ -113,7 +113,7 @@ router.get("/faceid/hisobot", async (req, res): Promise<void> => {
          LEFT JOIN face_checkins_arxiv fa ON fa.student_login = u.login AND fa.date = $1::date
          LEFT JOIN absence_notices an ON an.student_login = u.login AND an.date = $1::date
          LEFT JOIN exit_requests ex ON ex.student_login = u.login AND ex.date = $1::date AND ex.status = 'approved'
-        WHERE u.role = 'student' AND u.maktab_id = $2 AND u.class_name <> ''
+        WHERE u.maktab_id = $2 AND u.class_name <> ''
           AND ($3::text IS NULL OR u.class_name = $3)
         ORDER BY u.class_name, u.full_name`,
       [date, mid, onlyClass]
@@ -162,7 +162,7 @@ router.get("/faceid/oquvchi", async (req, res): Promise<void> => {
   const to = okDate(req.query["to"]) ? String(req.query["to"]) : today;
   try {
     const st = await query<{ full_name: string; class_name: string }>(
-      "SELECT full_name, class_name FROM users WHERE login = $1 AND role = 'student' AND maktab_id = $2",
+      "SELECT full_name, class_name FROM users WHERE login = $1 AND maktab_id = $2",
       [login, mid]
     );
     if (!st[0]) { res.status(404).json({ error: "O'quvchi topilmadi" }); return; }
