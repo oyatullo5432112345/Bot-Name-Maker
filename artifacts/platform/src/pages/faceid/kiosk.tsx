@@ -6,6 +6,7 @@
 // • Natija ekranga DARHOL chiqadi, server fonda xabardor qilinadi
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { GuestWelcome, readGuest, writeGuest } from "@/components/guest-welcome";
 import { useLocation } from "wouter";
 import {
   ScanFace, CheckCircle2, Clock, XCircle, LogOut, SwitchCamera, WifiOff, Loader2,
@@ -314,6 +315,14 @@ export default function FaceKioskPage() {
   const voiceRef = useRef(readVoice());
   const hintRef = useRef<"idle" | "closer" | "scan">("idle");
   const runningRef = useRef(false);
+  // Mehmon rejimi: yoqilganda yuzni tanish to'xtaydi, kamera ishlayveradi
+  const [guest, setGuest] = useState<boolean>(readGuest);
+  const guestRef = useRef(guest);
+  useEffect(() => {
+    guestRef.current = guest;
+    writeGuest(guest);
+    if (guest) ringRef.current.clear();
+  }, [guest]);
   const facingRef = useRef<"user" | "environment">("user");
   const camIdRef = useRef<string | null>(null); // tanlangan kamera (veb-kamera uchun)
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
@@ -673,6 +682,7 @@ export default function FaceKioskPage() {
 
   // ── Bitta kadrni qayta ishlash: hamma yuzlar bir vaqtda
   const processFrame = (faces: FaceResult[], video: HTMLVideoElement) => {
+    if (guestRef.current) return; // mehmon rejimida tanish va doira yo'q
     const now = Date.now();
     const minFace = Math.max(56, Math.min(video.videoWidth, video.videoHeight) * 0.08);
     const usable = faces.filter((f) => f.box.width >= minFace);
@@ -975,6 +985,15 @@ export default function FaceKioskPage() {
             {modeBtn("in", "KELDI")}
             {modeBtn("out", "KETDI")}
           </div>
+          <button
+            onClick={() => setGuest((g) => !g)}
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs sm:text-sm font-bold backdrop-blur ${
+              guest ? "bg-indigo-500/80 border-indigo-300 text-white" : "bg-black/50 border-white/10 text-slate-200"
+            }`}
+            title="Mehmon rejimi — yuzni tanish to'xtaydi, salomlashuv chiqadi"
+          >
+            {guest ? "MEHMON REJIMI: YOQIQ" : "MEHMON REJIMI"}
+          </button>
           {phase === "running" && (
             <button
               onClick={toggleDetector}
@@ -1116,6 +1135,7 @@ export default function FaceKioskPage() {
           )}
         </div>
       )}
+      <GuestWelcome active={guest} />
     </div>
   );
 }
