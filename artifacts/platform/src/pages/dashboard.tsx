@@ -80,31 +80,23 @@ interface TeacherSubjectEntry {
   class_name?: string | null;
 }
 
-// Zamonaviy, salobatli va mazmunli qofiyali hikmatlar
-export const MOTIVATIONS: string[] = [
-  "Aql bilan qurilgan yo'l — vaqt sinovidan o'tar mo'l. 🧭",
-  "Har bir yangi g'oya — ertangi yuksak zafarga poya. ⚡",
-  "Intizom va aniqlik — katta natijalarga yetaklar aniq. 🎯",
-  "Bugungi izlanish — ertangi kuchli salohiyatning negizi. 💡",
-  "Bilimni amalda sinagan — o'z o'rnini topadi har zamon. 🌐",
-  "Sabr bilan qo'yilgan qadam — mustahkam poydevor, qadam-baqadam. 🏗️",
-  "Tafakkur tiniq bo'lsa — eng murakkab yechim ham oson bo'lsa. 🧩",
-  "Doimiy o'sish — taraqqiyotning eng ishonchli yo'li. 📈",
-  "Maqsadi aniq insonga — ufqlar ham ochilar keng va ravshan. 🌅",
-  "Tajriba va mehnat — haqiqiy mahoratni yaratadi albatta. 🛠️",
-  "Har bir dars — yangi imkon, har bir harakat — yangi pog'ona. 🪜",
-  "Kuchli tafakkur — kuchli kelajak, har kun yangi bir qadam qo'yaylik. 🔥",
-  "O'z ustida ishlagan — o'z davrining yetakchisiga aylanar. 🏆",
-  "Ilm va matonat birlashsa — har qanday marra zabt etilar. 🛡️",
-  "Bugun qilingan xulosa — ertangi xatolarning oldini olar. ✨",
+const UZ_MOTIVATIONAL = [
+  "Bilim — eng katta boylik. 📚",
+  "Har bir yangi kun — yangi imkoniyat! 🌟",
+  "Qiyinchilik — muvaffaqiyatning boshlanishi. 💪",
+  "Mehnat va sabr — maqsadga yetkazadi. 🎯",
+  "Kelajagingiz bugungi saydingizda. 🚀",
+  "Har bir dars — yangi ufq. 🌅",
+  "O'rgan, o'sa, yaxshilan — har kuni! ✨",
+  "Muvaffaqiyat — bu odatning mevasidir. 🌱",
+  "Kitob o'qigan — dunyo ko'rgan. 🔭",
+  "Bugun o'rgangan narsa — ertangi kuchdir. ⚡",
+  "Har bir savol — bilimning eshigidir. 🗝️",
+  "Tafakkur qil, harakat qil, erishib ol! 🏆",
+  "Zo'r natijalar — kichik qadamlardan boshlanadi. 👣",
+  "O'qish — kelajakka sarflangan eng yaxshi vaqt. ⏰",
+  "Ilm talabing — dunyo egaliding. 🌍",
 ];
-
-// Har kuni yoki har kirganda zamonaviy qofiyali gaplardan birini olish funksiyasi
-export function getDailyMotivation(indexOffset = 0): string {
-  const dayIndex = Math.floor(Date.now() / 86400000);
-  const idx = (dayIndex + indexOffset) % MOTIVATIONS.length;
-  return MOTIVATIONS[idx];
-}
 
 function getMorningGreeting(name: string): string {
   const h = new Date().getHours();
@@ -268,7 +260,7 @@ export default function Dashboard() {
     ? "O'z sinfingiz o'quvchilarini ro'yxatdan o'tkazing"
     : "Kirish-chiqish davomati va hisobotlar";
 
-  const motivation = getDailyMotivation();
+  const motivation = UZ_MOTIVATIONAL[new Date().getDate() % UZ_MOTIVATIONAL.length]!;
 
   return (
     <div className="space-y-6">
