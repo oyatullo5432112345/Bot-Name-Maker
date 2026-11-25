@@ -1,6 +1,5 @@
 import { lazy, Suspense } from "react";
 import { SeasonProvider } from "@/lib/season";
-import { WinterLights } from "@/components/winter";
 import { WinterScene } from "@/components/winter-scene";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -210,7 +209,6 @@ function App() {
               <Router />
               <BirthdayBanner />
               <WinterScene />
-              <WinterLights />
               <PwaUpdatePrompt />
             </WouterRouter>
             <Toaster />
