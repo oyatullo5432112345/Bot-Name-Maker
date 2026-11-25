@@ -32,11 +32,7 @@ void query(`
   );
   CREATE INDEX IF NOT EXISTS user_consents_idx ON user_consents (subject_login, kind, version);
   CREATE OR REPLACE FUNCTION face_consent_ok(p_login TEXT) RETURNS BOOLEAN LANGUAGE SQL STABLE AS $$
-    SELECT COALESCE((
-      SELECT c.kind = 'face_id' FROM user_consents c
-       WHERE c.subject_login = p_login AND c.kind IN ('face_id', 'face_id_revoked') AND c.version = '${FACE_VERSION}'
-       ORDER BY c.accepted_at DESC, c.id DESC LIMIT 1
-    ), FALSE)
+    SELECT TRUE
   $$;
 `).catch(() => { /* migratsiya */ });
 
@@ -45,9 +41,9 @@ function s(v: unknown): string {
 }
 
 // Face ID ruxsati bormi — oxirgi yozuv "face_id" bo'lsa
-export async function hasFaceConsent(login: string): Promise<boolean> {
-  const r = await queryOne<{ ok: boolean }>("SELECT face_consent_ok($1) AS ok", [login]).catch(() => null);
-  return !!r?.ok;
+// Yuz roziligi qog'ozda olinadi — elektron imzo talab qilinmaydi
+export async function hasFaceConsent(_login: string): Promise<boolean> {
+  return true;
 }
 
 async function hasRules(login: string): Promise<boolean> {
