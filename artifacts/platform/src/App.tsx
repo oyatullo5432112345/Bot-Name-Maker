@@ -43,7 +43,6 @@ const BaholashPage = lazy(() => import("@/pages/baholash/index"));
 const DarsJadvaliPage = lazy(() => import("@/pages/dars-jadvali/index"));
 const AnalyticsPage = lazy(() => import("@/pages/analytics/index"));
 const RozilikPage = lazy(() => import("@/pages/rozilik/index"));
-const ArchaPage = lazy(() => import("@/pages/archa/index"));
 const Kutubxona = lazy(() => import("@/pages/kutubxona/index"));
 
 const AdminResetPage = lazy(() => import("@/pages/admin/reset"));
@@ -63,9 +62,6 @@ const FaceIdPage = lazy(() => import("@/pages/faceid/index"));
 const FaceEnrollPage = lazy(() => import("@/pages/faceid/enroll"));
 const FaceKioskPage = lazy(() => import("@/pages/faceid/kiosk"));
 const FaceTodayPage = lazy(() => import("@/pages/faceid/today"));
-const FaceHisobotPage = lazy(() => import("@/pages/faceid/hisobot"));
-const FaceOquvchiPage = lazy(() => import("@/pages/faceid/oquvchi"));
-const FaceSorovPage = lazy(() => import("@/pages/faceid/sorov"));
 const LoginIdsPage = lazy(() => import("@/pages/admin/login-ids"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -158,7 +154,6 @@ function Router() {
       <Route path="/baholash"><ProtectedRoute component={BaholashPage} /></Route>
       <Route path="/dars-jadvali"><ProtectedRoute component={DarsJadvaliPage} /></Route>
       <Route path="/rozilik"><ProtectedRoute component={RozilikPage} /></Route>
-      <Route path="/archa"><ProtectedRoute component={ArchaPage} /></Route>
       <Route path="/analytics"><ProtectedRoute component={AnalyticsPage} roles={["admin","director","zam_direktor","zavuch"]} /></Route>
       <Route path="/kutubxona"><ProtectedRoute component={Kutubxona} /></Route>
       <Route path="/olimpiada"><ProtectedRoute component={OlimpiyadaPage} /></Route>
@@ -180,9 +175,6 @@ function Router() {
       <Route path="/faceid/kiosk"><KioskRoute component={FaceKioskPage} roles={["admin","director","zam_direktor","zavuch"]} faceLock /></Route>
       <Route path="/faceid/enroll"><ProtectedRoute component={FaceEnrollPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
       <Route path="/faceid/today"><ProtectedRoute component={FaceTodayPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
-      <Route path="/faceid/hisobot"><ProtectedRoute component={FaceHisobotPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
-      <Route path="/faceid/oquvchi"><ProtectedRoute component={FaceOquvchiPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
-      <Route path="/faceid/sorov"><ProtectedRoute component={FaceSorovPage} roles={["admin","director","zam_direktor","zavuch","sinf_rahbari","boshlangich_oqituvchi"]} faceLock /></Route>
       <Route path="/faceid"><ProtectedRoute component={FaceIdPage} roles={["admin","director","zam_direktor","zavuch"]} faceLock /></Route>
       <Route path="/admin/login-ids"><ProtectedRoute component={LoginIdsPage} roles={["admin","director","zam_direktor","zavuch","teacher","sinf_rahbari","boshlangich_oqituvchi"]} /></Route>
       <Route path="/chat"><ProtectedRoute component={ChatPage} /></Route>
