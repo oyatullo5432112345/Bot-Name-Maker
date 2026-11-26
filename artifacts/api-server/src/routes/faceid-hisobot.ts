@@ -32,7 +32,11 @@ const COLS = `student_login, student_name, class_name, date, checked_at, status,
 
 // Jadvallar, backfill va trigger — bir marta yaratiladi
 async function initTables(): Promise<void> {
-  await query(`CREATE TABLE IF NOT EXISTS face_checkins_arxiv (
+  const step = async (name: string, sql: string) => {
+    try { await query(sql); }
+    catch (err) { logger.error({ err, step: name }, "faceid-hisobot: qadam xato"); }
+  };
+  await step("arxiv_table", `CREATE TABLE IF NOT EXISTS face_checkins_arxiv (
     student_login TEXT NOT NULL, student_name TEXT NOT NULL DEFAULT '', class_name TEXT NOT NULL DEFAULT '',
     date DATE NOT NULL, checked_at TIMESTAMPTZ, status TEXT NOT NULL DEFAULT 'present', distance REAL,
     device TEXT NOT NULL DEFAULT '', left_at TIMESTAMPTZ, left_early BOOLEAN NOT NULL DEFAULT FALSE,
@@ -40,9 +44,9 @@ async function initTables(): Promise<void> {
     excused_by TEXT NOT NULL DEFAULT '', truant BOOLEAN NOT NULL DEFAULT FALSE,
     club BOOLEAN NOT NULL DEFAULT FALSE, maktab_id INT NOT NULL DEFAULT 3,
     archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (student_login, date))`);
-  await query(`INSERT INTO face_checkins_arxiv (${COLS}) SELECT ${COLS} FROM face_checkins
+  await step("backfill", `INSERT INTO face_checkins_arxiv (${COLS}) SELECT ${COLS} FROM face_checkins
     ON CONFLICT (student_login, date) DO NOTHING`);
-  await query(`CREATE OR REPLACE FUNCTION face_checkins_to_arxiv() RETURNS trigger AS $fn$
+  await step("fn", `CREATE OR REPLACE FUNCTION face_checkins_to_arxiv() RETURNS trigger AS $fn$
   BEGIN
     INSERT INTO face_checkins_arxiv (${COLS}) VALUES (NEW.student_login, NEW.student_name, NEW.class_name,
       NEW.date, NEW.checked_at, NEW.status, NEW.distance, NEW.device, NEW.left_at, NEW.left_early,
@@ -56,15 +60,14 @@ async function initTables(): Promise<void> {
     RETURN NEW;
   END;
   $fn$ LANGUAGE plpgsql`);
-  await query("DROP TRIGGER IF EXISTS trg_face_checkins_arxiv ON face_checkins");
-  await query(`CREATE TRIGGER trg_face_checkins_arxiv AFTER INSERT OR UPDATE ON face_checkins
+  await step("trg_drop", "DROP TRIGGER IF EXISTS trg_face_checkins_arxiv ON face_checkins");
+  await step("trg", `CREATE TRIGGER trg_face_checkins_arxiv AFTER INSERT OR UPDATE ON face_checkins
     FOR EACH ROW EXECUTE FUNCTION face_checkins_to_arxiv()`);
-  // Sababli kelmaslik (oldindan belgilash) va ruxsat so'rovlari
-  await query(`CREATE TABLE IF NOT EXISTS absence_notices (
+  await step("absence", `CREATE TABLE IF NOT EXISTS absence_notices (
     id SERIAL PRIMARY KEY, student_login TEXT NOT NULL, date DATE NOT NULL, reason TEXT NOT NULL DEFAULT '',
     created_by TEXT NOT NULL DEFAULT '', maktab_id INT NOT NULL DEFAULT 3, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (student_login, date))`);
-  await query(`CREATE TABLE IF NOT EXISTS exit_requests (
+  await step("exits", `CREATE TABLE IF NOT EXISTS exit_requests (
     id SERIAL PRIMARY KEY, student_login TEXT NOT NULL, student_name TEXT NOT NULL DEFAULT '',
     class_name TEXT NOT NULL DEFAULT '', date DATE NOT NULL, leave_time TEXT NOT NULL DEFAULT '',
     reason TEXT NOT NULL DEFAULT '', requested_by TEXT NOT NULL DEFAULT '',
@@ -72,15 +75,18 @@ async function initTables(): Promise<void> {
     decided_at TIMESTAMPTZ, maktab_id INT NOT NULL DEFAULT 3, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
 }
 
-// faceid.ts jadvallarni yaratib bo'lishini kutamiz
+// Jadvallar tayyor bo'lguncha marshrutlar kutadi (har 1.5 soniyada qayta urinadi)
+let readyResolve!: () => void;
+export const ready: Promise<void> = new Promise<void>((r) => { readyResolve = r; });
 (async () => {
   for (let i = 0; i < 20; i++) {
-    try { await initTables(); return; }
+    try { await initTables(); break; }
     catch (err) {
       if (i === 19) logger.error({ err }, "faceid arxiv jadvallarini yaratishda xato");
       await new Promise((r) => setTimeout(r, 1500));
     }
   }
+  readyResolve();
 })();
 
 interface HisobotRow {
@@ -92,6 +98,7 @@ interface HisobotRow {
 // GET /api/faceid/hisobot?date=YYYY-MM-DD — bir kunlik hisobot (arxivdan)
 // Boshqaruv — maktab bo'yicha; sinf rahbari — faqat o'z sinfi.
 router.get("/faceid/hisobot", async (req, res): Promise<void> => {
+  await ready;
   const u = authAny(req, [...MANAGE, ...CLASS_ROLES]);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const q = String(req.query["date"] ?? "");
@@ -151,6 +158,7 @@ router.get("/faceid/hisobot", async (req, res): Promise<void> => {
 
 // GET /api/faceid/oquvchi?login=&from=&to= — o'quvchi profili tarixi (arxiv + oldindan belgilashlar)
 router.get("/faceid/oquvchi", async (req, res): Promise<void> => {
+  await ready;
   const u = authAny(req, [...MANAGE, ...CLASS_ROLES]);
   if (!u) { res.status(403).json({ error: "Ruxsat yo'q" }); return; }
   const login = String(req.query["login"] ?? "");
