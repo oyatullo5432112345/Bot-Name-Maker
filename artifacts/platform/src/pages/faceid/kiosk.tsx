@@ -105,7 +105,7 @@ type Precision = "yumshoq" | "standart" | "qattiq";
 interface PrecisionProfile { threshold: number; margin: number; votes: number; inputSize: number; label: string; note: string }
 const PRECISION: Record<Precision, PrecisionProfile> = {
   yumshoq:  { threshold: 0.60, margin: 0.04, votes: 2, inputSize: 320, label: "Yumshoq",  note: "Eng oson taniydi — 1-3 o'quvchi, sinov uchun" },
-  standart: { threshold: 0.56, margin: 0.06, votes: 2, inputSize: 320, label: "Standart", note: "Tavsiya — tez va ishonchli (maktab eshigi)" },
+  standart: { threshold: 0.52, margin: 0.08, votes: 3, inputSize: 320, label: "Standart", note: "Tavsiya — tez va ishonchli (maktab eshigi)" },
   qattiq:   { threshold: 0.50, margin: 0.10, votes: 3, inputSize: 448, label: "Qattiq",   note: "Eng aniq — ko'p o'quvchi, xato taniyishni minimal qiladi" },
 };
 const PRECISION_KEY = "faceid_precision";

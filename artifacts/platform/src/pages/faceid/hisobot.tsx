@@ -19,15 +19,16 @@ interface HisobotStudent {
   excused: boolean;
   excuse_reason: string;
   excused_by: string;
+  exit_approved: boolean;
 }
 
 interface HisobotResponse {
   date: string;
   summary: {
-    total: number; arrived: number; percent: number; late: number; left: number;
-    left_early: number; excused_absent: number; unexcused_absent: number;
+    total: number; arrived: number; percent: number; left_percent: number; late: number; left: number;
+    left_early: number; excused_absent: number; unexcused_absent: number; exit_approved: number;
   };
-  classes: { class_name: string; total: number; arrived: number; percent: number }[];
+  classes: { class_name: string; total: number; arrived: number; left: number; percent: number; left_percent: number }[];
   students: HisobotStudent[];
 }
 
@@ -101,15 +102,19 @@ export default function FaceHisobotPage() {
       {!loading && data && s && (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Maktab foizi</CardTitle></CardHeader>
+            <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Keldi (maktab)</CardTitle></CardHeader>
               <CardContent><div className="text-2xl font-bold tabular-nums">{s.percent}%</div>
               <p className="text-xs text-muted-foreground">{s.arrived} / {s.total} keldi</p></CardContent></Card>
+            <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Ketdi (maktab)</CardTitle></CardHeader>
+              <CardContent><div className="text-2xl font-bold tabular-nums">{s.left_percent}%</div>
+              <p className="text-xs text-muted-foreground">{s.left} / {s.total} ketdi</p></CardContent></Card>
             <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Kech kelgan</CardTitle></CardHeader>
               <CardContent><div className="text-2xl font-bold tabular-nums">{s.late}</div></CardContent></Card>
             <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Erta ketgan</CardTitle></CardHeader>
               <CardContent><div className="text-2xl font-bold tabular-nums">{s.left_early}</div></CardContent></Card>
             <Card><CardHeader className="pb-1"><CardTitle className="text-xs font-medium text-muted-foreground">Sababli / sababsiz</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold tabular-nums">{s.excused_absent} / {s.unexcused_absent}</div></CardContent></Card>
+              <CardContent><div className="text-2xl font-bold tabular-nums">{s.excused_absent} / {s.unexcused_absent}</div>
+              <p className="text-xs text-muted-foreground">Ruxsat bilan ketdi: {s.exit_approved}</p></CardContent></Card>
           </div>
 
           <Card>
@@ -118,7 +123,7 @@ export default function FaceHisobotPage() {
               {data.classes.map((c) => (
                 <div key={c.class_name} className="flex items-center justify-between text-sm">
                   <span className="font-medium">{c.class_name}</span>
-                  <span className="tabular-nums">{c.arrived}/{c.total} · {c.percent}%</span>
+                  <span className="tabular-nums">Keldi {c.arrived}/{c.total} · {c.percent}% &nbsp;|&nbsp; Ketdi {c.left}/{c.total} · {c.left_percent}%</span>
                 </div>
               ))}
             </CardContent>
@@ -140,7 +145,7 @@ export default function FaceHisobotPage() {
                         <td className="tabular-nums">{st.arrived_time ?? "—"}</td>
                         <td className="tabular-nums">{st.left_time ?? "—"}</td>
                         <td>
-                          {!st.arrived_time ? (st.excused ? "Sababli" : "Sababsiz") : st.left_early ? "Erta ketdi" : st.status === "late" ? "Kech" : "Keldi"}
+                          {st.exit_approved ? "Ruxsat bilan ketdi" : !st.arrived_time ? (st.excused ? "Sababli" : "Sababsiz") : st.left_early ? "Erta ketdi" : st.status === "late" ? "Kech" : "Keldi"}
                         </td>
                         <td className="text-xs text-muted-foreground">
                           {st.excuse_reason ? `${st.excuse_reason}${st.excused_by ? ` (${st.excused_by})` : ""}` : ""}
