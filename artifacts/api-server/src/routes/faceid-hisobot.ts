@@ -128,11 +128,12 @@ router.get("/faceid/hisobot", async (req, res): Promise<void> => {
     const total = rows.length;
     const arrived = rows.filter((r) => r.arrived_time).length;
     const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
-    const classMap = new Map<string, { class_name: string; total: number; arrived: number }>();
+    const classMap = new Map<string, { class_name: string; total: number; arrived: number; left: number }>();
     for (const r of rows) {
-      const c = classMap.get(r.class_name) ?? { class_name: r.class_name, total: 0, arrived: 0 };
+      const c = classMap.get(r.class_name) ?? { class_name: r.class_name, total: 0, arrived: 0, left: 0 };
       c.total += 1;
       if (r.arrived_time) c.arrived += 1;
+      if (r.left_time) c.left += 1;
       classMap.set(r.class_name, c);
     }
     res.json({
@@ -140,6 +141,7 @@ router.get("/faceid/hisobot", async (req, res): Promise<void> => {
       holiday: isHoliday(date),
       summary: {
         total, arrived, percent: pct(arrived, total),
+        left_percent: pct(rows.filter((r) => r.left_time).length, total),
         late: rows.filter((r) => r.status === "late").length,
         left: rows.filter((r) => r.left_time).length,
         left_early: rows.filter((r) => r.left_early).length,
@@ -147,7 +149,11 @@ router.get("/faceid/hisobot", async (req, res): Promise<void> => {
         unexcused_absent: rows.filter((r) => !r.arrived_time && !r.excused).length,
         exit_approved: rows.filter((r) => r.exit_approved).length,
       },
-      classes: [...classMap.values()].map((c) => ({ ...c, percent: pct(c.arrived, c.total) })),
+      classes: [...classMap.values()].map((c) => ({
+        ...c,
+        percent: pct(c.arrived, c.total),
+        left_percent: pct(c.left, c.total),
+      })),
       students: rows,
     });
   } catch (err) {
